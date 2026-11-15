@@ -25,7 +25,7 @@ namespace StandChillow.LanServer.Web;
 /// Поэтому все ветки проверяются тестами без сети.
 /// </para>
 /// </remarks>
-public sealed class WebPanelRouter
+public sealed partial class WebPanelRouter
 {
     private readonly RoomRegistry _rooms;
     private readonly Func<string> _indexHtml;
@@ -57,7 +57,7 @@ public sealed class WebPanelRouter
             return WebResponse.Json(_status.Current);
 
         if (request.Method == "GET" && path == "/api/rooms")
-            return WebResponse.Json(BuildRoomsJson());
+            return WebResponse.Json(BuildRoomsJson(SessionOf(request)));
 
         // Каталог режимов и карт отдаёт сервер, а не страница: иначе копия в JS
         // разъедется с GameModeCatalog, и панель начнёт предлагать несуществующие карты.
@@ -183,9 +183,14 @@ public sealed class WebPanelRouter
         return Encoding.UTF8.GetString(stream.ToArray());
     }
 
-    private string BuildRoomsJson()
+    /// <summary>
+    /// Список комнат. Для авторизованного зрителя его собственная комната помечена
+    /// <c>isMine</c> — страница поднимает её наверх и показывает «Моя комната» (#51).
+    /// </summary>
+    private string BuildRoomsJson(SiteSession? viewer)
     {
         var rooms = _rooms.Snapshot();
+        var viewerId = viewer?.PlayerId ?? 0;
         using var stream = new MemoryStream();
         using (var writer = new Utf8JsonWriter(stream, JsonText.WriterOptions))
         {
@@ -213,6 +218,10 @@ public sealed class WebPanelRouter
                     RoomCapacity.Describe(room.ModeId, room.PerTeam));
                 writer.WriteString("joinCommand", FormatJoinCommand(room));
                 writer.WriteString("createdUtc", room.CreatedUtc.ToString("O"));
+
+                // Своя комната: только владельцу и только по сессии. Без авторизации
+                // флага нет ни у кого — анонимный зритель не узнает, чья это комната.
+                writer.WriteBoolean("isMine", viewerId > 0 && room.OwnerId == viewerId);
                 writer.WriteEndObject();
             }
             writer.WriteEndArray();
@@ -234,12 +243,19 @@ public sealed class WebPanelRouter
     private static string DisplayModeName(string modeId) =>
         GameModeCatalog.TryGetMode(modeId, out var mode) ? mode.DisplayName : modeId;
 
-    private WebResponse CreateRoom(byte[] body)
+    private WebResponse CreateRoom(WebRequestContext request)
     {
+        // Комнату создаёт только авторизованный (#51): без сессии панель не принимает
+        // вообще ничего, что меняет состояние. Кто владелец, решаем по сессии, а не по
+        // телу запроса: раньше ID присылала страница, и вписать можно было любой.
+        var session = SessionOf(request);
+        if (session is null)
+            return ApiError(401, "no_auth", "сначала введи код из лобби");
+
         CreateRoomRequest? parsed;
         try
         {
-            parsed = JsonSerializer.Deserialize<CreateRoomRequest>(body, JsonOptions);
+            parsed = JsonSerializer.Deserialize<CreateRoomRequest>(request.Body, JsonOptions);
         }
         catch (JsonException)
         {
@@ -249,27 +265,16 @@ public sealed class WebPanelRouter
         if (parsed is null)
             return ApiError(400, "bad_json", "пустое тело запроса");
 
-        // Одна кнопка: владелец — тот, кто создаёт. Теперь это ID из лобби, а не ник:
-        // ник в лобби не уникален и его можно вписать какой угодно.
-        if (parsed.OwnerId <= 0)
-        {
-            // Прислали ник вместо ID — объясняем прямо, а не «пустое поле»:
-            // иначе человек ищет ошибку в форме, где всё заполнено.
-            return string.IsNullOrWhiteSpace(parsed.Owner)
-                ? ApiError(400, "empty_owner", "укажи свой ID из лобби")
-                : ApiError(400, "nick_not_supported",
-                    "комната создаётся по ID игрока, а не по нику — возьми ID из чата лобби");
-        }
-
         var ownerNick = string.Empty;
         var online = _options.OnlinePlayers?.Invoke();
         if (online is not null)
         {
-            // Ник берём с сервера: человек его не вводит и подделать не может.
+            // Комната — за живым человеком из лобби: сессия выдана по коду, но человек
+            // мог уже выйти из игры. Без этой проверки комната висела бы за призраком.
             var found = false;
             foreach (var (id, nick) in online)
             {
-                if (id != parsed.OwnerId)
+                if (id != session.PlayerId)
                     continue;
                 ownerNick = nick;
                 found = true;
@@ -278,7 +283,7 @@ public sealed class WebPanelRouter
 
             if (!found)
                 return ApiError(409, "player_offline",
-                    $"игрока с ID {parsed.OwnerId} нет в лобби — зайди в игру и создай комнату оттуда");
+                    $"тебя (ID {session.PlayerId}) нет в лобби — зайди в игру и создай комнату оттуда");
         }
 
         var modeToken = string.IsNullOrWhiteSpace(parsed.Mode)
@@ -287,7 +292,7 @@ public sealed class WebPanelRouter
 
         if (!_rooms.TryCreate(
                 modeToken, parsed.Level, parsed.Name, ownerNick, out var room, out var error,
-                perTeam: parsed.PerTeam, ownerId: parsed.OwnerId)
+                perTeam: parsed.PerTeam, ownerId: session.PlayerId)
             || room is null)
         {
             var (status, code, message) = MapCreateError(error);
@@ -372,19 +377,20 @@ public sealed class WebPanelRouter
     /// <param name="Mode">Режим: алиас или id (<c>2v2</c>, <c>Duel</c>).</param>
     /// <param name="Level">Карта; пусто — карта по умолчанию для режима.</param>
     /// <param name="Name">Название комнаты; пусто — придумает реестр.</param>
-    /// <param name="Owner">Ник создателя (из лобби).</param>
-    /// <summary>
-    /// Тело создания комнаты. <paramref name="PerTeam"/> — размер команды для режимов,
-    /// где он выбирается (1 или 2 у союзников и дуэли); <c>0</c> — «как в режиме».
-    /// </summary>
+    /// <param name="PerTeam">Размер команды, где он выбирается; <c>0</c> — «как в режиме».</param>
+    /// <remarks>
+    /// Владельца здесь нет и быть не может: он берётся из сессии, а не из присланного
+    /// JSON (#51). Поля <c>OwnerId</c>/<c>Owner</c> принимаются и игнорируются — старая
+    /// страница шлёт их по привычке, а решением они больше не являются.
+    /// </remarks>
     private sealed record CreateRoomRequest(
         string? Mode,
         string? Level,
         string? Name,
-        int OwnerId = 0,
         int PerTeam = 0,
-        // Оставлено только чтобы отличить «прислали ник» от «не прислали ничего».
-        // Значение никак не используется: подпись берётся из списка лобби.
+        // Принимаем и игнорируем: старая страница шлёт ownerId/owner по привычке.
+        // Решение принимает сессия, а не эти поля — подделать владельца нельзя.
+        int OwnerId = 0,
         string? Owner = null);
 }
 
