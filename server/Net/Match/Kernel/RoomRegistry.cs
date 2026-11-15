@@ -433,8 +433,8 @@ public sealed class RoomRegistry
                     // когда заканчивалась (её «возраст» давно перевалил за TTL), и
                     // игроков вышвыривало из комнаты без предупреждения — клиент
                     // считал это обрывом и лез переподключаться.
-                    var since = room.FinishedAtUtc ?? room.EmptySinceUtc ?? room.CreatedUtc;
-                    if ((nowUtc - since).TotalSeconds >= finishedSeconds)
+                    var finishedSince = room.FinishedAtUtc ?? room.EmptySinceUtc ?? room.CreatedUtc;
+                    if ((nowUtc - finishedSince).TotalSeconds >= finishedSeconds)
                         expired.Add(room.Number);
                     continue;
                 }
