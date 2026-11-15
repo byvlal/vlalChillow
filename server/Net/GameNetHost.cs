@@ -43,6 +43,11 @@ public sealed partial class GameNetHost : IDisposable
     /// <summary>Кто нажал /ready и какой режим старта активен.</summary>
     private readonly MatchStartGate _startGate = new();
 
+    /// <summary>
+    /// Коды входа на сайт. Живут только в памяти: перезапуск сервера гасит все коды (#51).
+    /// </summary>
+    private readonly SiteLoginCodes _siteCodes = new();
+
     /// <summary>Как часто опрашивать гейт старта (автостарт / готовность).</summary>
     private static readonly TimeSpan StartGateInterval = TimeSpan.FromSeconds(1);
     private DateTime _lastStartGateCheckUtc = DateTime.MinValue;
@@ -154,6 +159,11 @@ public sealed partial class GameNetHost : IDisposable
 
                 if (!wasInMatch)
                     BroadcastServerChat($"{name} Отключился!");
+
+                // Вышел именно из лобби (а не ушёл в катку) — код сайта протухает сразу,
+                // новый дадим на следующем входе (#51).
+                ExpireSiteCodeFor(left);
+
                 _onRosterChanged?.Invoke();
             }
 
@@ -686,15 +696,10 @@ public sealed partial class GameNetHost : IDisposable
             if (!string.IsNullOrWhiteSpace(welcome))
                 SendServerChatTo(peer, welcome);
 
-            // Свой id — только самому игроку, не в общий чат. Он же потом приходит
-            // в катке (uid = MatchPublicId.ForNick), поэтому человек видит одно и то же
-            // число и в лобби, и в игре, и может назвать его админу для /ban.
-            //
-            // Здесь же — онлайн одной строкой (#51): раньше вместо этого в чат уходила
-            // вся роспись лобби, и на каждое событие её получали все. Состав больше не
-            // рассылается вовсе: только цифры, только вошедшему, один раз.
-            SendServerChatTo(peer,
-                $"Ты {self.Name} · ID: {MatchPublicId.ForNick(self.Name)} · {BuildOnlineSummary()}");
+            // Кто я, мой ID, код для сайта и онлайн одной строкой — только самому игроку
+            // (#51). Раньше вместо этого в чат уходила вся роспись лобби, и на каждое
+            // событие её получали все; состав теперь не рассылается вовсе.
+            SendIdentityLine(self);
 
             // Lobby join is quiet for match-style Подключился — that fires on JoinRoom Found.
         });

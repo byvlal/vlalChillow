@@ -102,6 +102,13 @@ public sealed partial class GameNetHost
             return true;
         }
 
+        if (cmd.Equals("code", StringComparison.OrdinalIgnoreCase)
+            || cmd.Equals("код", StringComparison.OrdinalIgnoreCase))
+        {
+            HandleCodeCommand(reply, who, player);
+            return true;
+        }
+
         if (cmd.Equals("map", StringComparison.OrdinalIgnoreCase)
             || cmd.Equals("maps", StringComparison.OrdinalIgnoreCase)
             || cmd.Equals("level", StringComparison.OrdinalIgnoreCase)
@@ -236,6 +243,7 @@ public sealed partial class GameNetHost
     public static string FormatPlayerHelp() =>
         """
         /join <режим> #<номер>  войти в комнату с сайта
+        /code                   код для входа на сайт (живёт 30 минут)
         /ready, /unready        готовность к старту
         /whoami                 твой ник, ID и IP
         /help                   эта памятка
