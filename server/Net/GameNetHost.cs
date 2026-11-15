@@ -78,7 +78,7 @@ public sealed partial class GameNetHost : IDisposable
                 string.IsNullOrWhiteSpace(nick) ? "?" : nick, text, fromServer: false);
         // Decisive match reactions → Server OpChat when MatchHostSettings.DebugMatchChat.
         _match.OnServerDebugChat = BroadcastConsoleChat;
-        // Wins-needed / series MatchResults + 5s → stop 7777, idle lobby (keep mode/map).
+        // Конец катки + выдержка → закрыть комнату, idle lobby (режим/карта сохранены).
         _match.OnMatchOverReturnToLobby = () =>
             _deferred.Enqueue(() => ReturnPlayersToLobbyIdle("match-over"));
         // Комната закрывается — сказать игрокам, что катки больше нет, ДО разрыва 7777.
@@ -156,6 +156,27 @@ public sealed partial class GameNetHost : IDisposable
                     BroadcastServerChat($"{name} Отключился!");
                 BroadcastServerChat(_session.BuildPlayerListMessage());
                 _onRosterChanged?.Invoke();
+            }
+
+            // Бронь живёт, пока человек в лобби: он написал /join и вот-вот зайдёт
+            // в игру. Ушёл — брони нет, иначе при следующем входе JoinResponse по
+            // ней отдаст адрес 7777, и клиент прыгнет в комнату, ничего не нажимая.
+            //
+            // Снимаем только у лобби-статуса: у игравшего (InMatch) бронь снимает
+            // NotifyMatchPlayerLeft / TryCloseRoom, когда он реально вернётся.
+            if (name is not null && left is { Status: not PlayerLobbyStatus.InMatch })
+            {
+                try
+                {
+                    if (_match.PendingRooms.ReleaseByNick(name))
+                        Console.WriteLine(
+                            $"[lobby] '{name}' вышел из лобби — бронь снята " +
+                            "(вход в катку только по /join)");
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[lobby] '{name}': снять бронь при выходе: {ex.Message}");
+                }
             }
         };
         _listener.NetworkReceiveUnconnectedEvent += (ep, reader, type) =>
@@ -384,8 +405,8 @@ public sealed partial class GameNetHost : IDisposable
     }
 
     /// <summary>
-    /// After MatchResults + 5s: stop match listen (7777), clear Dedik, lobby idle with
-    /// mode/map preserved. Новая катка — только через <c>/join</c>.
+    /// После катки и выдержки: остановить 7777 (если живых комнат не осталось),
+    /// очистить Dedik, вернуть лобби с сохранённым режимом/картой. Новая катка — через <c>/join</c>.
     /// </summary>
     public void ReturnPlayersToLobbyIdle(string reason)
     {

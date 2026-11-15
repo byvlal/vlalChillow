@@ -106,8 +106,16 @@ public sealed partial class GameMatchHost : IDisposable
 
     private static readonly TimeSpan ReconnectRestoreSettle = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan ReconnectRestoreTimeout = TimeSpan.FromSeconds(15);
-    /// <summary>After MatchResults C2=205 — delay before tearing down 7777 and lobby idle.</summary>
+    /// <summary>
+    /// Выдержка после C2=201 (FinalHud) — экран итогов успевает показаться до teardown.
+    /// </summary>
     private static readonly TimeSpan MatchOverReturnToLobbyDelay = TimeSpan.FromSeconds(5);
+
+    /// <summary>
+    /// Пауза между C2=255 и разрывом: пакет должен уйти в сокет, а не раствориться
+    /// в закрытом соединении. Полсекунды — заведомо больше одного тика и RTT по LAN.
+    /// </summary>
+    private static readonly TimeSpan TeardownFlushDelay = TimeSpan.FromMilliseconds(500);
 
     private readonly int _listenPort;
     private volatile bool _acceptMatchConnections = true;
@@ -391,7 +399,7 @@ public sealed partial class GameMatchHost : IDisposable
     }
 
     /// <summary>
-    /// After series MatchResults + delay: disconnect peers / clear Dedik, then <c>Stop()</c> UDP
+    /// После катки: закрыть её комнату / очистить Dedik, затем при необходимости <c>Stop()</c> UDP
     /// so 7777 is down until the next <see cref="EnsureMatchListening"/>.
     /// </summary>
     /// <remarks>
@@ -477,6 +485,26 @@ public sealed partial class GameMatchHost : IDisposable
         catch (Exception ex)
         {
             Console.WriteLine($"[match-host] закрытие комнаты: снять бронь: {ex.Message}");
+        }
+
+        // И из реестра — сразу, а не по TTL через три минуты.
+        //
+        // Номер обязан вернуться в оборот в ту же секунду, когда катка кончилась:
+        // следующая комната с сайта должна получить наименьший свободный номер, а не
+        // ждать, пока веб-панель заметит протухшую запись. Комната уже мертва — её
+        // пиров сейчас отключим, — и держать её в списке незачем.
+        try
+        {
+            if (Rooms is { } registry && registry.TryRemoveRoomByKey(passwordKey, out var removed))
+            {
+                Console.WriteLine(
+                    $"[match-host] номер комнаты #{removed.Number} освобождён " +
+                    $"('{passwordKey}' закрыта)");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[match-host] закрытие комнаты: убрать из реестра: {ex.Message}");
         }
 
         // Сначала — «катки больше нет» в лобби-канал, потом разрыв.
@@ -565,31 +593,75 @@ public sealed partial class GameMatchHost : IDisposable
     }
 
     /// <summary>
-    /// MatchResults C2=205 + arm 5s lobby return (Allies first-to-N / Ranked-Escalation series over).
+    /// Конец катки: <c>C2=201</c> FinalHud, выдержка, <c>C2=255</c> teardown — и закрытие комнаты.
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Раньше здесь публиковалось <c>C2=205</c> «MatchResults». Клиент такого состояния
+    /// не знает: в его лог уходило «Can't change game state to 205, is not found», экран
+    /// итогов не открывался, и катка висела навсегда — ни перехода в лобби, ни разрыва.
+    /// </para>
+    /// <para>
+    /// Теперь — путь, подтверждённый телефонным захватом
+    /// (<c>MATCH_ALLIES_PROBE.md</c>, <c>GameMatchHost.DeathMatch.cs</c>): финальный
+    /// <c>WinTeam</c> → <c>C2=201</c> FinalHud (то самое «WIN/LOSE») → <c>C2=255</c>
+    /// teardown. Только после этого рвём соединение — иначе клиент не успевает показать
+    /// результат и считает разрыв обрывом сети.
+    /// </para>
+    /// </remarks>
     private void EnterMatchResultsAndArmLobbyReturn(
         MatchRoom room, int scoreTr, int scoreCt, string logTag, int round, string? extra = null)
     {
+        MatchTeam winner;
         lock (_roomGate)
         {
+            winner = scoreTr > scoreCt ? MatchTeam.Tr
+                : scoreCt > scoreTr ? MatchTeam.Ct
+                : MatchTeam.None;
             room.Flow.Phase = MatchFlowPhase.MatchOver;
             room.Flow.PhaseEndsUtc = DateTime.UtcNow + MatchOverReturnToLobbyDelay;
             room.Flow.LobbyReturnPending = true;
         }
-        BroadcastRoomProps(room,
-        [
-            (MatchRoomPropKeys.C2, LobbyVariant.FromByte(MatchC2States.MatchResults)),
-        ], reason: $"MatchResults Tr={scoreTr} Ct={scoreCt}");
+
+        var nowSec = ServerTimeSeconds();
+        var props = new List<(string Key, LobbyVariant Value)>
+        {
+            (MatchRoomPropKeys.Time, LobbyVariant.FromDouble(nowSec)),
+        };
+
+        // Финальный WinTeam — по той же форме, что и в конце раунда (клиент читает её
+        // в FinalHud). Без него экран итогов покажет пустые очки.
+        if (winner is MatchTeam.Tr or MatchTeam.Ct)
+            props.Add((MatchRoomPropKeys.WinTeam, LobbyVariant.FromProps(
+                BuildWinTeamProps(winner, mvpNr: 0, mvpCode: 0))));
+
+        props.Add((MatchRoomPropKeys.C2, LobbyVariant.FromByte(MatchC2States.FinalHud)));
+
+        BroadcastRoomProps(room, props, reason: $"MatchOver FinalHud Tr={scoreTr} Ct={scoreCt}");
         Console.WriteLine(
-            $"[match-host] {logTag}: MatchResults C2={MatchC2States.MatchResults} " +
-            $"Tr={scoreTr} Ct={scoreCt} after round={round}" +
+            $"[match-host] {logTag}: final C2={MatchC2States.FinalHud} (FinalHud) " +
+            $"Tr={scoreTr} Ct={scoreCt} winner={winner} after round={round}" +
             (extra is null ? "" : $" {extra}") +
-            $" — lobby return in {MatchOverReturnToLobbyDelay.TotalSeconds:0}s");
+            $" — teardown через {MatchOverReturnToLobbyDelay.TotalSeconds:0}s");
     }
 
     /// <summary>
-    /// Tick helper: when MatchOver + LobbyReturnPending and deadline elapsed, fire once.
+    /// Tick helper: когда катка кончилась и выдержка вышла — закрыть её комнату.
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Панельная комната закрывается <b>локально</b>: <c>C2=255</c> её игрокам,
+    /// <c>TryCloseRoom</c> — и всё. Глобальный возврат в лобби здесь не годится: он
+    /// снимает состояние у всех и рассчитан на legacy-слот 'Dedik', а конец одной
+    /// комнаты не должен трогать остальные.
+    /// </para>
+    /// <para>
+    /// Раньше вызов шёл только в глобальный <see cref="OnMatchOverReturnToLobby"/>,
+    /// который для панельной комнаты ничего не закрывал: <c>SuspendMatchListen</c>
+    /// видел живые комнаты, писал «UDP 7777 НЕ гасим» и выходил. Пиры оставались
+    /// висеть на 7777 в комнате, которой уже нет, — отсюда и «конец катки навсегда».
+    /// </para>
+    /// </remarks>
     private bool TryFireMatchOverLobbyReturn(MatchRoom room, DateTime phaseEndsUtc)
     {
         bool fire;
@@ -604,8 +676,49 @@ public sealed partial class GameMatchHost : IDisposable
         if (!fire)
             return false;
 
+        if (room.IsPanelRoom)
+        {
+            Console.WriteLine(
+                $"[match-host] match-over: выдержка вышла — закрываю комнату '{room.PasswordKey}'");
+
+            // C2=255 teardown — как в золотом захвате TDM: клиент получает «катка
+            // закончилась» до разрыва, иначе видит просто обрыв сети.
+            try
+            {
+                BroadcastRoomProps(room,
+                [
+                    (MatchRoomPropKeys.C2, LobbyVariant.FromByte(MatchC2States.MatchTeardown)),
+                ], reason: "MatchOver teardown");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[match-host] match-over: C2=255 не ушёл: {ex.Message}");
+            }
+
+            // Пауза перед разрывом: C2=255 должен реально уйти в сокет, иначе клиент
+            // увидит только закрытие соединения. Ждём в отложенной очереди, чтобы не
+            // держать тик хоста.
+            var closingKey = room.PasswordKey;
+            _ = Task.Delay(TeardownFlushDelay).ContinueWith(_ =>
+            {
+                // Ровно эту комнату: пиры собираются по Room == room, остальные не тронуты.
+                try
+                {
+                    if (!TryCloseRoom(closingKey))
+                        Console.WriteLine(
+                            $"[match-host] match-over: комната '{closingKey}' уже закрыта");
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[match-host] match-over: закрыть комнату: {ex.Message}");
+                }
+            }, TaskScheduler.Default);
+
+            return true;
+        }
+
         Console.WriteLine(
-            "[match-host] match-over: 5s elapsed after MatchResults → return players to lobby");
+            "[match-host] match-over: выдержка вышла → return players to lobby");
         try { OnMatchOverReturnToLobby?.Invoke(); }
         catch (Exception ex)
         {

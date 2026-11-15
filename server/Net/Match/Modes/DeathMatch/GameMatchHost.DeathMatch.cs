@@ -277,6 +277,12 @@ public sealed partial class GameMatchHost
     }
 
     /// <summary>C2=255 teardown — phone gold RX#18889 {C2=255} then disconnect. Terminal.</summary>
+    /// <remarks>
+    /// После <c>C2=255</c> комнату надо закрыть, а не «поставить MatchOver и забыть».
+    /// Раньше здесь фаза просто переводилась в терминальную, и комната оставалась в
+    /// хосте навсегда: номер не освобождался, пиры висели на 7777 в комнате, которой
+    /// для них уже нет. Золотой захват заканчивается разрывом — повторяем.
+    /// </remarks>
     private void EnterDeathMatchTeardown(MatchRoom room)
     {
         lock (_roomGate)
@@ -290,7 +296,26 @@ public sealed partial class GameMatchHost
             (MatchRoomPropKeys.C2, LobbyVariant.FromByte(MatchC2States.MatchTeardown)),
         ]);
         Console.WriteLine(
-            $"[match-host] tdm-flow: Teardown C2={MatchC2States.MatchTeardown} (match over)");
+            $"[match-host] tdm-flow: Teardown C2={MatchC2States.MatchTeardown} (match over) — " +
+            $"закрываю комнату '{room.PasswordKey}'");
+
+        // C2=255 должен реально уйти в сокет до разрыва, иначе клиент увидит
+        // только закрытие соединения. Ждём в отложенной задаче, не держа тик.
+        var closingKey = room.PasswordKey;
+        _ = Task.Delay(TeardownFlushDelay).ContinueWith(_ =>
+        {
+            // Ровно эта комната, остальные не тронуты.
+            try
+            {
+                if (!TryCloseRoom(closingKey))
+                    Console.WriteLine(
+                        $"[match-host] tdm-flow: комната '{closingKey}' уже закрыта");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[match-host] tdm-flow: закрыть комнату: {ex.Message}");
+            }
+        }, TaskScheduler.Default);
     }
 
     /// <summary>

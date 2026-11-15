@@ -411,6 +411,33 @@ public sealed class RoomRegistry
     }
 
     /// <summary>
+    /// Удалить комнату по её ключу (<c>room#3</c>). Номер сразу возвращается в оборот.
+    /// </summary>
+    /// <remarks>
+    /// Нужно, когда комната закрывается не по TTL, а по событию: катка закончилась,
+    /// владелец удалил её с сайта. <see cref="TryRemove"/> работает по номеру, а у
+    /// матч-хоста на руках ключ — отсюда этот вход.
+    /// </remarks>
+    public bool TryRemoveRoomByKey(string passwordKey, out RoomDescriptor room)
+    {
+        room = null!;
+        if (string.IsNullOrWhiteSpace(passwordKey))
+            return false;
+
+        int number;
+        lock (_gate)
+        {
+            var hit = _rooms.Values.FirstOrDefault(r => string.Equals(
+                r.PasswordKey, passwordKey, StringComparison.Ordinal));
+            if (hit is null)
+                return false;
+            number = hit.Number;
+        }
+
+        return TryRemove(number, out room);
+    }
+
+    /// <summary>
     /// Кого можно удалить по TTL: комната пустая (0 игроков) и живёт дольше
     /// <paramref name="emptyTtl"/>. Завершённая катка удаляется сразу по <paramref name="finishedTtl"/>.
     /// </summary>
