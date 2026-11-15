@@ -11,6 +11,9 @@ Unofficial LAN dedicated server for **self-hosted multiplayer** — reverse-engi
 - **Lobby** — LiteNetLib on UDP **7778** (join, full roster, chat, mode/map selection, `/end`)
 - **Auto-discovery** — 2.07 Bonjour V3 (`SC LAN Bonjour V3`) probe/reply on UDP **5056**; when phones search LAN lobbies, this host appears automatically (same as a phone-hosted lobby)
 - **Match channel** — after `play`, clients move to UDP **7777**
+- **Web panel** — HTTP panel on **8080/tcp**: online count, public room list, one-button room
+  creation for players signed in with the 6-digit lobby code (see
+  [`docs/WEB_PANEL.md`](docs/WEB_PANEL.md))
 - **CLI dashboard** — TTY console + phone chat slash commands (`/mode`, `/map`, `/start`, `/play`, `/end`, …)
 - **Reconnect** — a phone that loses the network and comes back **inside the match** keeps its
   actor (same number, same name/team): the host recognises the install by the stable part of the
@@ -158,6 +161,31 @@ Phones: open StandChillow → LAN → your lobby should appear → join → chat
 | **5056/udp** | Discovery only (2.07 Bonjour V3 LAN interoperability probe) |
 | **7778/udp** | Lobby (LiteNetLib join after discovery) |
 | **7777/udp** | Match (after host starts the game) |
+| **8080/tcp** | Web panel (room list + room creation); `web.port`, off with `web.enabled: false` |
+
+### Web panel
+
+The panel is a phone-friendly page on the server: who is online, the public room list,
+and the only way to create a room. Full guide: [`docs/WEB_PANEL.md`](docs/WEB_PANEL.md).
+
+Rooms are created **from the site only** — there is no `/create` command in game.
+
+To create a room the site must know who you are, so the lobby hands out a **6-digit code**:
+on joining, the server sends the player one line with his nick, his server id and the code
+(`Ты <nick> · ID: … · код: 123456`). Type it on the site and you are in:
+
+- the code lives **30 minutes** (`web.codeTtlSec`), then dies; `/code` in the lobby chat
+  issues a fresh one and the old one stops working immediately;
+- leaving the lobby kills the code at once — entering a match does not;
+- the site session lasts until the **server restarts**; a restart kills all sessions and
+  all codes, so everyone signs in again;
+- a banned account cannot sign in («аккаунт забанен»), and a ban placed while someone is
+  already on the site drops his session on his very next request.
+
+Signed in, the page shows the nick from the lobby, the id under it and the avatar the
+client sent, and puts **your room** at the top of the list with a «Завершить игру» button
+(the same end-of-match path as `/end`; the server re-checks the owner, so nobody else's
+room can be closed).
 
 ### Starting a match
 
@@ -613,6 +641,7 @@ map Prison               # Escalation: Prison only for now; other modes: Selecte
 set start                # arm when both teams ready
 play                     # launch / rematch
 end                      # end match / return path
+code                     # fresh 6-digit site code (chat: /code)
 ban Ktulxy 30m софт      # ban (10m…14d), admin-only
 ban 67776161 30m софт     # ban by server-side id (see /ids)
 unban Ktulxy             # lift a ban by nick or IP
@@ -626,7 +655,7 @@ config reload            # re-read config.json without restarting
 quit
 ```
 
-Phone chat accepts the same slash commands (`/mode`, `/map`, `/start`, `/play`, `/end`, …).
+Phone chat accepts the same slash commands (`/mode`, `/map`, `/start`, `/play`, `/end`, `/code`, …).
 
 Optional lobby title as first argument:
 
@@ -667,6 +696,7 @@ server/Dashboard/ # CLI dashboard (display-only; UTF-8, cell-exact layout)
 server/Plugins/   # Plugin API + loader
 server/plugins-src/   # Plugin source (Telegram)
 ARCHITECTURE.md   # Internal module map for contributors
+docs/WEB_PANEL.md # Web panel: setup, nginx, API
 ```
 
 Reverse-engineering notes and Ghidra dumps stay **local** (`decompiled/`) and are not part of the published tree.
