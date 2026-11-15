@@ -170,6 +170,10 @@ jobs:
       # from (see ARCHITECTURE.md). captures/chat.zip is the probe client at the
       # phone host (sessions 20261114_0444..0445, 4326 frames) — the evidence for the
       # ChatManager author byte and field=1/2 that README and MatchChatWireTests cite.
+      # captures/grenades.zip is the session 20261115_0821..0824 (11218 frames, one
+      # phone, GrenadeManager CreateWorldObject + 145 CustomEvent) uploaded as the
+      # grenade evidence set; it is allow-listed here so the guard keeps failing on
+      # every *other* stray dump instead of on this one.
       # Everything else under captures/ and any run log still stays out — see
       # .gitignore; a new probe drop needs its own entry here on purpose, so an
       # accidental large dump still fails the build.
@@ -185,7 +189,7 @@ jobs:
             found=1
           fi
 
-          stray=$(git ls-files 'captures/*' | grep -vE '^captures/(README\.md|captures\.zip|chat\.zip)$' || true)
+          stray=$(git ls-files 'captures/*' | grep -vE '^captures/(README\.md|captures\.zip|chat\.zip|grenades\.zip)$' || true)
           if [ -n "$stray" ]; then
             echo "::error::Only the capture sets listed above may be committed (see ARCHITECTURE.md):"
             echo "$stray"
