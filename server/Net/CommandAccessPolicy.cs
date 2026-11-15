@@ -14,10 +14,11 @@ namespace StandChillow.LanServer.Net;
 /// показать игроку и записать в лог.
 /// </para>
 /// <para>
-/// «Админ» здесь — не ник из конфига, а делегат <c>hasAdminRights</c> у
-/// <see cref="IsAllowed"/>: ник плюс код этого запуска, предъявленный адресом (см.
-/// <c>AdminAuth</c>). Один и тот же гейт применяется и к лобби-чату (7778), и к командам из
-/// матч-чата (ChatManager, 7777) — канал у игрока меняется, а права нет.
+/// «Админ» здесь — серверный id из <c>admin.ids</c> плюс код этого запуска,
+/// предъявленный адресом (делегат <c>hasAdminRights</c> у <see cref="IsAllowed"/>, см.
+/// <c>AdminAuth</c>). Ники в правах не участвуют: id считает сервер из состояния сессии.
+/// Один и тот же гейт применяется и к лобби-чату (7778), и к командам из матч-чата
+/// (ChatManager, 7777) — канал у игрока меняется, а права нет.
 /// </para>
 /// </remarks>
 public static class CommandAccessPolicy
@@ -25,11 +26,41 @@ public static class CommandAccessPolicy
     /// <summary>Разобранная команда из строки чата.</summary>
     public readonly record struct Parsed(string Command, string Args, bool StartsMatch);
 
-    /// <summary>Разбирает <c>/set start</c>, <c>set round 16</c>, <c>start</c>.</summary>
+    /// <summary>
+    /// Команды, которые знает диспетчер. Нужны для запасного префикса <c>!</c>: некоторые
+    /// клиенты съедают ведущий <c>/</c> локально, и тогда команда просто не долетает до
+    /// сервера. <c>!привет</c> командой не станет — только известное имя.
+    /// </summary>
+    private static readonly HashSet<string> KnownCommands = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "help", "?", "команды", "mode", "режим", "map", "maps", "level", "levels", "карта",
+        "join", "войти", "комната", "code", "код", "set", "auth", "whoami", "ктоя",
+        "ban", "бан", "banid", "банид", "unban", "разбан", "unbanid", "ids", "айди",
+        "bans", "баны", "ready", "r", "готов", "г", "unready", "nr", "неготов", "нг",
+        "end", "stopmatch", "стопматч", "start", "startmatch", "старт", "play",
+        "status", "roster", "plugins", "config", "quit", "chattest", "чаттест", "testchat",
+    };
+
+    /// <summary>
+    /// Команда ли это. <c>/</c> — всегда; <c>!</c> — только перед известной командой.
+    /// </summary>
+    public static bool IsCommandText(string? text)
+    {
+        var body = (text ?? string.Empty).TrimStart();
+        if (body.Length == 0)
+            return false;
+        if (body[0] == '/')
+            return true;
+        if (body[0] != '!')
+            return false;
+        return KnownCommands.Contains(Parse(body).Command);
+    }
+
+    /// <summary>Разбирает <c>/set start</c>, <c>!set start</c>, <c>set round 16</c>.</summary>
     public static Parsed Parse(string message)
     {
         var body = message.Trim();
-        if (body.StartsWith('/'))
+        if (body.StartsWith('/') || body.StartsWith('!'))
             body = body[1..].Trim();
 
         if (body.Length == 0)
@@ -70,20 +101,24 @@ public static class CommandAccessPolicy
     /// Можно ли игроку выполнить команду. <paramref name="denyReason"/> заполняется только
     /// при отказе — «молча проигнорировать» здесь невозможно by design.
     /// </summary>
+    /// <param name="playerId">
+    /// Серверный id написавшего: считается из состояния сессии (<c>MatchPublicId</c>),
+    /// а не из ника/uid, присланного клиентом.
+    /// </param>
     /// <param name="hasAdminRights">
-    /// Настоящие админ-права написавшего. По умолчанию это ник из <c>admin.nicknames</c>,
+    /// Настоящие админ-права написавшего. По умолчанию это проверка id по <c>admin.ids</c>,
     /// но живые каналы (лобби 7778 и ChatManager 7777) обязаны передавать сюда
-    /// <c>GameNetHost.IsAdminAuthorized</c> — ник плюс код этого запуска, предъявленный
-    /// адресом. Ник присылает клиент: без делегата любой, кто назвал себя «влал», получил бы
-    /// <c>/ban</c> и <c>/set</c>, хотя <c>/whoami</c> в тот же момент честно отвечал бы
-    /// «ник админский, код не введён».
+    /// <c>GameNetHost.IsAdminAuthorized</c> — id плюс код этого запуска, предъявленный
+    /// адресом. Без делегата клиент, назвавшийся админским ником, получил бы тот же id
+    /// и <c>/ban</c>, хотя <c>/whoami</c> честно отвечал бы «код не введён».
+    /// Гейт принимает только <c>int</c> — админских ников в конфиге больше нет.
     /// </param>
     public static bool IsAllowed(
         ServerConfig config,
-        string? playerNick,
+        int playerId,
         string message,
         out string denyReason,
-        Func<string?, bool>? hasAdminRights = null)
+        Func<int, bool>? hasAdminRights = null)
     {
         denyReason = string.Empty;
 
@@ -98,9 +133,9 @@ public static class CommandAccessPolicy
         if (parsed.StartsMatch && config.Admin.AnyoneCanStart)
             return true;
 
-        // Ник в списке и права — разные вещи: права даёт адрес, предъявивший код запуска.
-        var adminNick = config.IsAdmin(playerNick);
-        var admin = hasAdminRights is null ? adminNick : hasAdminRights(playerNick);
+        // Id в списке и права — разные вещи: права даёт адрес, предъявивший код запуска.
+        var adminId = config.IsAdmin(playerId);
+        var admin = hasAdminRights is null ? adminId : hasAdminRights(playerId);
 
         // Баны — отдельный гейт: по умолчанию только админ, независимо от
         // admin.adminOnlyCommands. Разбан randomplayer'ом — это не «мелкая опция».
@@ -109,7 +144,7 @@ public static class CommandAccessPolicy
             if (admin)
                 return true;
 
-            denyReason = AdminDenied(config, parsed.Command, playerNick, adminNick);
+            denyReason = AdminDenied(config, parsed.Command, playerId, adminId);
             return false;
         }
 
@@ -120,7 +155,7 @@ public static class CommandAccessPolicy
             if (admin)
                 return true;
 
-            denyReason = AdminDenied(config, parsed.Command, playerNick, adminNick);
+            denyReason = AdminDenied(config, parsed.Command, playerId, adminId);
             return false;
         }
 
@@ -130,35 +165,34 @@ public static class CommandAccessPolicy
         if (admin)
             return true;
 
-        denyReason = AdminDenied(config, parsed.Command, playerNick, adminNick);
+        denyReason = AdminDenied(config, parsed.Command, playerId, adminId);
         return false;
     }
 
     /// <summary>
-    /// Отказ с ответом на вопрос «почему я не админ»: сервер показывает ник, как он его
-    /// видит, и список админов из конфига (частый случай — список пуст).
+    /// Отказ с ответом на вопрос «почему я не админ»: сервер показывает id, который он
+    /// сам посчитал для написавшего, и список админов из конфига (частый случай — пуст).
     /// </summary>
     /// <remarks>
-    /// Ник админский, а прав нет — это отдельный случай (код запуска не предъявлен), и
-    /// молчать о нём нельзя: игрок видит себя в <c>admin.nicknames</c> и решает, что команда
-    /// «сломалась». Подсказка — та же, что даёт <c>/whoami</c>.
+    /// Id в <c>admin.ids</c>, а кода нет — отдельный случай, и молчать о нём нельзя:
+    /// игрок видит себя в списке и решает, что команда «сломалась». Подсказка — та же,
+    /// что даёт <c>/whoami</c>.
     /// </remarks>
     private static string AdminDenied(
         ServerConfig config,
         string command,
-        string? playerNick,
-        bool adminNickWithoutCode)
+        int playerId,
+        bool adminIdWithoutCode)
     {
-        if (adminNickWithoutCode)
-            return $"команда /{command} только для админов: ник '{playerNick}' в " +
-                   "admin.nicknames есть, но этот адрес не предъявил код запуска — " +
+        if (adminIdWithoutCode)
+            return $"команда /{command} только для админов: id #{playerId} в " +
+                   "admin.ids есть, но этот адрес не предъявил код запуска — " +
                    "прав пока нет (/whoami; код спрашивают при входе в лобби)";
 
-        var admins = config.Admin.Nicknames.Count == 0
-            ? "в config.json admin.nicknames пусто — админ-команд ни у кого нет"
-            : $"админы: {string.Join(", ", config.Admin.Nicknames)}";
-        return $"команда /{command} только для админов (сервер видит твой ник как " +
-               $"'{playerNick}'; {admins})";
+        var admins = config.Admin.Ids.Count == 0
+            ? "в config.json admin.ids пусто — админ-команд ни у кого нет"
+            : $"админы (id): {string.Join(", ", config.Admin.Ids)}";
+        return $"команда /{command} только для админов (твой id #{playerId}; {admins})";
     }
 
     /// <summary>

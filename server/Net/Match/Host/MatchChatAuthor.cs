@@ -58,6 +58,32 @@ internal static class MatchChatAuthor
         return live.Count > 0 ? live[0] : hostActor;
     }
 
+    /// <summary>
+    /// Аудитория живых авторов, по которой выбирается голос сервера: сначала пешки комнаты,
+    /// затем владельцы живых пешек, затем пиры 7777, прошедшие bootstrap.
+    /// </summary>
+    /// <remarks>
+    /// Третий источник появился из latest.log (2026-11-15, комната #1): в катке был один
+    /// игрок, <c>SpawnedPawns</c>/<c>LivingPawns</c> ещё пусты — и серверный ответ уходил
+    /// подписанным актором сервера, то есть не рисовался вовсе. Готовый пир 7777 — уже
+    /// существующий автор, новых допущений о мире не нужно.
+    /// </remarks>
+    public static IReadOnlyCollection<byte> LiveChatAudience(
+        IEnumerable<byte> spawnedPawns,
+        IEnumerable<byte> livingOwners,
+        IEnumerable<byte> readyPeers)
+    {
+        var spawned = spawnedPawns.Where(a => a != 0).Distinct().ToList();
+        if (spawned.Count > 0)
+            return spawned;
+
+        var owners = livingOwners.Where(a => a != 0).Distinct().ToList();
+        if (owners.Count > 0)
+            return owners;
+
+        return readyPeers.Where(a => a != 0).Distinct().ToList();
+    }
+
     /// <summary>Серверный текст с пометкой. Повторно не помечает: текст уже мог прийти с ней.</summary>
     public static string Sign(string text) =>
         text.StartsWith(ServerPrefix, StringComparison.Ordinal) ? text : ServerPrefix + text;

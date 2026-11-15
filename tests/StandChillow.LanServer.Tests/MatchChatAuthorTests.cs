@@ -58,6 +58,47 @@ public sealed class MatchChatAuthorTests
     }
 
     /// <summary>
+    /// Комната из одного игрока: пешек ещё нет, но пир 7777 уже прошёл bootstrap. Без этого
+    /// источника аудитория пуста, голос сервера — актор 1, и ответ на команду не рисуется
+    /// никому (latest.log, 2026-11-15: один пир actor=2, все ответы «отложенно, peers=1»).
+    /// </summary>
+    [Fact]
+    public void LiveAudience_FallsBackToReadyPeers_SoAOnePeerRoomGetsAVoice()
+    {
+        var audience = MatchChatAuthor.LiveChatAudience(
+            spawnedPawns: Array.Empty<byte>(),
+            livingOwners: Array.Empty<byte>(),
+            readyPeers: new byte[] { 2, 0, 2 });
+
+        Assert.Equal(new byte[] { 2 }, audience.ToArray());
+        // И этот голос — сам единственный получатель: свой актор лучше невидимого серверного.
+        Assert.Equal((byte)2, MatchChatAuthor.PickServerVoice(2, audience, MatchHostActor.ActorNr));
+    }
+
+    /// <summary>Пешки комнаты важнее: пока они есть, порядок источников не меняется.</summary>
+    [Fact]
+    public void LiveAudience_PrefersPawns_ThenLivingOwners()
+    {
+        Assert.Equal(
+            new byte[] { 5 },
+            MatchChatAuthor.LiveChatAudience(
+                spawnedPawns: new byte[] { 5 },
+                livingOwners: new byte[] { 6 },
+                readyPeers: new byte[] { 7 }).ToArray());
+
+        Assert.Equal(
+            new byte[] { 6 },
+            MatchChatAuthor.LiveChatAudience(
+                spawnedPawns: Array.Empty<byte>(),
+                livingOwners: new byte[] { 6 },
+                readyPeers: new byte[] { 7 }).ToArray());
+
+        // Никто не жив — пусто, и вызывающий честно падает на актора сервера.
+        Assert.Empty(MatchChatAuthor.LiveChatAudience(
+            Array.Empty<byte>(), Array.Empty<byte>(), Array.Empty<byte>()));
+    }
+
+    /// <summary>
     /// Кадр подписан чужим актором, поэтому текст помечен: без пометки серверное
     /// «матч armed» выглядело бы словами того игрока, чей актор заняли.
     /// </summary>

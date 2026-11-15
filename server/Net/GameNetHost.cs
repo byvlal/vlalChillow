@@ -100,11 +100,11 @@ public sealed partial class GameNetHost : IDisposable
         // забаненный успел бы проскочить. Матч получает тот же реестр.
         InitBans();
 
-        // Админские ники требуют код на этот запуск: ник присылает клиент, поэтому одного
-        // ника мало. Матч обязан спрашивать то же самое — иначе админский ник без кода
-        // зашёл бы прямо на 7777 мимо лобби.
+        // Админские id требуют код на этот запуск: id считается из ника, который присылает
+        // клиент, поэтому одного совпадения мало. Матч спрашивает то же самое — иначе
+        // админ без кода зашёл бы прямо на 7777 мимо лобби.
         LogAdminAuthStartup();
-        _match.IsUnauthorizedAdmin = IsUnauthorizedAdmin;
+        _match.IsUnauthorizedAdmin = (room, ip) => IsUnauthorizedAdmin(IdOf(room), ip);
 
         _listener = new EventBasedNetListener();
         _manager = new NetManager(_listener)
@@ -143,12 +143,11 @@ public sealed partial class GameNetHost : IDisposable
             var left = _session.OnPeerDisconnected(peer, out var name);
             if (name is not null && left is not null)
             {
-                // Full roster: OpLobbyMemberLeftEvent so remaining clients drop the member.
+                // Роспись лобби приватная (Server + я): чужих строк у клиентов нет,
+                // поэтому и op5 «участник вышел» некому адресовать — не шлём его вовсе.
                 // Match leave chat is separate (OnMatchPlayerLeft); lobby disconnect is silent
                 // unless they never entered катка (optional notice only when still Lobby).
-                var leftId = left.ServerMemberId;
                 var wasInMatch = left.Status == PlayerLobbyStatus.InMatch;
-                Broadcast(LobbyCodec.BuildMemberLeft(leftId));
 
                 // Отключившийся не должен вечно блокировать старт по готовности.
                 if (_startGate.Remove(name))
@@ -631,9 +630,9 @@ public sealed partial class GameNetHost : IDisposable
         // выхода из катки. Пишется на диск только при новом нике/адресе, не на каждый вход.
         _directory.Remember(req.Profile.Name, peer.Address?.ToString(), DateTime.UtcNow);
 
-        // Админский ник без кода — как забаненный: теневой лобби, ни команд, ни матча.
+        // Админский id без кода — как забаненный: теневой лобби, ни команд, ни матча.
         // Проверяем до банов: админ от бана и так освобождён, а код нужен в любом случае.
-        if (IsUnauthorizedAdmin(req.Profile.Name, peer.Address))
+        if (IsUnauthorizedAdmin(IdOf(req.Profile.Name), peer.Address))
         {
             HandleAdminAuthJoin(peer, req);
             return;
@@ -674,20 +673,17 @@ public sealed partial class GameNetHost : IDisposable
         }
 
         Console.WriteLine(
-            $"[lobby] join OK → {result.Player!.Name} id={result.Player.ServerMemberId}" +
+            $"[lobby] join OK → {result.Player!.Name} id={result.Player.ServerMemberId} " +
+            $"serverId=#{result.Player.PublicId}" +
             (invited
                 ? $" приглашён hasHosting={_advertiseLanIp}:{GameMatchHost.DefaultMatchPort}"
                 : " в лобби hasHosting=0 (брони нет — в катку не зовём)"));
         Send(peer, result.ResponseBytes!);
 
-        // Full roster: announce joiner to everyone already in lobby (op4 NewMember).
+        // op4 NewMember больше не рассылаем: в лобби каждый клиент видит только
+        // Server + себя, иначе чужие игроки всё равно добавятся в его роспись
+        // и клиент упадёт на >10 подключениях. Состояние сессии при этом полное.
         var self = result.Player!;
-        var newMemberPkt = LobbyCodec.BuildNewMember(LobbySession.ToLobbyMember(self));
-        foreach (var p in _session.JoinedPlayers())
-        {
-            if (ReferenceEquals(p.Peer, peer)) continue;
-            Send(p.Peer, newMemberPkt);
-        }
         _onRosterChanged?.Invoke();
 
         Schedule(0, () =>
@@ -757,19 +753,17 @@ public sealed partial class GameNetHost : IDisposable
             return;
         }
 
-        // Slash commands: execute silently — do NOT relay to lobby peers or PostChat the command.
-        if (message.StartsWith('/'))
+        // Команда из лобби: эхо автору + обязательный ответ, чужим текст не уходит.
+        if (CommandAccessPolicy.IsCommandText(message))
         {
-            Console.WriteLine($"[chat] {player.Name}: {message} (command, silent)");
-            if (!TryHandleSlashCommand(player, message))
-                ReplyPrivate(player, FormatUnknownCommandHelp(message));
+            HandleChatCommand(player, message, channel: "lobby");
             return;
         }
 
         Console.WriteLine($"[chat] {player.Name}: {message}");
         DashboardHub.PostChat(player.Name, message);
 
-        // Relay with the speaker's real member id — clients now have the full roster.
+        // Ретрансляция чужого чата — от имени Server, без чужих member id.
         RelayPlayerChat(player, message);
     }
 
@@ -799,22 +793,12 @@ public sealed partial class GameNetHost : IDisposable
 
         var (player, resolvedBy) = resolved.Value;
         Console.WriteLine(
-            $"[chat] {player.Name}: {message} (ChatManager command, silent; " +
-            $"actor='{actorName}' resolvedBy={resolvedBy})");
+            $"[cmd] RESOLVED channel=match actor='{actorName}' resolvedBy={resolvedBy} " +
+            $"→ id=#{player.PublicId} nick='{player.Name}' cmd='{message}'");
 
-        // Исполняет тот же диспетчер, что и лобби с консолью, и тот же гейт прав
-        // (ник + код запуска). Ответ уходит адресно в матч-чат: сам текст команды другим
-        // игрокам не ретранслируется, поэтому «что случилось» видит только автор.
-        if (TryHandleSlashCommand(player, message))
-        {
-            Console.WriteLine(
-                $"[chat] {player.Name}: команда из катки обработана хостом: {message}");
-            return;
-        }
-
-        Console.WriteLine(
-            $"[chat] {player.Name}: команда из катки не распознана: {message}");
-        ReplyPrivate(player, FormatUnknownCommandHelp(message));
+        // Тот же диспетчер и тот же гейт прав (id + код запуска), что и в лобби.
+        // Ответ уходит адресно в матч-чат; эхо самой команды вернул матч-хост.
+        HandleChatCommand(player, message, channel: "match");
     }
 
     /// <summary>
@@ -840,7 +824,12 @@ public sealed partial class GameNetHost : IDisposable
     /// </summary>
     private void RelayPlayerChat(ConnectedPlayer speaker, string message)
     {
-        var bytes = LobbyCodec.BuildChatEvent(speaker.ServerMemberId, message);
+        // В приватной росписи клиента чужих member id нет вообще: подписываем кадр
+        // автором Server, а имя говорящего несёт сам текст. Тот же кадр OpChat,
+        // которым сервер и так отвечает игрокам, — новых полей/опкодов нет.
+        var bytes = LobbyCodec.BuildChatEvent(
+            LobbySession.ServerMemberId,
+            LobbySession.FormatRelayedChat(speaker.Name, message));
 
         // Эхо автору тоже. Клиент не рисует собственное сообщение сам — ждёт кадр от
         // сервера, поэтому без эха игрок видел пустое окно и решал, что «чат не работает».
@@ -994,14 +983,10 @@ public sealed partial class GameNetHost : IDisposable
     /// <summary>Показать действующий конфиг (консоль: <c>config</c>).</summary>
     public void ShowConfig(Action<string> feedback)
     {
-        var admins = _config.Admin.Nicknames.Count == 0
-            ? "(нет)"
-            : string.Join(", ", _config.Admin.Nicknames);
-
         feedback($"config: {ServerConfig.LastLoadedPath}");
-        feedback($"  админы: {admins}");
-        if (_config.Admin.Nicknames.Count == 0)
-            feedback("    (пусто — админ-команд ни у кого нет; добавь \"nicknames\": [ \"ник\" ] " +
+        feedback($"  админы (id): {_config.DescribeAdmins()}");
+        if (_config.Admin.Ids.Count == 0)
+            feedback("    (пусто — админ-команд ни у кого нет; добавь \"ids\": [ 25354325 ] " +
                      $"в admin{{}} файла {ServerConfig.LastLoadedPath})");
         feedback($"  код админа на этот запуск: {_adminAuth.Code} (auth reset — новый)");
         feedback($"  только для админов: " +

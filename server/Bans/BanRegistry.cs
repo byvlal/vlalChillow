@@ -62,7 +62,7 @@ public sealed class BanRegistry
     /// <summary>
     /// Проверка на входе. <see cref="BanDecision.Banned"/> = false значит «пускать».
     /// </summary>
-    /// <param name="isAdmin">Предикат «ник админский»: на админов бан не распространяется.</param>
+    /// <param name="isAdmin">Предикат «это админский id»: на админов бан не распространяется.</param>
     public BanDecision Inspect(BanProbe probe, DateTime nowUtc, Func<string?, bool>? isAdmin = null)
     {
         lock (_gate)

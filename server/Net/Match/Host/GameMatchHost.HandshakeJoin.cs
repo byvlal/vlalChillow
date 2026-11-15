@@ -203,11 +203,11 @@ public sealed partial class GameMatchHost
             return;
         }
 
-        // Админский ник без кода: мимо лобби на 7777 не пройти — код обязателен везде.
+        // Админский id без кода: мимо лобби на 7777 не пройти — код обязателен везде.
         if (IsUnauthorizedAdmin?.Invoke(req.Room, peer.Address) == true)
         {
             Console.WriteLine(
-                $"[auth] JoinRoom отклонён: '{req.Room}' {peer.Address} — админский ник " +
+                $"[auth] JoinRoom отклонён: '{req.Room}' {peer.Address} — админский id " +
                 "без кода, сначала авторизуйся в лобби");
             try { peer.Disconnect(); }
             catch { /* уже мёртв */ }

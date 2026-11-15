@@ -29,12 +29,16 @@ public sealed partial class GameMatchHost
     /// <summary>Реестр банов (ставит <c>GameNetHost</c>; в пробе/тестах — null).</summary>
     public BanRegistry? Bans { get; set; }
 
-    /// <summary>Предикат «ник админский»: на админов бан не распространяется.</summary>
-    public Func<string?, bool>? IsAdminNick { get; set; }
+    /// <summary>
+    /// Предикат «этот ник — админский id»: на админов бан не распространяется.
+    /// Права считает <c>GameNetHost</c> по <c>admin.ids</c>; здесь только ник записи бана,
+    /// потому что гейт банов живёт по нику + IP, а не по id.
+    /// </summary>
+    public Func<string?, bool>? IsBanExempt { get; set; }
 
     /// <summary>
-    /// Админский ник без кода авторизации: в матч не пускаем. Ставит <c>GameNetHost</c>;
-    /// ник присылает клиент, поэтому одного ника для прав мало.
+    /// Админский id без кода авторизации: в матч не пускаем. Ставит <c>GameNetHost</c>;
+    /// id считается из присланного ника, поэтому одного совпадения для прав мало.
     /// </summary>
     public Func<string?, IPAddress?, bool>? IsUnauthorizedAdmin { get; set; }
 
@@ -56,7 +60,7 @@ public sealed partial class GameMatchHost
         return Bans.Inspect(
             new BanProbe(nick, address?.ToString()),
             DateTime.UtcNow,
-            IsAdminNick);
+            IsBanExempt);
     }
 
     /// <summary>

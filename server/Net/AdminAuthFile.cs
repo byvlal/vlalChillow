@@ -53,7 +53,7 @@ public static class AdminAuthFile
         sb.AppendLine("    " + code);
         sb.AppendLine();
         sb.AppendLine("Что делать:");
-        sb.AppendLine("  1. Зайди в лобби под своим ником из admin.nicknames.");
+        sb.AppendLine("  1. Зайди в лобби под ником, чей id вписан в admin.ids.");
         sb.AppendLine("  2. Сервер напишет в чат, что нужен код.");
         sb.AppendLine("  3. Напиши код в чат — просто " + code + " или /auth " + code);
         sb.AppendLine("  4. Сервер ответит «код принят» и отключит тебя: зайди в лобби заново.");

@@ -15,8 +15,8 @@ namespace StandChillow.LanServer.Tests;
 /// зафиксирована тестом по исходникам (так же сделано в <see cref="MatchChatDeliveryTests"/>).
 /// </para>
 /// <para>
-/// Права — не «ник в <c>admin.nicknames</c>», а ник плюс код этого запуска, предъявленный
-/// адресом: ник присылает клиент, и <c>/chattest</c> доказывает, что кадр ChatManager
+/// Права — серверный id из <c>admin.ids</c> плюс код этого запуска, предъявленный адресом:
+/// id считает сервер из строки сессии, а <c>/chattest</c> доказывает, что кадр ChatManager
 /// подписывается чужим актором. Значит команда обязана исполняться от имени отправителя
 /// (<c>st.ActorNr</c>), а не от имени байта <c>rpc</c> из провода.
 /// </para>
@@ -34,8 +34,27 @@ public sealed class MatchChatCommandTests
             worldObjects,
             StringComparison.Ordinal);
 
-        // Текст команды не веерится остальным: это не сообщение, а приватный диалог с Server.
-        Assert.Contains("dropRelay = true;", worldObjects, StringComparison.Ordinal);
+        // Текст команды не уходит остальным, но возвращается автору тем же кадром:
+        // иначе клиент не рисует даже «я написал команду» и выглядит как «сервер проглотил».
+        Assert.Contains("EchoCommandToAuthor(peer, parsed, chatText, st.ActorNr);", worldObjects,
+            StringComparison.Ordinal);
+        // Дубликата нет: при gaa All/Others/AllCached клиент уже показал свой текст сам.
+        Assert.Contains(
+            "if (!WorldObjectRpcRelayPolicy.ExcludesSender(parsed.GaaTarget))",
+            worldObjects,
+            StringComparison.Ordinal);
+        Assert.Contains("SendCritical(peer, echo)", worldObjects, StringComparison.Ordinal);
+
+        // Эхо уходит ДО разбора команды: клиент рисует своё сообщение раньше ответа,
+        // а не после (latest.log: «не вижу что я пишу команду»).
+        var echoAt = worldObjects.IndexOf("EchoCommandToAuthor(peer, parsed, chatText", StringComparison.Ordinal);
+        var invokeAt = worldObjects.IndexOf("OnMatchChatSlashCommand?.Invoke", StringComparison.Ordinal);
+        Assert.True(echoAt >= 0 && invokeAt > echoAt, "эхо обязано идти до обработчика");
+        // Ветка команды выходит из цикла обхода: чужим кадр не ретранслируется.
+        Assert.Contains("return;", worldObjects[invokeAt..], StringComparison.Ordinal);
+        // Запасной префикс ! на случай, если клиент съедает ведущий / локально.
+        Assert.Contains("CommandAccessPolicy.IsCommandText(chatText)", worldObjects,
+            StringComparison.Ordinal);
 
         // Ник — из комнаты по номеру актора отправителя, а не по байту «rpc» из кадра.
         Assert.Contains(
@@ -52,6 +71,7 @@ public sealed class MatchChatCommandTests
     public void HostExecutesTheCommand_ThroughTheSameDispatcherAsLobby()
     {
         var host = ReadServer("Net", "GameNetHost.cs");
+        var worldObjects = ReadServer("Net", "Match", "Host", "GameMatchHost.WorldObjects.cs");
 
         Assert.Contains(
             "_match.OnMatchChatSlashCommand = HandleMatchChatSlashCommand;",
@@ -59,21 +79,20 @@ public sealed class MatchChatCommandTests
             StringComparison.Ordinal);
 
         // Тот же вход, что и у лобби-чата: команды катки не живут отдельным списком.
-        Assert.Contains("TryHandleSlashCommand(player, message)", host, StringComparison.Ordinal);
+        Assert.Contains("HandleChatCommand(player, message, channel: \"match\")", host,
+            StringComparison.Ordinal);
 
-        // Исполнение видно в журнале даже с выключенным debug-chat: иначе «выполнилась ли
-        // команда» снова придётся угадывать по косвенным признакам.
-        Assert.Contains(
-            "(ChatManager command, silent; ",
-            host,
-            StringComparison.Ordinal);
-        Assert.Contains(
-            "команда из катки обработана хостом",
-            host,
-            StringComparison.Ordinal);
+        // Резолв автора и сам факт команды видны в журнале даже без debug-chat.
+        Assert.Contains("[cmd] RESOLVED channel=match", host, StringComparison.Ordinal);
+        Assert.Contains("[cmd] RX channel=match", worldObjects, StringComparison.Ordinal);
+
+        // Исполнение и отказ логируются явно; ответ приходит обязательно.
+        var commands = ReadServer("Net", "GameNetHost.Commands.cs");
+        Assert.Contains("[cmd] OK channel={channel}", commands, StringComparison.Ordinal);
+        Assert.Contains("[cmd] DENY channel={channel}", commands, StringComparison.Ordinal);
 
         // Нераспознанная команда не молчит — автору уходит подсказка.
-        Assert.Contains("FormatUnknownCommandHelp(message)", host, StringComparison.Ordinal);
+        Assert.Contains("FormatUnknownCommandHelp(text)", commands, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -82,10 +101,12 @@ public sealed class MatchChatCommandTests
         var commands = ReadServer("Net", "GameNetHost.Commands.cs");
 
         Assert.Contains("CommandAccessPolicy.IsAllowed(", commands, StringComparison.Ordinal);
+        // Гейт спрашивает права по серверному id из состояния сессии.
         Assert.Contains(
-            "nick => IsAdminAuthorized(nick, player.Peer.Address)",
+            "id => IsAdminAuthorized(id, player.Peer.Address)",
             commands,
             StringComparison.Ordinal);
+        Assert.Contains("player.PublicId", commands, StringComparison.Ordinal);
     }
 
     /// <summary>

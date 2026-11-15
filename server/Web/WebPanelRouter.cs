@@ -222,6 +222,10 @@ public sealed partial class WebPanelRouter
                 writer.WriteNumber("ownerId", room.OwnerId);
                 writer.WriteString("state", room.State.ToString().ToLowerInvariant());
                 writer.WriteNumber("players", room.Players);
+                // Счёт CT * T из room.Flow (обновляется раз в секунду). Число игроков
+                // в списке комнат больше не показываем: вместо него — счёт.
+                writer.WriteNumber("scoreCt", room.ScoreCt);
+                writer.WriteNumber("scoreTr", room.ScoreTr);
                 writer.WriteNumber("perTeam", room.PerTeam);
                 writer.WriteNumber("maxPlayers",
                     RoomCapacity.TotalFor(room.ModeId, room.PerTeam));

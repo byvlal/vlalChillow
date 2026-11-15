@@ -209,6 +209,30 @@ public sealed partial class GameMatchHost
         }
     }
 
+    /// <summary>
+    /// Вернуть автору его же ChatManager-кадр: клиент рисует сообщение только после
+    /// серверного эха. Форма кадра не меняется; меняется лишь адресат (только sender).
+    /// </summary>
+    /// <remarks>
+    /// Отметка времени — новая, как у обычного релея: кадр пересобирается сервером, а не
+    /// пересылается байт-в-байт (иначе это была бы ретрансляция чужого пакета).
+    /// </remarks>
+    private void EchoCommandToAuthor(
+        NetPeer peer, MatchCodec.ParsedWorldObjectRpc parsed, string chatText, byte actorNr)
+    {
+        var echo = MatchCodec.BuildWorldObjectRpc(
+            NextServerTime(),
+            parsed.ObjectId,
+            parsed.RpcId,
+            parsed.GaaTarget,
+            parsed.Field,
+            parsed.TimeValue,
+            parsed.Payload.Length > 0 ? parsed.Payload : null);
+        var sent = SendCritical(peer, echo);
+        Console.WriteLine(
+            $"[cmd] echo → author actor={actorNr} sent={sent} text='{chatText}'");
+    }
+
     private void HandleWorldObjectRpc(NetPeer peer, MatchFrameFlags flags, byte[] raw, bool logRpc = true)
     {
         if (logRpc && Diag.LogVerbose)
@@ -252,7 +276,7 @@ public sealed partial class GameMatchHost
                 // Обычный чат катки живёт только на 7777 — сервер и дашборд его раньше
                 // не видели (в консоли была строка, но в панели чата пусто).
                 // Команды сюда не отдаём: это не сообщения, их не должно быть в дашборде.
-                if (!chatText.StartsWith('/'))
+                if (!CommandAccessPolicy.IsCommandText(chatText))
                 {
                     try { OnMatchChatText?.Invoke(chatActorName, chatText); }
                     catch (Exception ex)
@@ -262,9 +286,19 @@ public sealed partial class GameMatchHost
                     }
                 }
 
-                if (chatText.StartsWith('/'))
+                if (CommandAccessPolicy.IsCommandText(chatText))
                 {
-                    dropRelay = true;
+                    Console.WriteLine(
+                        $"[cmd] RX channel=match actor={st.ActorNr} nick='{chatActorName}' " +
+                        $"field={parsed.Field} cmd='{chatText}'");
+
+                    // Сначала эхо самому автору: команда должна появиться в чате раньше
+                    // ответа сервера. Тот же кадр, что сервер обычно ретранслирует, но
+                    // только sender — новых полей/опкодов нет. При gaa All/Others/AllCached
+                    // клиент уже выполнил rpc локально (та же политика, что у релея), и
+                    // второе эхо показало бы команду дважды.
+                    if (!WorldObjectRpcRelayPolicy.ExcludesSender(parsed.GaaTarget))
+                        EchoCommandToAuthor(peer, parsed, chatText, st.ActorNr);
 
                     // Ник важнее IP: матч-пир и лобби-пир — два разных сокета (7777/7778),
                     // поэтому резолв только по IP регулярно терял игрока, и команда
@@ -280,6 +314,10 @@ public sealed partial class GameMatchHost
                         Console.WriteLine(
                             $"[match-host] ChatManager slash handler failed: {ex.Message}");
                     }
+
+                    // Дальше observe/relay не идём: команда не игровое событие, а
+                    // повторная ретрансляция показала бы её всем или дважды автору.
+                    return;
                 }
             }
 

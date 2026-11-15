@@ -38,8 +38,9 @@ points — never on the packet path:
 
 The last gate matters: a mid-match reconnect adopts the old actor and never runs a normal
 join, so a ban checked only at the first connect could be bypassed (e.g. leave VPN →
-reconnect from the banned address). Admins are exempt by nickname at every gate; banning
-an admin is rejected. The install token is deliberately **not** used — nick + IP only.
+reconnect from the banned address). Admins are exempt at every gate — the ban gate asks for
+the same server-computed id that `admin.ids` lists (`IsBanExemptNick`), and banning an admin is
+rejected. The install token is deliberately **not** used — nick + IP only.
 Ban keys are never the public id: `/ban <id>` is a selector that resolves to nick + IPs.
 
 `MatchPublicId` derives a stable `1…100 000 000` id from the nickname (SHA-256 of the
@@ -52,13 +53,16 @@ overwrites `uid` from session state on every SetProperty/SetProperties and drops
 when the author cannot be resolved. The server nickname is reserved (lobby and match reject
 it, derived from `LobbySession.ServerPlayerName` so a rename moves the reservation).
 
-Admin rights are **not** granted by nickname alone (`AdminAuth`): the nickname a client sends
-is untrusted, so an admin nick gets a shadow lobby until the address enters the per-run code
-printed to the console. The code is 24 random alphanumerics, regenerated on every start,
-authorized IPs live in memory only; the match host and the command dispatcher both consult
-`IsUnauthorizedAdmin`, so a shadowed admin cannot drop or sneak into 7777 either. `PlayerDirectory` persists `nick ↔ id ↔ IP` in `banlist.json` so `/ban` still
-resolves a player who already left. `banlist.json` lives beside `config.json` and is
-git-ignored.
+Admin rights are keyed on the **server-side id**, never on a configured nickname:
+`ServerConfig.AdminConfig.Ids` is the only list, `IsAdmin(int)` is the only test, and the id is
+computed from session state (the nickname a client sends is untrusted, so `admin.nicknames` is
+reported as an unknown key and ignored). The id alone is still not enough (`AdminAuth`): an
+admin id gets a shadow lobby until the address enters the per-run code printed to the console.
+The code is 24 random alphanumerics, regenerated on every start, authorized IPs live in memory
+only; the match host and the command dispatcher both consult `IsUnauthorizedAdmin`, so a
+shadowed admin cannot drop or sneak into 7777 either. `PlayerDirectory` persists
+`nick ↔ id ↔ IP` in `banlist.json` so `/ban` still resolves a player who already left.
+`banlist.json` lives beside `config.json` and is git-ignored.
 
 ## Match host split (was 2568-line god-file)
 

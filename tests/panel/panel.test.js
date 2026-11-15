@@ -9,6 +9,8 @@
  *   • ошибки API показываются понятным текстом, а не кодом;
  *   • имя комнаты экранируется (XSS из чужого ввода);
  *   • закрытая комната не приглашает войти;
+ *   • список показывает счёт CT * T, а не число игроков;
+ *   • «Войти» открывает окно с точной командой, не переключая вкладку;
  *   • баннер появляется, когда игровой порт не слушается.
  */
 const fs = require('fs');
@@ -45,9 +47,9 @@ const MODES = {
 let roomsState = [
   { number: 1, mode: 'Ranked2v2', level: 'Sandstone 2x2', name: 'рялна',
     owner: 'vlal', ownerId: 111, state: 'live', players: 4, joinCommand: '/join 2v2 #1',
-    perTeam: 2, maxPlayers: 4, teamLabel: '2 на 2' },
+    scoreCt: 5, scoreTr: 3, perTeam: 2, maxPlayers: 4, teamLabel: '2 на 2' },
   { number: 2, mode: 'Duel', level: 'Yard', name: '', owner: 'botx', ownerId: 222,
-    state: 'waiting', players: 1, joinCommand: '/join duel #2' },
+    state: 'waiting', players: 1, joinCommand: '/join duel #2', scoreCt: 1, scoreTr: 0 },
 ];
 
 let statusState = {
@@ -57,6 +59,7 @@ let statusState = {
 
 let posted = null;
 let postResponse = null;
+let copied = null;
 
 /* Авторизация (#51): кто я по мнению сервера. null — сайт не авторизован.
    Комната создаётся только авторизованным, «Моя комната» видна только ему. */
@@ -114,6 +117,11 @@ function fakeFetch(url, opts) {
     url: 'https://example.com/vlalchillow/',
     beforeParse(window) {
       window.fetch = fakeFetch;
+      Object.defineProperty(window, 'isSecureContext', { value: true, configurable: true });
+      Object.defineProperty(window.navigator, 'clipboard', {
+        configurable: true,
+        value: { writeText: text => { copied = text; return Promise.resolve(); } },
+      });
       window.matchMedia = () => ({ matches: false, addListener() {}, removeListener() {} });
       window.scrollTo = () => {};
     },
@@ -142,6 +150,29 @@ function fakeFetch(url, opts) {
   check('номер комнаты на месте', $('rooms').textContent.indexOf('#1') >= 0);
   check('состояние live отрисовано', $('rooms').textContent.indexOf('идёт') >= 0);
   check('состояние waiting отрисовано', $('rooms').textContent.indexOf('ожидание') >= 0);
+  check('счёт CT * T показан в списке', $('rooms').textContent.indexOf('5 * 3') >= 0,
+    $('rooms').textContent);
+  check('число игроков в строке не публикуется',
+    $('rooms').textContent.indexOf('4/4') < 0, $('rooms').textContent);
+
+  /* ── «Войти»: окно, точная команда, автокопирование, вкладка не меняется ── */
+  const joinButton = Array.from($('rooms').children)[1]
+    .querySelector('.md-button--outlined');
+  copied = null;
+  joinButton.dispatchEvent(new window.Event('click'));
+  check('кнопка «Войти» открыла окно', $('join-dialog').hidden === false);
+  check('в окне точная команда из /api/rooms', $('join-cmd').value === '/join duel #2',
+    $('join-cmd').value);
+  check('команда скопирована автоматически', copied === '/join duel #2', String(copied));
+  check('сказано про вставку в чат лобби',
+    $('join-copy-state').textContent.indexOf('чат лобби') >= 0,
+    $('join-copy-state').textContent);
+  check('команда доступна для ручного выделения',
+    $('join-cmd').readOnly === true && $('join-cmd').value.length > 0);
+  check('список комнат остался активен',
+    $('panel-list').hidden === false && $('tab-list').getAttribute('aria-selected') === 'true');
+  $('join-close-btn').dispatchEvent(new window.Event('click'));
+  check('окно закрывается кнопкой', $('join-dialog').hidden === true);
 
   /* ── фильтры ── */
   $('f-mode').value = 'Duel';
@@ -381,10 +412,14 @@ function fakeFetch(url, opts) {
     /* ── потолок комнаты берётся из самой комнаты ── */
     P.setRooms([{ n: 7, name: 'малая', mode: 'Ranked2v2', map: 'Sandstone 2x2',
                   players: 2, state: 'waiting', owner: 'x', ownerId: 999,
+                  scoreCt: 4, scoreTr: 2, cmd: '/join 2v2 #7',
                   perTeam: 1, maxPlayers: 2, teamLabel: '1 на 1' }]);
     P.switchTab('list');
     const row = $('rooms').textContent;
-    check('счётчик по потолку комнаты: 2/2', row.indexOf('2/2') >= 0);
+    check('вместо счётчика игроков показан счёт 4 * 2', row.indexOf('4 * 2') >= 0);
+    check('число мест 2/2 не публикуется', row.indexOf('2/2') < 0, row);
+    check('заполненность всё ещё считается по игрокам',
+      row.indexOf('заполнена') >= 0, row);
     check('подпись размера в списке', row.indexOf('1 на 1') >= 0);
 
     report();

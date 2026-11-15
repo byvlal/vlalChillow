@@ -8,37 +8,67 @@ namespace StandChillow.LanServer.Net;
 
 public sealed partial class GameNetHost
 {
-    private bool TryHandleSlashCommand(ConnectedPlayer player, string message)
+    /// <summary>
+    /// Общий вход команд из чата лобби (7778) и катки (ChatManager, 7777).
+    /// Обязательно: эхо команды автору в его канале, ответ (включая отказ) и запись в лог
+    /// на каждом этапе. Раньше команда «проглатывалась»: кадр дропался, а ответ не долетал.
+    /// </summary>
+    /// <param name="channel">"lobby" или "match" — откуда пришла команда.</param>
+    internal bool HandleChatCommand(ConnectedPlayer player, string message, string channel)
     {
-        void Reply(string text) => ReplyPrivate(player, text);
+        var text = message.Trim();
+        var id = player.PublicId;
+        Console.WriteLine(
+            $"[cmd] RX channel={channel} id=#{id} nick='{player.Name}' cmd='{text}'");
 
-        // Права: часть команд доступна только админам из config.json.
-        // Консоль сервера этим гейтом не проходит — оператор и так хозяин.
-        if (!IsCommandAllowedFor(player, message, out var denyReason))
+        // Эхо в лобби: клиент не рисует свой текст сам, пока сервер не вернёт кадр.
+        // В катке эхо уже вернул матч-хост тем же кадром ChatManager (только автору).
+        if (channel == "lobby")
+            Send(player.Peer, LobbyCodec.BuildChatEvent(
+                LobbySession.ServerMemberId, $"> {text}"));
+
+        var replies = 0;
+        void Reply(string line)
         {
-            Reply(denyReason);
-            return true; // отказ — это обработанная команда, «неизвестная» не показываем
+            replies++;
+            ReplyPrivate(player, line);
         }
 
-        return TryDispatchHostCommand(message, Reply, who: $"chat:{player.Name}", player);
+        // Права: часть команд доступна только админам по id из config.json.
+        // Консоль сервера этим гейтом не проходит — оператор и так хозяин.
+        if (!IsCommandAllowedFor(player, text, out var denyReason))
+        {
+            Reply(denyReason);
+            Console.WriteLine($"[cmd] DENY channel={channel} id=#{id}: {denyReason}");
+            return true;
+        }
+
+        var handled = TryDispatchHostCommand(text, Reply, who: $"chat:{player.Name}", player);
+        if (!handled)
+            Reply(FormatUnknownCommandHelp(text));
+        if (replies == 0)
+            Reply($"команда {text} выполнена");
+
+        Console.WriteLine(
+            $"[cmd] OK channel={channel} id=#{id} cmd='{text}' replies={replies}");
+        return true;
     }
 
     /// <summary>
     /// Пускать ли игрока к команде. Решает <c>config.json</c>:
-    /// <c>admin.nicknames</c>, <c>admin.adminOnlyCommands</c>, <c>admin.anyoneCanStart</c>,
+    /// <c>admin.ids</c>, <c>admin.adminOnlyCommands</c>, <c>admin.anyoneCanStart</c>,
     /// а админство — ещё и код этого запуска (<see cref="IsAdminAuthorized"/>).
     /// </summary>
     private bool IsCommandAllowedFor(ConnectedPlayer player, string message, out string denyReason)
     {
-        // Само решение — в CommandAccessPolicy (чистая функция, покрыта тестами).
-        // Права проверяем по нику + адресу: ник присылает клиент, и адрес, который код
-        // запуска не предъявлял, админом не становится — ровно то, что показывает /whoami.
+        // Id считает сервер из состояния сессии, а не из пакета клиента. Адрес, который
+        // код запуска не предъявлял, админом не становится — ровно как показывает /whoami.
         var allowed = CommandAccessPolicy.IsAllowed(
             _config,
-            player.Name,
+            player.PublicId,
             message,
             out denyReason,
-            nick => IsAdminAuthorized(nick, player.Peer.Address));
+            id => IsAdminAuthorized(id, player.Peer.Address));
         if (allowed)
             return true;
 
@@ -66,7 +96,7 @@ public sealed partial class GameNetHost
         var message = raw.Trim();
         if (message.Length == 0)
             return false;
-        if (message.StartsWith('/'))
+        if (message.StartsWith('/') || message.StartsWith('!'))
             message = message[1..].Trim();
         if (message.Length == 0)
             return false;
@@ -272,7 +302,8 @@ public sealed partial class GameNetHost
           /chattest                 диагностика чата катки: 4 варианта кадра (только админ)
           /auth                     код админа (только из консоли сервера)
         Те же команды работают в чате катки: ответ придёт туда же и только тебе.
-        «Только админ» — это ник в admin.nicknames плюс код этого запуска (/whoami).
+        «Только админ» — это id в admin.ids плюс код этого запуска (/whoami).
+        В чате катки работает и запасной префикс: !ban вместо /ban, если клиент съел /.
         Запуска катки командой нет: комната с сайта стартует сама, когда обе команды ≥1.
         """.Trim();
 

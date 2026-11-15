@@ -8,7 +8,7 @@ Unofficial LAN dedicated server for **self-hosted multiplayer** — reverse-engi
 
 ## What works
 
-- **Lobby** — LiteNetLib on UDP **7778** (join, full roster, chat, mode/map selection, `/end`)
+- **Lobby** — LiteNetLib on UDP **7778** (join, private roster, chat, mode/map selection, `/end`)
 - **Auto-discovery** — 2.07 Bonjour V3 (`SC LAN Bonjour V3`) probe/reply on UDP **5056**; when phones search LAN lobbies, this host appears automatically (same as a phone-hosted lobby)
 - **Match channel** — after `play`, clients move to UDP **7777**
 - **Web panel** — HTTP panel on **8080/tcp**: online count, public room list, one-button room
@@ -228,8 +228,8 @@ The console command `config reload` forces a re-read.
   },
   "server":  { "welcomeMessage": "…", "maxMembers": 16, "lobbyPort": 7778 },
   "network": { "bindAddress": "0.0.0.0", "ignoreVpn": true, "advertiseIp": null },
-  "admin":   { "nicknames": [ "влал" ], "adminOnlyCommands": [ "set", "end" ],
-               "anyoneCanStart": true },
+  "admin":   { "ids": [ 25354325, 95227090, 1254334 ],
+               "adminOnlyCommands": [ "set", "end" ], "anyoneCanStart": true },
   "matchStart": { "mode": "auto", "auto": { … }, "ready": { … } },
   "timings": { "warmup": 3, "preStart": 3, "prep": 10, "roundTime": 109,
                "roundEndPause": 6, "bombFuse": 40, "totalRounds": 8,
@@ -268,20 +268,27 @@ The console command `config reload` forces a re-read.
 тысячи файловых операций в секунду). Отдельные флаги `logPackets`/`logDiscovery` включают
 шумный per-packet лог без общего `verbose`.
 
-**Who is an admin.** Matched by the lobby nickname, case-insensitive. Anyone not in
-`admin.nicknames` gets a private «только для админов» reply naming the reason, and the
-command does not run. `/help`, `/ready` and `/unready` are always open to everyone.
+**Who is an admin.** Only by server-side id, never by nickname. The id is the number the
+game shows in the player list, `/ids` and `/whoami`; `admin.ids` lists the admins, and the
+per-run code (`AdminAuth`) still has to be entered once per address — otherwise the id only
+gets a shadow lobby. Anyone else gets a private «только для админов» reply naming the
+reason, and the command does not run. `/help`, `/ready` and `/unready` are always open to
+everyone.
 
 **`admin.adminOnlyCommands`** defaults to `[ "set", "end" ]`: `/set` changes match parameters,
 `/end` stops the match. `/mode`, `/map`, `/start` and `/play` stay open — anyone can run the
 match, which is the point of `anyoneCanStart: true`.
 
-> **Careful:** if `admin.nicknames` is empty, **nobody** can run the admin-only commands —
-> there is no one left to authorise them. Fill in your nickname:
+> **Careful:** if `admin.ids` is empty, **nobody** can run the admin-only commands —
+> there is no one left to authorise them. Fill in your ids (they are printed at lobby join,
+> in `/ids` and in `/whoami`):
 
 ```json
-"admin": { "nicknames": [ "влал" ], "adminOnlyCommands": [ "set", "end" ] }
+"admin": { "ids": [ 25354325 ], "adminOnlyCommands": [ "set", "end" ] }
 ```
+
+Nicknames are not read at all: `admin.nicknames` (or any other spelling) is reported as an
+unknown key at startup and ignored, so a leftover list does not silently grant rights.
 
 **Three ways to start a match** — pick one with `matchStart.mode`:
 
@@ -300,8 +307,8 @@ debug), `config reload` re-reads the file and applies it without a restart.
 
 ### Авторизация админа (код на запуск)
 
-Ник присылает клиент — значит «влал» может набрать кто угодно. Поэтому одного ника для прав
-мало: ник — это только повод спросить код.
+Ник присылает клиент — значит «влал» может набрать кто угодно. Поэтому в `admin.ids` только
+серверные id (числа), а код спрашивается отдельно: и id, и код нужны вместе.
 
 ```text
 [auth] код админа на этот запуск: 7fKq2mNpR4tXvB8cWy3JhLdS
@@ -314,12 +321,12 @@ debug), `config reload` re-reads the file and applies it without a restart.
 
 - Код генерируется при **каждом** запуске сервера: 24 символа латиницы и цифр
   (`RandomNumberGenerator`, без похожих 0/O/1/l/I). После перезапуска он новый, старый мёртв.
-- Пока адрес код не предъявил, игрок с админским ником получает **теневой лобби**, как
+- Пока адрес код не предъявил, игрок с админским id получает **теневой лобби**, как
   забаненный: в росписи только `Server`, остальные его не видят, команды не работают, в матч
   не пускают. В чат ему приходит:
 
   ```text
-  Server: ник 'влал' админский — нужна авторизация
+  Server: id #25354325 в admin.ids — нужна авторизация
   Server: код на этот запуск: 24 символов — он в консоли сервера и в auth.txt рядом с config.json
   Server: напиши код сюда, в чат (регистр не важен)
   ```
@@ -328,11 +335,19 @@ debug), `config reload` re-reads the file and applies it without a restart.
   сервера, и надо зайти в лобби заново (сервер сам отключит сокет). 5 неверных попыток —
   отключение.
 - Проверка стоит на всех входах: лобби (включая переподключение), `JoinRoom` в матче, и в
-  каждой команде. Мимо лобби на 7777 с админским ником не пройти.
+  каждой команде. Мимо лобби на 7777 с админским id не пройти.
 - `auth` в консоли — показать код и список авторизованных адресов; `auth reset` — новый код
   и полный сброс (полезно, если код засветился).
-- `/whoami` в чате — что сервер реально знает о тебе: ник как он его видит, id, IP, админ ли
-  и введён ли код. Первое, что стоит набрать, если «я не админ».
+- `/whoami` в чате — что сервер реально знает о тебе: id (число для `admin.ids`), ник как он
+  его видит, IP, админ ли и введён ли код. Первое, что стоит набрать, если «я не админ».
+
+**Роспись лобби приватная.** На проводе 7778 клиент видит ровно две строки: `Server` и
+себя (`selfMemberId = 1`). Состав остаётся в состоянии сервера — его показывают `/ids`,
+дашборд, сайт и чат, — но op4/op5 (кто зашёл, кто вышел) больше не рассылаются: клиент
+не переваривает лобби больше ~10 подключённых игроков и падает, а строки чужих игроков
+ему для игры не нужны. Чужой чат при этом работает: он приходит от автора `Server` с
+именем говорящего в тексте (`влал: привет`). Комнаты матча (7777) это не затрагивает —
+там по-прежнему видны все актёры и их ники.
 
 **Где тебе ответят.** Сервер сам решает канал: в лобби это лобби-чат (OpChat), в катке —
 ChatManager на 7777. Ответ идёт в оба, потому что клиент держит лобби-сокет весь матч, но
@@ -404,16 +419,20 @@ ChatManager на 7777. Ответ идёт в оба, потому что кли
 (`ChatManager text` начинается с `/` → `OnMatchChatSlashCommand` → резолв игрока по нику
 актора, IP запасной → `CommandAccessPolicy` → диспетчер команд), поэтому в катке работают
 `/help`, `/mode`, `/map`, `/start`, `/set …`, `/end`, `/ban`, `/unban`, `/bans`, `/ids`,
-`/whoami`, `/chattest`. Текст команды другим игрокам не ретранслируется (`dropRelay`), а
-ответ приходит адресно в матч-чат автору. В журнале остаются
+`/whoami`, `/chattest`. Автору возвращается его собственный кадр (`[cmd] echo → author …`):
+клиент рисует своё сообщение только после серверного эха, поэтому без него набранная
+команда выглядела как «я ничего не написал». Другим игрокам текст команды не
+ретранслируется, а ответ приходит адресно в матч-чат автору. В журнале остаются
 `[chat] <ник>: <команда> (ChatManager command, silent; actor='…' resolvedBy=…)` и
 `[chat] <ник>: команда из катки обработана хостом: …` — исполнение видно и с выключенным
 `debug-chat`.
 
-**Админские права — ник плюс код этого запуска.** `admin.nicknames` лишь повод спросить код:
-ник присылает клиент, поэтому права даёт адрес, который код предъявил (`AdminAuth`). Гейт
-один и тот же для лобби (7778) и для матч-чата (7777), а отказ объясняет причину и в чат, и
-в журнал (`ОТКЛОНЕНО: …`) — включая отдельный случай «ник админский, но код не предъявлен».
+**Админские права — серверный id плюс код этого запуска.** `admin.ids` — только числа: id
+считает сервер из ника сессии, а не берёт из пакета клиента, поэтому подставной ник прав не
+даёт. Список — лишь повод спросить код: права даёт адрес, который код предъявил
+(`AdminAuth`). Гейт один и тот же для лобби (7778) и для матч-чата (7777), а отказ объясняет
+причину и в чат, и в журнал (`ОТКЛОНЕНО: …`) — включая отдельный случай «id админский, но код
+не предъявлен».
 Что сервер знает о написавшем, показывает `/whoami`. Команда всегда исполняется от имени
 **отправителя** (актор из комнаты), а не от имени байта `rpc` из кадра: кадр ChatManager
 подписывается чужим актором, и на этом построена диагностика ниже.
@@ -469,7 +488,7 @@ Id считает сервер, он постоянный и принадлеж�
 достанется ни в чём не виноватому телефону. Границы правятся в `admin.ban.minMinutes` /
 `maxDays`.
 
-**Кого нельзя забанить:** админа из `admin.nicknames` (админ проходит и с забаненного IP) и
+**Кого нельзя забанить:** админа из `admin.ids` (админ проходит и с забаненного IP) и
 `Server`. Себя — тоже нельзя.
 
 **Серверный id игрока.** Каждому нику соответствует постоянный id в диапазоне
@@ -544,8 +563,8 @@ Server: Причина: софт удали, тогда поговорим
 
 **Что видит забаненный.** Его сразу выкидывает из катки и из лобби (клиент показывает
 `RemoteConnectionClose`). Если он заходит снова, сервер отвечает `JoinResponse` с росписью
-**только из Server** — клиент рисует себя сам, поэтому на экране «Server» первым и он вторым,
-других игроков нет; про идущий матч не сообщается (`hasHosting=0`, без op7/op9). В чат ему
+**только из Server** — той же приватной росписью, что видят все, поэтому на экране «Server»
+первым и он вторым; про идущий матч не сообщается (`hasHosting=0`, без op7/op9). В чат ему
 приходит только это:
 
 ```text
@@ -627,8 +646,9 @@ Server: Разбан через: 0д 0ч 29м 12с
 клиент это свойство из комнаты или держит своё значение локально — проверяется только в игре. Алиасы учатся в обе стороны и по цепочке: забаненный ник с нового
 адреса тянет за собой этот адрес, а любой, кто зайдёт с этого адреса, попадёт в запись и
 притащит свои адреса. На квартирном NAT это может расширить бан шире, чем хотелось, —
-поэтому потолок 14 дней, `/bans` и `/unban` (цепочку видно по IP в `/bans`). Ник присылает клиент, поэтому админа можно имитировать ником (та же
-слабость, что у админ-команд в целом). Id — производная от ника, а не от устройства: сменил
+поэтому потолок 14 дней, `/bans` и `/unban` (цепочку видно по IP в `/bans`). Ник присылает
+клиент, поэтому ник нельзя считать личностью: админство, как и баны, держится на серверном
+id, но сам id — производная от ника, а не от устройства. Сменил
 ник — сменился id, и старый бан по id его уже не найдёт (IP при этом остаётся). Один
 публичный IP часто делят несколько игроков (CGNAT, NAT в клубе): бан IP задевает всех за ним —
 поэтому есть `/bans`, `/unban` и потолок в 14 дней. Это админ-контроль, **не античит**.
@@ -642,10 +662,10 @@ set start                # arm when both teams ready
 play                     # launch / rematch
 end                      # end match / return path
 code                     # fresh 6-digit site code (chat: /code)
-ban Ktulxy 30m софт      # ban (10m…14d), admin-only
-ban 67776161 30m софт     # ban by server-side id (see /ids)
-unban Ktulxy             # lift a ban by nick or IP
+ban 67776161 30m софт    # ban by server-side id (10m…14d), admin-only
+ban #67776161 3d читы    # the «#» the game shows is accepted too
 unban 67776161            # lift every ban tagged with that id
+unban 192.168.1.70        # or by IP
 bans                     # active bans with remaining time
 ids                      # who is in match/lobby: id, nick, IP
 status                   # lobby + match summary
