@@ -254,7 +254,15 @@ public static class MatchC2States
     /// DeathMatch phone gold: C2=200 end bag → then C2=201 FinalHud.
     /// </summary>
     public const byte FinalHud = 201;
-    /// <summary>Match results / итоги всей катки (after all rounds) — <c>ckc.xvv=205</c>.</summary>
+    /// <summary>
+    /// Match results / итоги всей катки (after all rounds) — <c>ckc.xvv=205</c>.
+    /// </summary>
+    /// <remarks>
+    /// <b>Не публиковать.</b> Клиент отвечает на него «Can't change game state to 205,
+    /// is not found» и застревает на экране катки навсегда. Конец катки по золоту
+    /// захватов — <see cref="FinalHud"/> (201), затем <see cref="MatchTeardown"/> (255).
+    /// Константа оставлена только для разбора входящих дампов.
+    /// </remarks>
     public const byte MatchResults = 205;
     /// <summary>
     /// Post-FinalHud teardown (phone TDM gold C2=<c>255</c> then disconnect).
