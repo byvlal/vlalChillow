@@ -147,9 +147,12 @@ Grep the next run: `grep -E '\[tdm-death\]|\[tdm-buy\]' latest.log`.
 
 ### Unknowns (not faked)
 
-- **`FinalPlayers`** — phone gold serializes a `ByteArray` (len 3 in the 3-actor probe). Inner
-  layout (per-player scoreboard summary?) is **not reversed**, so the dedicated host **omits** it
-  (end bag count 4 vs phone 5). Do not invent a layout.
+- **`FinalPlayers`** — phone gold serializes a `ByteArray` of actor numbers; the same shape is
+  confirmed by the Duel FinalHud capture (`MATCH_DUEL_PROBE.md`: `01 02 03 04`) and is what the
+  client reads to build the results table. Omitting it makes the client throw
+  «Can't retrive final players, is empty» and show an empty scoreboard, so the FinalHud
+  (`C2=201`) and the TDM end bag now carry it. The richer per-player summary is still unknown —
+  only the actor list is sent, never invented fields.
 - **Free buy / economy** — TDM money model not captured here; host does not push `money` in TDM
   (Ranked pushes `RoundStartMoney`). Left unimplemented until gold shows the buy semantics.
 
