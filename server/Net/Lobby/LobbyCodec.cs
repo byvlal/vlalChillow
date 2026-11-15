@@ -238,6 +238,11 @@ public static class LobbyCodec
         return w.ToArray();
     }
 
+    /// <summary>
+    /// Op5 «участник вышел». Сейчас не отправляется: роспись лобби приватная
+    /// (Server + сам клиент), чужих строк у клиента нет — снимать нечего. Кодек
+    /// оставлен как проверенная запись формата из капчур, не как источник рассылки.
+    /// </summary>
     public static byte[] BuildMemberLeft(int memberId)
     {
         var w = new LobbyWriter();
@@ -246,6 +251,11 @@ public static class LobbyCodec
         return w.ToArray();
     }
 
+    /// <summary>
+    /// Op4 «новый участник». Сейчас не отправляется: полный состав есть только в
+    /// состоянии сервера (<c>/ids</c>, дашборд, сайт), а на 7778 уходят лишь Server и
+    /// сам клиент — иначе клиент падал на лобби больше ~10 игроков.
+    /// </summary>
     public static byte[] BuildNewMember(LobbyMember member)
     {
         var w = new LobbyWriter();

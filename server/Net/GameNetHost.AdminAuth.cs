@@ -8,14 +8,15 @@ using StandChillow.LanServer.Net.Lobby;
 namespace StandChillow.LanServer.Net;
 
 /// <summary>
-/// Авторизация админского ника кодом на текущий запуск.
+/// Авторизация админского id кодом на текущий запуск.
 /// </summary>
 /// <remarks>
 /// <para>
-/// Ник присылает клиент — значит «влал» может набрать кто угодно. Пока IP не предъявил код,
-/// такой игрок не попадает в лобби (видит только Server, как забаненный), не может зайти в
-/// матч и не может выполнить ни одной команды. Код печатается в консоль сервера при старте,
-/// вводится обычным сообщением в чат, и после этого адрес авторизован до перезапуска.
+/// Права даёт серверный id из <c>admin.ids</c>, посчитанный сервером из ника сессии.
+/// Пока IP не предъявил код, такой игрок не попадает в лобби (видит только Server, как
+/// забаненный), не может зайти в матч и не может выполнить ни одной команды. Код печатается
+/// в консоль сервера при старте, вводится обычным сообщением в чат, и после этого адрес
+/// авторизован до перезапуска.
 /// </para>
 /// <para>
 /// Это не замена банам: баны работают по нику+IP и от авторизации не зависят.
@@ -40,16 +41,19 @@ public sealed partial class GameNetHost
     internal AdminAuth Auth => _adminAuth;
 
     /// <summary>
-    /// Ник админский И адрес уже авторизован — только тогда у него есть права.
+    /// Id в <c>admin.ids</c> И адрес уже авторизован — только тогда есть права.
     /// </summary>
-    internal bool IsAdminAuthorized(string? nick, IPAddress? ip) =>
-        _config.IsAdmin(nick) && _adminAuth.IsAuthorized(ip);
+    internal bool IsAdminAuthorized(int id, IPAddress? ip) =>
+        _config.IsAdmin(id) && _adminAuth.IsAuthorized(ip);
 
     /// <summary>
-    /// Админский ник, но адрес код ещё не предъявлял: в игру пускать нельзя.
+    /// Админский id, но адрес код ещё не предъявлял: в игру пускать нельзя.
     /// </summary>
-    internal bool IsUnauthorizedAdmin(string? nick, IPAddress? ip) =>
-        _config.IsAdmin(nick) && !_adminAuth.IsAuthorized(ip);
+    internal bool IsUnauthorizedAdmin(int id, IPAddress? ip) =>
+        _config.IsAdmin(id) && !_adminAuth.IsAuthorized(ip);
+
+    /// <summary>Id написавшего из ника сессии (никогда из поля пакета клиента).</summary>
+    internal static int IdOf(string? nick) => MatchPublicId.ForNick(nick);
 
     /// <summary>Код на этот запуск — в консоль и в панель (там его видит только хост).</summary>
     /// <remarks>
@@ -61,17 +65,17 @@ public sealed partial class GameNetHost
         Console.WriteLine(
             $"[auth] код админа на этот запуск: {_adminAuth.Code} " +
             "(вводится в чат; действует до перезапуска, IP запоминается)");
-        if (_config.Admin.Nicknames.Count == 0)
+        if (_config.Admin.Ids.Count == 0)
         {
             Console.WriteLine(
-                "[auth] админских ников нет — код никому не понадобится, пока в " +
-                "config.json admin.nicknames пусто");
+                "[auth] админских id нет — код никому не понадобится, пока в " +
+                "config.json admin.ids пусто");
             PublishAuthCodeFile();
             return;
         }
 
         Console.WriteLine(
-            $"[auth] админские ники: {string.Join(", ", _config.Admin.Nicknames)} — " +
+            $"[auth] админские id: {_config.DescribeAdmins()} — " +
             "без кода они видят только Server, как забаненные");
         PublishAuthCodeFile();
     }
@@ -98,11 +102,12 @@ public sealed partial class GameNetHost
         AdminAuthFile.TryDelete(AdminAuthFile.ResolvePath(ServerConfig.LastLoadedPath));
 
     /// <summary>
-    /// Вход под админским ником без кода: теневой лобби (роспись из одного Server) и просьба
+    /// Вход под админским id без кода: теневой лобби (роспись из одного Server) и просьба
     /// ввести код. Никаких команд, никакого матча.
     /// </summary>
     private void HandleAdminAuthJoin(NetPeer peer, JoinLobbyRequest req)
     {
+        var id = IdOf(req.Profile.Name);
         var result = _session.HandleShadowJoinRequest(peer, req);
         if (result.ResponseBytes is not null)
             Send(peer, result.ResponseBytes);
@@ -121,15 +126,15 @@ public sealed partial class GameNetHost
         }
 
         Console.WriteLine(
-            $"[auth] '{nick}' {peer.Address} — админский ник без кода: " +
+            $"[auth] '{nick}' id #{id} {peer.Address} — админский id без кода: " +
             "лобби не выдан, команды закрыты, ждём код в чате");
 
         DashboardHub.PostChat(
             LobbySession.ServerPlayerName,
-            $"[auth] {nick} ({peer.Address}) — админский ник без кода, ждём авторизацию",
+            $"[auth] {nick} (id #{id}, {peer.Address}) — админ без кода, ждём авторизацию",
             fromServer: true);
 
-        SendServerChatTo(peer, $"ник '{nick}' админский — нужна авторизация");
+        SendServerChatTo(peer, $"id #{id} в admin.ids — нужна авторизация");
         SendServerChatTo(
             peer,
             $"код на этот запуск: {_adminAuth.Code.Length} символов — он в консоли сервера " +
@@ -252,17 +257,18 @@ public sealed partial class GameNetHost
         }
 
         var nick = ServerConfig.NormalizeNick(player.Name);
-        var id = MatchPublicId.ForNick(nick);
-        var isAdminNick = _config.IsAdmin(nick);
+        var id = IdOf(nick);
+        var isAdmin = _config.IsAdmin(id);
         var authorized = _adminAuth.IsAuthorized(player.Peer.Address);
 
         reply($"ник: '{nick}' · id: #{id} · IP: {player.Peer.Address}");
-        reply(isAdminNick
-            ? (authorized ? "админ: да, код принят" : "админ: ник админский, код не введён")
+        reply(isAdmin
+            ? (authorized ? "админ: да (id в admin.ids), код принят"
+                          : "админ: id в admin.ids, код не введён")
             : "админ: нет");
-        reply(_config.Admin.Nicknames.Count == 0
-            ? "в config.json admin.nicknames пусто — админ-команд ни у кого нет"
-            : $"админы в конфиге: {string.Join(", ", _config.Admin.Nicknames)}");
+        reply(_config.Admin.Ids.Count == 0
+            ? "в config.json admin.ids пусто — админ-команд ни у кого нет"
+            : $"админы в конфиге (id): {_config.DescribeAdmins()}");
     }
 
     /// <summary>

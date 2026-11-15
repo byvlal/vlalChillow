@@ -1,3 +1,4 @@
+using StandChillow.LanServer.Bans;
 using StandChillow.LanServer.Config;
 using StandChillow.LanServer.Net;
 using Xunit;
@@ -14,6 +15,9 @@ namespace StandChillow.LanServer.Tests;
 /// </remarks>
 public sealed class CommandAccessPolicyTests
 {
+    private const int AdminId = 25_354_325;
+    private const int OtherId = 65_054_804;
+
     private static ServerConfig Default()
     {
         var cfg = new ServerConfig();
@@ -21,8 +25,8 @@ public sealed class CommandAccessPolicyTests
         return cfg;
     }
 
-    private static bool Allowed(ServerConfig cfg, string nick, string message, out string reason) =>
-        CommandAccessPolicy.IsAllowed(cfg, nick, message, out reason);
+    private static bool Allowed(ServerConfig cfg, int id, string message, out string reason) =>
+        CommandAccessPolicy.IsAllowed(cfg, id, message, out reason);
 
     [Theory]
     [InlineData("/mode")]
@@ -33,7 +37,7 @@ public sealed class CommandAccessPolicyTests
     {
         var cfg = Default();
 
-        Assert.True(Allowed(cfg, "случайный игрок", message, out var reason),
+        Assert.True(Allowed(cfg, OtherId, message, out var reason),
             $"'{message}' должен быть доступен без админки");
         Assert.Equal(string.Empty, reason);
     }
@@ -48,7 +52,7 @@ public sealed class CommandAccessPolicyTests
         // Запуска катки командой больше нет — диспетчер на «/set start» отвечает
         // «убран». Но разбор строки и права остались прежними, и тест держит эту
         // границу: политика не должна начать считать запуск админской настройкой.
-        Assert.True(Allowed(cfg, "случайный игрок", message, out _));
+        Assert.True(Allowed(cfg, OtherId, message, out _));
     }
 
     [Theory]
@@ -62,7 +66,7 @@ public sealed class CommandAccessPolicyTests
     {
         var cfg = Default();
 
-        Assert.False(Allowed(cfg, "случайный игрок", message, out var reason),
+        Assert.False(Allowed(cfg, OtherId, message, out var reason),
             $"'{message}' меняет параметры хоста — должен требовать админа");
         Assert.Contains("set", reason);
     }
@@ -75,7 +79,7 @@ public sealed class CommandAccessPolicyTests
     {
         var cfg = Default();
 
-        Assert.False(Allowed(cfg, "случайный игрок", message, out _));
+        Assert.False(Allowed(cfg, OtherId, message, out _));
     }
 
     [Theory]
@@ -88,7 +92,7 @@ public sealed class CommandAccessPolicyTests
     [InlineData("/нг")]
     public void PublicCommands_AreAlwaysAllowed(string message)
     {
-        Assert.True(Allowed(Default(), "кто угодно", message, out _));
+        Assert.True(Allowed(Default(), OtherId, message, out _));
     }
 
     /// <summary>
@@ -104,12 +108,12 @@ public sealed class CommandAccessPolicyTests
     {
         var cfg = Default();
 
-        Assert.False(Allowed(cfg, "случайный игрок", message, out var reason),
+        Assert.False(Allowed(cfg, OtherId, message, out var reason),
             $"'{message}' подписывает чат чужим актором — только админ");
         Assert.Contains("только для админов", reason);
 
-        cfg.Admin.Nicknames.Add("влал");
-        Assert.True(Allowed(cfg, "влал", message, out _));
+        cfg.Admin.Ids.Add(AdminId);
+        Assert.True(Allowed(cfg, AdminId, message, out _));
     }
 
     [Theory]
@@ -118,11 +122,11 @@ public sealed class CommandAccessPolicyTests
     public void AdminCommands_AreAllowedForConfiguredAdmins(string message)
     {
         var cfg = Default();
-        cfg.Admin.Nicknames.Add("влал");
+        cfg.Admin.Ids.Add(AdminId);
 
-        Assert.True(Allowed(cfg, "влал", message, out _));
+        Assert.True(Allowed(cfg, AdminId, message, out _));
         // И регистр/невидимые символы не мешают.
-        Assert.True(Allowed(cfg, "ВЛАЛ", message, out _));
+        Assert.True(Allowed(cfg, MatchPublicId.ForNick("ВЛАЛ"), message, out _));
     }
 
     [Fact]
@@ -133,10 +137,10 @@ public sealed class CommandAccessPolicyTests
         // («/set start» сюда не годится: он считается запуском матча и открыт всем
         // пока anyoneCanStart=true — см. SetStart_IsStillRecognisedAsAMatchStartByThePolicy.)
         var cfg = Default();
-        cfg.Admin.Nicknames.Add("влал");
+        cfg.Admin.Ids.Add(AdminId);
 
-        Assert.False(Allowed(cfg, "случайный игрок", "/set round 8", out _));
-        Assert.True(Allowed(cfg, "влал", "/set round 8", out _));
+        Assert.False(Allowed(cfg, OtherId, "/set round 8", out _));
+        Assert.True(Allowed(cfg, AdminId, "/set round 8", out _));
     }
 
     [Fact]
@@ -145,9 +149,9 @@ public sealed class CommandAccessPolicyTests
         // Смысл настройки: /set меняет параметры, но выбирать режим и карту может любой.
         var cfg = Default();
 
-        Assert.True(Allowed(cfg, "игрок", "/mode Duel", out _));
-        Assert.True(Allowed(cfg, "игрок", "/map Sandstone", out _));
-        Assert.False(Allowed(cfg, "игрок", "/set round 4", out _));
+        Assert.True(Allowed(cfg, OtherId, "/mode Duel", out _));
+        Assert.True(Allowed(cfg, OtherId, "/map Sandstone", out _));
+        Assert.False(Allowed(cfg, OtherId, "/set round 4", out _));
     }
 
     [Fact]
@@ -158,11 +162,11 @@ public sealed class CommandAccessPolicyTests
         // на команде, которая осталась: /mode закрыли — она закрыта только админу.
         var cfg = Default();
         cfg.Admin.AdminOnlyCommands.Add("mode");
-        cfg.Admin.Nicknames.Add("влал");
+        cfg.Admin.Ids.Add(AdminId);
 
-        Assert.False(Allowed(cfg, "игрок", "/mode", out _));
-        Assert.True(Allowed(cfg, "влал", "/mode", out _));
-        Assert.True(Allowed(cfg, "игрок", "/help", out _));
+        Assert.False(Allowed(cfg, OtherId, "/mode", out _));
+        Assert.True(Allowed(cfg, AdminId, "/mode", out _));
+        Assert.True(Allowed(cfg, OtherId, "/help", out _));
     }
 
     [Fact]
@@ -185,38 +189,38 @@ public sealed class CommandAccessPolicyTests
     }
 
     [Fact]
-    public void DenialReason_AlwaysNamesTheCommandAndTheNick()
+    public void DenialReason_AlwaysNamesTheCommandAndTheId()
     {
-        Assert.False(Allowed(Default(), "влал3", "/set round 8", out var reason));
+        Assert.False(Allowed(Default(), OtherId, "/set round 8", out var reason));
 
-        // Не «молча проигнорировали»: в причине есть и команда, и ник игрока.
+        // Не «молча проигнорировали»: в причине есть и команда, и id игрока.
         Assert.Contains("/set", reason);
-        Assert.Contains("влал3", reason);
+        Assert.Contains($"#{OtherId}", reason);
     }
 
     /// <summary>
-    /// Ник из <c>admin.nicknames</c> — ещё не права: адрес обязан предъявить код этого
+    /// Id из <c>admin.ids</c> — ещё не права: адрес обязан предъявить код этого
     /// запуска (<c>AdminAuth</c>). Гейт спрашивает <c>hasAdminRights</c>, а не список
-    /// напрямую, иначе любой клиент, назвавшийся «влал», получил бы <c>/set</c> и <c>/ban</c>
-    /// — при том что <c>/whoami</c> ему же честно отвечал «ник админский, код не введён».
+    /// напрямую, иначе любой клиент с админским id получил бы <c>/set</c> и <c>/ban</c>
+    /// — при том что <c>/whoami</c> отвечал бы «код не введён».
     /// </summary>
     [Theory]
     [InlineData("/set round 16")]
     [InlineData("/end")]
     [InlineData("/ban 12345678 1h тест")]
     [InlineData("/chattest")]
-    public void AdminNick_WithoutTheRunCode_HasNoAdminRights(string message)
+    public void AdminId_WithoutTheRunCode_HasNoAdminRights(string message)
     {
         var cfg = Default();
-        cfg.Admin.Nicknames.Add("влал");
+        cfg.Admin.Ids.Add(AdminId);
 
         var allowed = CommandAccessPolicy.IsAllowed(
-            cfg, "влал", message, out var reason, hasAdminRights: _ => false);
+            cfg, AdminId, message, out var reason, hasAdminRights: _ => false);
 
         Assert.False(allowed, $"'{message}' не должен исполняться без кода запуска");
-        // Отказ объясняет именно этот случай: ник в списке есть, прав нет.
+        // Отказ объясняет именно этот случай: id в списке есть, прав нет.
         Assert.Contains("код", reason);
-        Assert.Contains("влал", reason);
+        Assert.Contains($"#{AdminId}", reason);
         Assert.Contains("/" + CommandAccessPolicy.Parse(message).Command, reason);
     }
 
@@ -224,13 +228,13 @@ public sealed class CommandAccessPolicyTests
     [InlineData("/set round 16")]
     [InlineData("/end")]
     [InlineData("/chattest")]
-    public void AdminNick_WithTheRunCode_KeepsAdminRights(string message)
+    public void AdminId_WithTheRunCode_KeepsAdminRights(string message)
     {
         var cfg = Default();
-        cfg.Admin.Nicknames.Add("влал");
+        cfg.Admin.Ids.Add(AdminId);
 
         var allowed = CommandAccessPolicy.IsAllowed(
-            cfg, "влал", message, out var reason, hasAdminRights: nick => cfg.IsAdmin(nick));
+            cfg, AdminId, message, out var reason, hasAdminRights: id => cfg.IsAdmin(id));
 
         Assert.True(allowed, $"'{message}' обязан исполняться для авторизованного админа");
         Assert.Equal(string.Empty, reason);
@@ -248,7 +252,7 @@ public sealed class CommandAccessPolicyTests
     {
         Assert.True(CommandAccessPolicy.IsAllowed(
             Default(),
-            "кто угодно",
+            OtherId,
             message,
             out _,
             hasAdminRights: _ => throw new InvalidOperationException(

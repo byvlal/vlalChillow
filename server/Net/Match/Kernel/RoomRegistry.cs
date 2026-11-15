@@ -51,7 +51,11 @@ public sealed record RoomDescriptor(
     // Когда катка закончилась (null — ещё не кончалась). Отсчёт жизни завершённой
     // комнаты идёт отсюда, а не от создания: катка, шедшая полчаса, иначе удалялась
     // бы в ту же секунду.
-    DateTime? FinishedAtUtc = null);
+    DateTime? FinishedAtUtc = null,
+    // Счёт команд для списка комнат панели: CT слева, T справа. Копируется из
+    // room.Flow раз в секунду (только чтение — провод и фазы не трогаются).
+    int ScoreCt = 0,
+    int ScoreTr = 0);
 
 /// <summary>
 /// Верхняя граница номера комнаты. Номер печатается в команде <c>/join 2v2 #N</c>,
@@ -347,8 +351,12 @@ public sealed class RoomRegistry
             return _rooms.TryGetValue(number, out var r) ? r.OwnerNick : string.Empty;
     }
 
-    /// <summary>Обновление счётчиков от матч-хоста: сколько людей и какая фаза.</summary>
-    public bool TryUpdate(int number, RoomState state, int players)
+    /// <summary>
+    /// Обновление счётчиков от матч-хоста: сколько людей, какая фаза и счёт команд.
+    /// Счёт необязателен: старые вызовы (тесты, legacy) оставляют его как есть.
+    /// </summary>
+    public bool TryUpdate(int number, RoomState state, int players,
+        int? scoreCt = null, int? scoreTr = null)
     {
         lock (_gate)
         {
@@ -356,6 +364,8 @@ public sealed class RoomRegistry
                 return false;
 
             var clampedPlayers = players < 0 ? 0 : players;
+            var nextCt = scoreCt is null ? current.ScoreCt : Math.Max(0, scoreCt.Value);
+            var nextTr = scoreTr is null ? current.ScoreTr : Math.Max(0, scoreTr.Value);
 
             // Отсчёт «комната пустует» начинается с момента, когда из неё ушёл
             // последний человек, а не с создания. Иначе катка, в которой играли час,
@@ -376,7 +386,8 @@ public sealed class RoomRegistry
 
             if (current.State == state && current.Players == clampedPlayers
                 && current.EmptySinceUtc == emptySince
-                && current.FinishedAtUtc == finishedAt)
+                && current.FinishedAtUtc == finishedAt
+                && current.ScoreCt == nextCt && current.ScoreTr == nextTr)
                 return true;
 
             _rooms[number] = current with
@@ -385,6 +396,8 @@ public sealed class RoomRegistry
                 Players = clampedPlayers,
                 EmptySinceUtc = emptySince,
                 FinishedAtUtc = finishedAt,
+                ScoreCt = nextCt,
+                ScoreTr = nextTr,
             };
             return true;
         }

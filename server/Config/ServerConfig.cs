@@ -21,13 +21,20 @@ public enum MatchStartMode
 /// <remarks>
 /// LAN по умолчанию: играют свои, поэтому никто не обязан быть админом. Пустой
 /// <see cref="AdminOnlyCommands"/> + <see cref="AnyoneCanStart"/> = true значит «команды доступны
-/// всем». Кто хочет ограничить — вписывает ники в <see cref="Nicknames"/> и команды в
+/// всем». Кто хочет ограничить — вписывает серверные id в <see cref="Ids"/> и команды в
 /// <see cref="AdminOnlyCommands"/>.
 /// </remarks>
 public sealed class AdminConfig
 {
-    /// <summary>Ники администраторов (регистр не важен, пробелы по краям игнорируются).</summary>
-    public List<string> Nicknames { get; set; } = new();
+    /// <summary>
+    /// Серверные id администраторов (числа из <c>/ids</c> или <c>/whoami</c>).
+    /// В админских настройках только числа: список ников не читается.
+    /// </summary>
+    public List<int> Ids { get; set; } = new();
+
+    /// <summary>Диапазон валидного серверного id (см. <c>MatchPublicId</c>).</summary>
+    public const int MinId = 1;
+    public const int MaxId = 100_000_000;
 
     /// <summary>Ключи внутри <c>admin</c>, которых сервер не знает (опечатки).</summary>
     [JsonExtensionData]
@@ -428,7 +435,7 @@ public sealed class ServerConfig
     public AdminConfig Admin { get; set; } = new();
 
     /// <summary>
-    /// Ключи, которых сервер не знает: опечатка в имени («admins» вместо admin.nicknames) —
+    /// Ключи, которых сервер не знает: опечатка в имени («admins» вместо admin.ids) —
     /// самая частая причина «настроил, а сервер не видит».
     /// </summary>
     /// <remarks>
@@ -506,7 +513,7 @@ public sealed class ServerConfig
                 File.WriteAllText(target, Template);
                 Console.WriteLine($"[config] создан шаблон: {target}");
                 Console.WriteLine(
-                    "[config] команды открыты всем; ограничить — admin.nicknames + " +
+                    "[config] команды открыты всем; ограничить — admin.ids + " +
                     "admin.adminOnlyCommands");
             }
             catch (Exception ex)
@@ -590,8 +597,24 @@ public sealed class ServerConfig
         Server ??= new ServerSectionConfig();
         Network ??= new NetworkConfig();
         Admin ??= new AdminConfig();
-        Admin.Nicknames ??= new List<string>();
+        Admin.Ids ??= new List<int>();
         Admin.AdminOnlyCommands ??= new List<string>();
+
+        // Админы — только по серверному id. Мусор (0, отрицательные, числа вне
+        // диапазона) не применяется молча: каждое значение видно в логе конфига.
+        var cleanIds = new List<int>();
+        foreach (var id in Admin.Ids)
+        {
+            if (id < AdminConfig.MinId || id > AdminConfig.MaxId)
+            {
+                Report("admin.ids", id.ToString(), "пропущен",
+                    $"вне диапазона {AdminConfig.MinId}..{AdminConfig.MaxId}");
+                continue;
+            }
+            if (!cleanIds.Contains(id))
+                cleanIds.Add(id);
+        }
+        Admin.Ids = cleanIds;
         Admin.Ban ??= new BanConfig();
         MatchStart ??= new MatchStartConfig();
         MatchStart.Auto ??= new AutoStartConfig();
@@ -747,7 +770,7 @@ public sealed class ServerConfig
 
     /// <summary>
     /// Опечатки в именах ключей. «Настроил админов, а сервер их не видит» почти всегда
-    /// значит, что ключ назван не так: <c>admins</c> в корне вместо <c>admin.nicknames</c>.
+    /// значит, что ключ назван не так: <c>admins</c> в корне вместо <c>admin.ids</c>.
     /// </summary>
     private void ReportUnknownKeys()
     {
@@ -755,13 +778,13 @@ public sealed class ServerConfig
         {
             foreach (var key in UnknownKeys.Keys)
             {
-                var noAdmins = Admin is null || Admin.Nicknames is null || Admin.Nicknames.Count == 0;
+                var noAdmins = Admin is null || Admin.Ids is null || Admin.Ids.Count == 0;
                 var likelyAdmin = noAdmins &&
                                   key.Contains("admin", StringComparison.OrdinalIgnoreCase);
                 _issues.Add(new ConfigIssue(
                     key,
                     likelyAdmin
-                        ? "неизвестный ключ в корне; админские ники читаются из admin.nicknames"
+                        ? "неизвестный ключ в корне; админские id читаются из admin.ids"
                         : "неизвестный ключ в корне — сервер его не читает",
                     "проигнорирован"));
             }
@@ -871,7 +894,7 @@ public sealed class ServerConfig
 
     private void MigrateLegacyAdminGate()
     {
-        if (Admin.Nicknames.Any(n => !string.IsNullOrWhiteSpace(n)))
+        if (Admin.Ids.Count != 0)
             return;
 
         if (Admin.AnyoneCanStart)
@@ -887,7 +910,7 @@ public sealed class ServerConfig
         Admin.AnyoneCanStart = true;
         Console.WriteLine(
             "[config] миграция: старый дефолт «все команды только для админов» при пустом " +
-            "admin.nicknames блокировал команды всем — теперь админские только " +
+            "admin.ids блокировал команды всем — теперь админские только " +
             $"{string.Join(", ", Admin.AdminOnlyCommands)}, запуск катки доступен всем");
     }
 
@@ -956,24 +979,14 @@ public sealed class ServerConfig
     }
 
     /// <summary>
-    /// Админ ли ник: без учёта регистра, пробелов по краям, невидимых символов и
-    /// формы Unicode (NFC/NFD). Кириллический ник, набранный «одинаково», может
-    /// отличаться байтами — из-за этого «влал» не находился в списке.
+    /// Админ ли этот серверный id. Права сверяются только с <c>admin.ids</c>;
+    /// id считает сервер из состояния сессии, а не из пакета клиента.
     /// </summary>
-    public bool IsAdmin(string? nick)
-    {
-        var normalized = NormalizeNick(nick);
-        if (normalized.Length == 0)
-            return false;
+    public bool IsAdmin(int id) => id >= AdminConfig.MinId && Admin.Ids.Contains(id);
 
-        foreach (var candidate in Admin.Nicknames)
-        {
-            if (string.Equals(NormalizeNick(candidate), normalized, StringComparison.OrdinalIgnoreCase))
-                return true;
-        }
-
-        return false;
-    }
+    /// <summary>Список админов для логов и ответов: только id через запятую.</summary>
+    public string DescribeAdmins() =>
+        Admin.Ids.Count == 0 ? "(нет)" : string.Join(", ", Admin.Ids);
 
     /// <summary>
     /// Приводит ник к сравнимому виду: обрезка, NFC-нормализация Unicode, удаление
@@ -1097,8 +1110,12 @@ public sealed class ServerConfig
 
   // ===== АДМИНЫ =====
   "admin": {
-    // Ники как в лобби, регистр не важен. Пусто — админов нет.
-    "nicknames": [],
+    // Админы — ТОЛЬКО по серверному id (число из /ids или /whoami).
+    // Как вписать три id: добавь их через запятую, например
+    //   "ids": [ 25354325, 95227090, 1254334 ],
+    // Пусто — админов нет, тогда /ban, /set, /end из чата не доступны никому.
+    // Диапазон id: 1..100000000, дубли и мусор сервер уберёт с записью в лог.
+    "ids": [],
 
     // Команды только для админов. По умолчанию set и end: они меняют параметры
     // хоста (раунды, победу, состав) и обрывают катку.
@@ -1109,8 +1126,8 @@ public sealed class ServerConfig
     "anyoneCanStart": true,
 
     // ===== БАНЫ =====
-    // /ban <ник> <срок> [причина]   срок: 30m, 6h, 3d (от 10 минут до 14 дней)
-    // /unban <ник|IP>               снять бан
+    // /ban <id> <срок> [причина]    срок: 30m, 6h, 3d (от 10 минут до 14 дней)
+    // /unban <id|IP>                снять бан
     // /bans                         кто забанен и сколько осталось
     // Админов банить нельзя. Проверка на входе в лобби, в матч и на реконнекте.
     "ban": {

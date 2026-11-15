@@ -1,4 +1,5 @@
 using System.Text.Json;
+using StandChillow.LanServer.Bans;
 using StandChillow.LanServer.Config;
 using Xunit;
 
@@ -33,7 +34,7 @@ public sealed class ServerConfigTests
         Assert.True(cfg.MatchStart.Ready.ResetOnLeave);
         Assert.True(cfg.MatchStart.Ready.AllowUnready);
         Assert.True(cfg.Admin.AnyoneCanStart);
-        Assert.Empty(cfg.Admin.Nicknames);
+        Assert.Empty(cfg.Admin.Ids);
         Assert.Empty(cfg.Launch.Args);
         Assert.False(cfg.Debug.Captures);
         Assert.False(cfg.Debug.Verbose);
@@ -86,21 +87,22 @@ public sealed class ServerConfigTests
 
         // auto — единственный режим, который у пользователя работал без /start.
         Assert.Equal(MatchStartMode.Auto, cfg.StartMode);
-        Assert.False(cfg.IsAdmin("кто-угодно"));
-        Assert.False(cfg.IsAdmin(null));
-        Assert.False(cfg.IsAdmin("   "));
+        Assert.False(cfg.IsAdmin(65_054_804));
+        Assert.False(cfg.IsAdmin(0));
+        Assert.False(cfg.IsAdmin(-1));
     }
 
     [Fact]
-    public void IsAdmin_IgnoresCaseAndSurroundingSpaces()
+    public void IsAdmin_MatchesTheServerIdOnly()
     {
         var cfg = new ServerConfig();
-        cfg.Admin.Nicknames.Add("  Влал  ");
+        cfg.Admin.Ids.Add(25_354_325);
+        cfg.Normalize();
 
-        Assert.True(cfg.IsAdmin("влал"));
-        Assert.True(cfg.IsAdmin("ВЛАЛ"));
-        Assert.True(cfg.IsAdmin(" влал "));
-        Assert.False(cfg.IsAdmin("влал2"));
+        Assert.True(cfg.IsAdmin(25_354_325));
+        Assert.False(cfg.IsAdmin(25_354_326));
+        Assert.False(cfg.IsAdmin(0));
+        Assert.False(cfg.IsAdmin(-1));
     }
 
     [Fact]
@@ -116,15 +118,17 @@ public sealed class ServerConfigTests
     }
 
     [Fact]
-    public void IsAdmin_TreatsVisuallyIdenticalNicksAsEqual()
+    public void IsAdmin_UsesTheIdTheServerComputesFromTheSessionNick()
     {
         var cfg = new ServerConfig();
-        cfg.Admin.Nicknames.Add("влал");
+        cfg.Admin.Ids.Add(MatchPublicId.ForNick("влал"));
+        cfg.Normalize();
 
-        Assert.True(cfg.IsAdmin("влал"));
-        Assert.True(cfg.IsAdmin("\u200Bвлал\u00AD"));
-        Assert.True(cfg.IsAdmin("влал".Normalize(System.Text.NormalizationForm.FormD)));
-        Assert.False(cfg.IsAdmin("влал2"));
+        // Регистр/невидимые символы не меняют id, потому что его считает сервер
+        // из нормализованного ника сессии, а не из строки пакета.
+        Assert.True(cfg.IsAdmin(MatchPublicId.ForNick("ВЛАЛ")));
+        Assert.True(cfg.IsAdmin(MatchPublicId.ForNick("\u200Bвлал\u00AD")));
+        Assert.False(cfg.IsAdmin(MatchPublicId.ForNick("влал2")));
     }
 
     [Fact]
@@ -171,7 +175,7 @@ public sealed class ServerConfigTests
         var cfg = Parse("""
         {
           "admin": {
-            "nicknames": [],
+            "ids": [],
             "adminOnlyCommands": [ "mode", "map", "set", "play", "end", "start" ],
             "anyoneCanStart": false
           },
@@ -194,7 +198,7 @@ public sealed class ServerConfigTests
     {
         // Есть админ — значит гейт выставлен осознанно, миграция не вмешивается.
         var cfg = new ServerConfig();
-        cfg.Admin.Nicknames.Add("влал");
+        cfg.Admin.Ids.Add(25_354_325);
         cfg.Admin.AdminOnlyCommands.Clear();
         cfg.Admin.AdminOnlyCommands.AddRange(["mode", "map", "set", "play", "end", "start"]);
         cfg.Admin.AnyoneCanStart = false;
@@ -203,7 +207,7 @@ public sealed class ServerConfigTests
 
         Assert.Equal(6, cfg.Admin.AdminOnlyCommands.Count);
         Assert.False(cfg.Admin.AnyoneCanStart);
-        Assert.True(cfg.IsAdmin("влал"));
+        Assert.True(cfg.IsAdmin(25_354_325));
     }
 
     [Fact]

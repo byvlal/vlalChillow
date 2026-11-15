@@ -509,13 +509,37 @@ select.md-field__box{
   color:var(--md-sys-color-on-surface-variant);
 }
 .md-row__actions{display:flex;align-items:center;gap:12px}
-.md-row__count{
-  font:var(--md-sys-typescale-label-large);
+/* Счёт CT * T в списке комнат: вместо «сколько народу» (issue панели). */
+.md-row__score{
+  font:500 16px/20px "Roboto Mono",ui-monospace,Menlo,Consolas,monospace;
   color:var(--md-sys-color-on-surface-variant);
-  white-space:nowrap;
-  font-variant-numeric:tabular-nums;
+  white-space:nowrap;font-variant-numeric:tabular-nums;
 }
-.md-row__count b{color:var(--md-sys-color-on-surface);font-weight:500}
+.md-row__score b{color:var(--md-sys-color-on-surface);font-weight:500}
+/* Настоящее окно «Войти»: список комнат остаётся открытым за затемнением. */
+.md-dialog-backdrop{
+  position:fixed;inset:0;z-index:50;display:flex;
+  align-items:center;justify-content:center;padding:24px;
+  background:rgba(0,0,0,.55);
+}
+.md-dialog{
+  width:min(460px,100%);padding:24px;
+  border-radius:var(--md-sys-shape-corner-extra-large);
+  background:var(--md-sys-color-surface-container-high);
+  color:var(--md-sys-color-on-surface);
+  box-shadow:0 16px 48px rgba(0,0,0,.4);
+}
+.md-dialog__title{margin:0 0 8px;font:var(--md-sys-typescale-headline-small)}
+.md-dialog__text{margin:0 0 16px;color:var(--md-sys-color-on-surface-variant);
+  font:var(--md-sys-typescale-body-medium)}
+.md-dialog__cmd{
+  width:100%;box-sizing:border-box;height:48px;padding:0 12px;
+  border:1px solid var(--md-sys-color-outline);border-radius:var(--md-sys-shape-corner-extra-small);
+  background:var(--md-sys-color-surface);color:var(--md-sys-color-on-surface);
+  font:500 15px/20px "Roboto Mono",ui-monospace,Menlo,Consolas,monospace;
+}
+.md-dialog__hint{margin:8px 0 16px;color:var(--md-sys-color-on-surface-variant);
+  font:var(--md-sys-typescale-body-small)}
 
 /* ══════════
    Badges: в M3 это «label-small на контейнере»,
@@ -786,6 +810,22 @@ select.md-field__box{
     <span class="md-foot__demo">демо-данные, это макет</span>
   </footer>
 </main>
+
+<!-- «Войти» из публичной комнаты: команда копируется и остаётся выделяемой. -->
+<div class="md-dialog-backdrop" id="join-dialog" hidden>
+  <div class="md-dialog" role="dialog" aria-modal="true" aria-labelledby="join-dialog-title">
+    <h2 class="md-dialog__title" id="join-dialog-title">Команда скопирована</h2>
+    <p class="md-dialog__text">Вставь её в чат лобби — сервер сам закинет тебя в комнату.</p>
+    <input class="md-dialog__cmd" id="join-cmd" readonly aria-label="Команда входа в комнату">
+    <p class="md-dialog__hint" id="join-copy-state">
+      Команда скопирована. Вставь её в чат лобби.
+    </p>
+    <div class="md-actions">
+      <button class="md-button md-button--text" id="join-copy-btn"><span>Скопировать ещё раз</span></button>
+      <button class="md-button md-button--filled" id="join-close-btn"><span>Понятно</span></button>
+    </div>
+  </div>
+</div>
 
 <script>
 'use strict';
@@ -1138,8 +1178,8 @@ function renderRooms(){
       ? esc(r.name)
       : '<span class="md-row__title--muted">Комната #' + r.n + '</span>';
 
-    // Три состояния реестра: waiting / live / finished. Раунда и счёта в панели нет —
-    // сервер их не публикует, а придумывать «раунд 5 · 3:2» значит врать игроку.
+    // Три состояния реестра: waiting / live / finished. Счёт приходит с сервера:
+    // CT слева, T справа. Раунда в панели нет — его не публикуем.
     var badge;
     if (r.state === 'live') badge = '<span class="md-badge md-badge--live">идёт</span>';
     else if (r.state === 'finished') badge = '<span class="md-badge md-badge--full">закончилась</span>';
@@ -1157,7 +1197,8 @@ function renderRooms(){
           ' · ' + esc(r.map) + '</div>' +
       '</div>' +
       '<div class="md-row__actions">' +
-        '<span class="md-row__count"><b>' + r.players + '</b>/' + cap + '</span>' +
+        '<span class="md-row__score" aria-label="счёт CT и T"><b>' +
+          (r.scoreCt || 0) + '</b> * <b>' + (r.scoreTr || 0) + '</b></span>' +
         '<button class="md-button md-button--outlined"' +
           (full || r.state === 'finished' ? ' disabled' : '') + '>' +
           (full ? 'мест нет' : r.state === 'finished' ? 'закрыта' : 'Войти') + '</button>' +
@@ -1171,13 +1212,7 @@ function renderRooms(){
 
     var joinBtn = li.querySelector('.md-button--outlined');
     if (joinBtn && !full && r.state !== 'finished'){
-      joinBtn.addEventListener('click', function(){
-        $('result-cmd').textContent = joinCmd(r);
-        $('result').hidden = false;
-        switchTab('create');
-        copyText($('result-cmd').textContent, $('copy-btn'));
-        window.scrollTo({ top: 0, behavior: 'smooth' });
-      });
+      joinBtn.addEventListener('click', function(){ showJoinModal(r); });
     }
 
     var endBtn = li.querySelector('.md-end-btn');
@@ -1187,6 +1222,52 @@ function renderRooms(){
 
     box.appendChild(li);
   });
+}
+
+/* ═══════════ окно «Войти» ═══════════ */
+/* Раньше кнопка перекидывала на вкладку «Создать» и копировала команду из
+   карточки результата. Теперь список остаётся на месте, а команда видна в окне. */
+function showJoinModal(r){
+  var cmd = (r && r.cmd) ? r.cmd : joinCmd(r);
+  $('join-cmd').value = cmd;
+  $('join-copy-state').textContent = 'Команда скопирована. Вставь её в чат лобби.';
+  $('join-dialog').hidden = false;
+  $('join-cmd').focus();
+  $('join-cmd').select();
+  copyJoinCommand(cmd);
+}
+
+function closeJoinModal(){
+  $('join-dialog').hidden = true;
+}
+
+function copyJoinCommand(cmd){
+  var input = $('join-cmd');
+  input.value = cmd || input.value;
+  input.select();
+
+  function done(){
+    $('join-copy-state').textContent =
+      'Команда скопирована. Вставь её в чат лобби.';
+  }
+  function manual(){
+    $('join-copy-state').textContent =
+      'Не вышло скопировать автоматически — выдели команду и скопируй вручную, затем вставь в чат лобби.';
+    input.focus();
+    input.select();
+  }
+  function fallback(){
+    try {
+      if (document.execCommand && document.execCommand('copy')) done();
+      else manual();
+    } catch (e) { manual(); }
+  }
+
+  if (navigator.clipboard && window.isSecureContext){
+    navigator.clipboard.writeText(input.value).then(done).catch(fallback);
+  } else {
+    fallback();
+  }
 }
 
 /* ═══════════ табы ═══════════ */
@@ -1371,6 +1452,8 @@ function loadRooms(){
         n: r.number, name: r.name, mode: r.mode, map: r.level,
         players: r.players || 0, state: r.state, owner: r.owner,
         ownerId: r.ownerId,
+        scoreCt: r.scoreCt || 0, scoreTr: r.scoreTr || 0,
+        cmd: r.joinCommand || '',
         perTeam: r.perTeam, maxPlayers: r.maxPlayers, teamLabel: r.teamLabel,
         /* Свою комнату сервер помечает только для авторизованного владельца. */
         isMine: r.isMine === true
@@ -1438,6 +1521,16 @@ function setTheme(t){
 /* ═══════════ init ═══════════ */
 function init(){
   $('mode').addEventListener('change', function(){ renderTeams(); renderMaps(); });
+  $('join-close-btn').addEventListener('click', closeJoinModal);
+  $('join-copy-btn').addEventListener('click', function(){
+    copyJoinCommand($('join-cmd').value);
+  });
+  $('join-dialog').addEventListener('click', function(e){
+    if (e.target === $('join-dialog')) closeJoinModal();
+  });
+  document.addEventListener('keydown', function(e){
+    if (e.key === 'Escape' && !$('join-dialog').hidden) closeJoinModal();
+  });
   $('tab-create').addEventListener('click', function(){ switchTab('create'); });
   $('tab-list').addEventListener('click', function(){ switchTab('list'); });
   $('create-btn').addEventListener('click', createRoom);
@@ -1506,6 +1599,7 @@ if (typeof window !== 'undefined') {
     renderRooms: renderRooms, renderMaps: renderMaps, buildSelects: buildSelects,
     switchTab: switchTab, createRoom: createRoom, setTheme: setTheme,
     joinCmd: joinCmd, describeError: describeError,
+    showJoinModal: showJoinModal, closeJoinModal: closeJoinModal,
     login: login, logout: logout, loadMe: loadMe, renderProfile: renderProfile,
     endRoom: function(n){
       for (var i=0;i<rooms.length;i++) if (rooms[i].n === n) return endRoom(rooms[i]);

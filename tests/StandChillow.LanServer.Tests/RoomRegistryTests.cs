@@ -243,20 +243,24 @@ public sealed class RoomRegistryTests
     }
 
     [Fact]
-    public void Update_ReflectsStateAndPlayers()
+    public void Update_ReflectsStatePlayersAndTeamScore()
     {
         var reg = new RoomRegistry();
         Assert.True(reg.TryCreate("2v2", null, null, "a", out var room, out _));
 
-        Assert.True(reg.TryUpdate(room!.Number, RoomState.Live, 4));
+        Assert.True(reg.TryUpdate(room!.Number, RoomState.Live, 4, 5, 3));
         var snapshot = reg.Snapshot();
         Assert.Single(snapshot);
         Assert.Equal(RoomState.Live, snapshot[0].State);
         Assert.Equal(4, snapshot[0].Players);
+        Assert.Equal(5, snapshot[0].ScoreCt);
+        Assert.Equal(3, snapshot[0].ScoreTr);
 
-        // Отрицательное число игроков — не «магия», а 0.
-        Assert.True(reg.TryUpdate(room.Number, RoomState.Live, -5));
+        // Отрицательное число игроков и счёт — не «магия», а 0.
+        Assert.True(reg.TryUpdate(room.Number, RoomState.Live, -5, -2, -1));
         Assert.Equal(0, reg.Snapshot()[0].Players);
+        Assert.Equal(0, reg.Snapshot()[0].ScoreCt);
+        Assert.Equal(0, reg.Snapshot()[0].ScoreTr);
 
         Assert.False(reg.TryUpdate(999, RoomState.Live, 1));
     }

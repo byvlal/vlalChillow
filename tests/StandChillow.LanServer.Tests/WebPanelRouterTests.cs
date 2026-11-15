@@ -250,6 +250,21 @@ public sealed class WebPanelRouterTests
     }
 
     [Fact]
+    public void RoomListPublishesTeamScoreFromRegistry()
+    {
+        var router = NewRouter(out var rooms);
+        router.Route(Post("/api/rooms", """{"mode":"2v2","ownerId":1000}""", asPlayer: 1000));
+        Assert.True(rooms.TryUpdate(1, RoomState.Live, 4, 5, 3));
+
+        var json = Body(router.Route(Get("/api/rooms")));
+
+        // Порядок CT * T задан сервером: панель не переставляет команды местами.
+        Assert.Contains("\"scoreCt\":5", json);
+        Assert.Contains("\"scoreTr\":3", json);
+        Assert.Contains("\"players\":4", json);
+    }
+
+    [Fact]
     public void SecondRoomForSameOwnerIsConflict()
     {
         var router = NewRouter(out _);

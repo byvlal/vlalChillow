@@ -199,19 +199,20 @@ public sealed partial class GameMatchHost
     /// <summary>
     /// У кого в комнате есть тело: таких авторов клиент рисует (буква C пробы /chattest).
     /// Основной источник — <c>SpawnedPawns</c>; режим, который его не ведёт, берётся из
-    /// владельцев <c>LivingPawns</c> (тот же запасной путь, что у реконнекта).
+    /// владельцев <c>LivingPawns</c> (тот же запасной путь, что у реконнекта). Если список
+    /// пешек ещё пуст, берём готовые акторы 7777: в комнате одного игрока серверный ответ
+    /// иначе подписывался актором 1 и не рисовался вовсе (latest.log, actor=2).
     /// </summary>
-    private static IReadOnlyCollection<byte> LiveChatActors(MatchRoom room)
-    {
-        if (room.SpawnedPawns.Count > 0)
-            return room.SpawnedPawns.ToList();
-
-        return room.LivingPawns.Values
-            .Select(pawn => pawn.OwnerActorNr)
-            .Where(actor => actor != 0)
-            .Distinct()
-            .ToList();
-    }
+    private IReadOnlyCollection<byte> LiveChatActors(MatchRoom room) =>
+        MatchChatAuthor.LiveChatAudience(
+            // Снимки, а не живые коллекции: комната меняется из игрового цикла, и ленивая
+            // выдача HashSet/Dictionary могла упасть «collection was modified».
+            room.SpawnedPawns.ToArray(),
+            room.LivingPawns.Values.Select(pawn => pawn.OwnerActorNr).ToArray(),
+            _peers.Values
+                .Where(st => st.Room == room && st.BootstrapSent)
+                .Select(st => st.ActorNr)
+                .ToArray());
 
     /// <summary>Сколько разных промахов доставки помним: журнал не должен расти бесконечно.</summary>
     private const int ChatMissLogCapacity = 64;

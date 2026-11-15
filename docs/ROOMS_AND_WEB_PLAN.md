@@ -155,7 +155,8 @@
 Все семь шагов написаны и лежат в PR #48 (ветка `arena/ddbade03-vlalchillow`).
 
 - `build` (ubuntu, windows, macos) — зелёный: сервер собирается, 451 тест проходит.
-- Страница панели — 31 проверка в `tests/panel/panel.test.js` (jsdom, вне CI: нужен Node).
+- Страница панели — 73 проверки в `tests/panel/panel.test.js` (jsdom); с PR #54 шаг
+  `panel` в CI ставит jsdom и гоняет их на каждый push/PR.
 - `format (advisory)` красный и на `main` — это не регрессия от этих изменений.
 - Парсер C# (tree-sitter) — 199 файлов, 0 ошибок.
 

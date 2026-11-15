@@ -47,7 +47,7 @@ public sealed partial class GameNetHost
 
         // Матч проверяет те же записи: IP на коннекте, ник до выдачи актора.
         _match.Bans = _bans;
-        _match.IsAdminNick = IsBanExemptNick;
+        _match.IsBanExempt = IsBanExemptNick;
         _match.ExposeServerUid = settings.ExposeIds;
 
         Console.WriteLine(
@@ -110,7 +110,7 @@ public sealed partial class GameNetHost
     /// каждом входе, поэтому перечитывание конфига не оставляет старый список админов.
     /// </summary>
     private bool IsBanExemptNick(string? nick) =>
-        _config.IsAdmin(nick) || ServerIdentity.IsServerNick(nick);
+        _config.IsAdmin(IdOf(nick)) || ServerIdentity.IsServerNick(nick);
 
     private bool IsShadowPeer(NetPeer peer)
     {
@@ -336,11 +336,12 @@ public sealed partial class GameNetHost
             return;
         }
 
-        // Правило №2: админов не баним.
-        if (_config.IsAdmin(nick))
+        // Правило №2: админов не баним (проверка по серверному id).
+        var id = IdOf(nick);
+        if (_config.IsAdmin(id))
         {
-            reply($"'{nick}' — админ, админов банить нельзя");
-            Console.WriteLine($"[ban] отказ: '{nick}' в admin.nicknames — админа банить нельзя");
+            reply($"id #{id} — админ (admin.ids), админов банить нельзя");
+            Console.WriteLine($"[ban] отказ: id #{id} в admin.ids — админа банить нельзя");
             return;
         }
 

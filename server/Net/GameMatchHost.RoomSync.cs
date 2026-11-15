@@ -6,7 +6,7 @@ namespace StandChillow.LanServer.Net;
 public sealed partial class GameMatchHost
 {
     /// <summary>
-    /// Перенести состояние комнат в реестр панели: сколько людей и какая фаза.
+    /// Перенести состояние комнат в реестр панели: сколько людей, какая фаза и счёт.
     /// </summary>
     /// <remarks>
     /// <para>
@@ -27,7 +27,7 @@ public sealed partial class GameMatchHost
         if (registry is null)
             return;
 
-        List<(int Number, RoomState State, int Players)> snapshot = new();
+        List<(int Number, RoomState State, int Players, int ScoreCt, int ScoreTr)> snapshot = new();
         lock (_roomGate)
         {
             foreach (var room in _roomsByPassword.Values)
@@ -40,12 +40,18 @@ public sealed partial class GameMatchHost
                     if (nr != MatchHostActor.ActorNr)
                         humans++;
 
-                snapshot.Add((room.DisplayNumber, MapPhase(room.Flow.Phase, humans), humans));
+                // Только чтение счёта: в игровой цикл ничего не пишем и провод не трогаем.
+                snapshot.Add((
+                    room.DisplayNumber,
+                    MapPhase(room.Flow.Phase, humans),
+                    humans,
+                    room.Flow.ScoreCt,
+                    room.Flow.ScoreTr));
             }
         }
 
-        foreach (var (number, state, players) in snapshot)
-            registry.TryUpdate(number, state, players);
+        foreach (var (number, state, players, scoreCt, scoreTr) in snapshot)
+            registry.TryUpdate(number, state, players, scoreCt, scoreTr);
     }
 
     /// <summary>

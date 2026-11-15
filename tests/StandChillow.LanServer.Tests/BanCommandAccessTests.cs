@@ -1,3 +1,4 @@
+using StandChillow.LanServer.Bans;
 using StandChillow.LanServer.Config;
 using StandChillow.LanServer.Net;
 using Xunit;
@@ -10,10 +11,10 @@ namespace StandChillow.LanServer.Tests;
 /// </summary>
 public sealed class BanCommandAccessTests
 {
-    private static ServerConfig Config(params string[] admins)
+    private static ServerConfig Config(params int[] admins)
     {
         var cfg = new ServerConfig();
-        cfg.Admin.Nicknames.AddRange(admins);
+        cfg.Admin.Ids.AddRange(admins);
         cfg.Normalize();
         return cfg;
     }
@@ -32,40 +33,44 @@ public sealed class BanCommandAccessTests
     [InlineData("/айди")]
     public void BanCommandsAreAdminOnlyByDefault(string message)
     {
-        var cfg = Config("влал");
+        var cfg = Config(25_354_325);
 
         Assert.False(
-            CommandAccessPolicy.IsAllowed(cfg, "случайный игрок", message, out var reason));
+            CommandAccessPolicy.IsAllowed(cfg, 65_054_804, message, out var reason));
         Assert.Contains("только для админов", reason);
 
-        Assert.True(CommandAccessPolicy.IsAllowed(cfg, "влал", message, out var adminReason));
+        Assert.True(CommandAccessPolicy.IsAllowed(cfg, 25_354_325, message, out var adminReason));
         Assert.Equal(string.Empty, adminReason);
     }
 
     [Fact]
-    public void AdminCheckIgnoresCaseAndSurroundingSpaces()
+    public void AdminCheckUsesTheServerId()
     {
-        var cfg = Config("Влал");
+        var cfg = Config(MatchPublicId.ForNick("Влал"));
 
-        Assert.True(CommandAccessPolicy.IsAllowed(cfg, "  влАЛ ", "/bans", out _));
+        // Тот же id независимо от регистра ника: его считает сервер.
+        Assert.True(CommandAccessPolicy.IsAllowed(
+            cfg, MatchPublicId.ForNick("  влАЛ "), "/bans", out _));
+        Assert.False(CommandAccessPolicy.IsAllowed(
+            cfg, 65_054_804, "/bans", out _));
     }
 
     [Fact]
     public void BanGateDoesNotNeedAdminOnlyCommandsList()
     {
-        var cfg = Config("влал");
+        var cfg = Config(25_354_325);
         Assert.DoesNotContain("ban", cfg.Admin.AdminOnlyCommands);
 
-        Assert.False(CommandAccessPolicy.IsAllowed(cfg, "игрок", "/ban X 30m", out _));
+        Assert.False(CommandAccessPolicy.IsAllowed(cfg, 65_054_804, "/ban X 30m", out _));
     }
 
     [Fact]
     public void AdminOnlyFalseOpensBanToEveryone()
     {
-        var cfg = Config("влал");
+        var cfg = Config(25_354_325);
         cfg.Admin.Ban.AdminOnly = false;
 
-        Assert.True(CommandAccessPolicy.IsAllowed(cfg, "игрок", "/ban Ktulxy 30m", out var reason));
+        Assert.True(CommandAccessPolicy.IsAllowed(cfg, 65_054_804, "/ban Ktulxy 30m", out var reason));
         Assert.Equal(string.Empty, reason);
     }
 
@@ -74,9 +79,9 @@ public sealed class BanCommandAccessTests
     {
         // Бановый гейт закрывает /ban и /ids — на выбор режима/карты он не влияет.
         // /play и /start из проверки убраны: этих команд больше нет.
-        var cfg = Config("влал");
+        var cfg = Config(25_354_325);
 
-        Assert.True(CommandAccessPolicy.IsAllowed(cfg, "игрок", "/mode Escalation", out _));
-        Assert.True(CommandAccessPolicy.IsAllowed(cfg, "игрок", "/map Sandstone", out _));
+        Assert.True(CommandAccessPolicy.IsAllowed(cfg, 65_054_804, "/mode Escalation", out _));
+        Assert.True(CommandAccessPolicy.IsAllowed(cfg, 65_054_804, "/map Sandstone", out _));
     }
 }

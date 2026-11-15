@@ -1,3 +1,4 @@
+using StandChillow.LanServer.Bans;
 using StandChillow.LanServer.Config;
 using Xunit;
 
@@ -36,7 +37,7 @@ public sealed class ConfigUnknownKeysTests : IDisposable
     }
 
     [Fact]
-    public void RootAdminsKeyIsReportedAndSuggestsAdminNicknames()
+    public void RootAdminsKeyIsReportedAndSuggestsAdminIds()
     {
         var cfg = Load("""
         {
@@ -45,8 +46,8 @@ public sealed class ConfigUnknownKeysTests : IDisposable
         """);
 
         var issue = Assert.Single(cfg.Issues.Where(i => i.Key == "admins"));
-        Assert.Contains("admin.nicknames", issue.Detail);
-        Assert.False(cfg.IsAdmin("влал"));
+        Assert.Contains("admin.ids", issue.Detail);
+        Assert.False(cfg.IsAdmin(MatchPublicId.ForNick("влал")));
     }
 
     [Fact]
@@ -55,13 +56,13 @@ public sealed class ConfigUnknownKeysTests : IDisposable
         var cfg = Load("""
         {
           "admin": {
-            "nicknames": [ "влал" ],
+            "ids": [ 25354325 ],
             "adminNicknames": [ "влал" ]
           }
         }
         """);
 
-        Assert.True(cfg.IsAdmin("влал"));
+        Assert.True(cfg.IsAdmin(25_354_325));
         var issue = Assert.Single(cfg.Issues.Where(i => i.Key == "admin.adminNicknames"));
         Assert.Contains("admin", issue.Detail);
     }

@@ -1,4 +1,5 @@
 using LiteNetLib;
+using StandChillow.LanServer.Bans;
 
 namespace StandChillow.LanServer.Net.Lobby;
 
@@ -21,16 +22,28 @@ public sealed class ConnectedPlayer
     public byte[]? Avatar { get; set; }
     public PlayerLobbyStatus Status { get; set; } = PlayerLobbyStatus.Lobby;
     public bool Joined { get; set; }
+    /// <summary>
+    /// Серверный id игрока. Считается хостом из ника сессии при входе; клиент его не
+    /// присылает и подделать не может. Основа админских прав и ответа /whoami.
+    /// </summary>
+    public int PublicId { get; set; }
 }
 
 /// <summary>
-/// Host-side LAN lobby session. Full roster: JoinResponse + OpLobbyNewMember/Left so every
-/// client sees Server + all real peers (phone host ops 4/5 — not the former Server+self illusion).
+/// Host-side LAN lobby session. В проводе лобби виден только Server + сам клиент:
+/// клиент не переваривает больше ~10 подключённых игроков, поэтому состав держится
+/// в состоянии сессии (дашборд, сайт, /ids, команды), но никуда не передаётся на 7778.
+/// Комнаты матча (7777) этим не затрагиваются — там видны все актёры.
 /// </summary>
 public sealed class LobbySession
 {
     public const string ServerPlayerName = "Server";
     public const int ServerMemberId = 0;
+    /// <summary>
+    /// Id «я» в приватной росписи клиента: раз чужих строк нет, глобальный member id
+    /// не нужен и мог бы выйти за предел клиента. Server=0, клиент=1.
+    /// </summary>
+    public const int WireSelfMemberId = 1;
     /// <summary>Dedicated soft cap for snapshot maxMembers (live phone uses 4).</summary>
     public const byte DedicatedMaxMembers = 16;
     public const string WelcomeMessage = "это тест ради нехуй делать";
@@ -267,15 +280,13 @@ public sealed class LobbySession
                 player.Joined = true;
             }
 
-            // Full roster snapshot: Server(0) + every already-joined peer (not self — client
-            // maps self via selfMemberId, same as live phone host). Live maxMembers=4; dedicated
-            // advertises a higher soft cap so N>4 peers still fit the UI roster.
-            var visible = new List<LobbyMember>
-            {
-                new() { Id = ServerMemberId, Name = ServerPlayerName, Avatar = null },
-            };
-            foreach (var p in _order.Where(p => p.Joined && !ReferenceEquals(p, player)))
-                visible.Add(ToLobbyMember(p));
+            // Приватная роспись: только Server(0) + сам клиент (selfMemberId=1).
+            // Полный состав остаётся в состоянии сессии — его видят дашборд, сайт,
+            // /ids и команды, но на 7778 чужие строки не уходят: клиент ломается,
+            // когда в лобби больше ~10 подключённых игроков. Та же форма уже
+            // проверена на теневом входе забаненного (Server + я).
+            player.PublicId = MatchPublicId.ForNick(nick);
+            var visible = BuildHiddenLobbyRoster();
 
             string? hostIp = null;
             ushort hostPort = 0;
@@ -288,7 +299,7 @@ public sealed class LobbySession
             }
 
             var response = LobbyCodec.BuildJoinSuccess(
-                selfMemberId: player.ServerMemberId,
+                selfMemberId: WireSelfMemberId,
                 lobbyName: _lobbyName,
                 maxMembers: MaxMembersOverride > 0 ? MaxMembersOverride : DedicatedMaxMembers,
                 members: visible,
@@ -333,15 +344,13 @@ public sealed class LobbySession
             player.Avatar = req.Profile.Avatar;
             player.Status = PlayerLobbyStatus.Lobby;
             player.Joined = false;
+            player.PublicId = MatchPublicId.ForNick(player.Name);
 
             var response = LobbyCodec.BuildJoinSuccess(
-                selfMemberId: player.ServerMemberId,
+                selfMemberId: WireSelfMemberId,
                 lobbyName: _lobbyName,
                 maxMembers: MaxMembersOverride > 0 ? MaxMembersOverride : DedicatedMaxMembers,
-                members: new List<LobbyMember>
-                {
-                    new() { Id = ServerMemberId, Name = ServerPlayerName, Avatar = null },
-                },
+                members: BuildHiddenLobbyRoster(),
                 lobbyProps: BuildLobbyProps(),
                 hostingIp: null,
                 hostingPort: 0);
@@ -416,6 +425,23 @@ public sealed class LobbySession
         Name = p.Name,
         Avatar = p.Avatar,
     };
+
+    /// <summary>
+    /// Роспись лобби на проводе: одна строка Server. Чужие игроки не передаются —
+    /// клиент не переваривает больше ~10 подключённых игроков в лобби. Чистая
+    /// функция, без сокетов: покрыта тестом и переиспользуется теневым входом.
+    /// </summary>
+    public static IReadOnlyList<LobbyMember> BuildHiddenLobbyRoster() =>
+        new List<LobbyMember>
+        {
+            new() { Id = ServerMemberId, Name = ServerPlayerName, Avatar = null },
+        };
+
+    /// <summary>
+    /// Чужой чат в лобби подписывается автором Server с префиксом ника: раз в росписи
+    /// нет чужих строк, чужие member id на провод вообще не должны уходить.
+    /// </summary>
+    public static string FormatRelayedChat(string name, string text) => $"{name}: {text}";
 
     public bool TrySetPlayerStatus(ConnectedPlayer player, PlayerLobbyStatus status)
     {

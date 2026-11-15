@@ -133,19 +133,16 @@ public static class HostBootstrap
                           && IPAddress.TryParse(serverConfig.Network.AdvertiseIp, out var forcedIp)
             ? forcedIp
             : LanInterfacePicker.PickLanBindAddress();
-        var admins = serverConfig.Admin.Nicknames.Count == 0
-            ? "(список пуст — админ-команд нет)"
-            : string.Join(", ", serverConfig.Admin.Nicknames);
         Console.WriteLine($"[config] файл: {ServerConfig.LastLoadedPath}");
-        Console.WriteLine($"[config] админы: {admins}");
-        if (serverConfig.Admin.Nicknames.Count == 0)
+        Console.WriteLine($"[config] админы (id): {serverConfig.DescribeAdmins()}");
+        if (serverConfig.Admin.Ids.Count == 0)
         {
-            // Пустой список — самая частая причина «я не админ»: ник в лобби есть, а
-            // разрешения нет. Пишем готовую строку, которую надо вставить в конфиг.
+            // Пустой список — самая частая причина «я не админ»: человек в лобби есть,
+            // а его id не вписан. Пишем готовую строку, которую надо вставить в конфиг.
             Console.WriteLine(
                 "[config] ВНИМАНИЕ: админ-команд ни у кого нет. Добавь в " +
-                $"{ServerConfig.LastLoadedPath} строку вида: \"nicknames\": [ \"твой ник\" ] " +
-                "внутри admin{} — сервер перечитает файл на ходу");
+                $"{ServerConfig.LastLoadedPath} строку вида: \"ids\": [ 25354325 ] " +
+                "(id из /ids или /whoami) внутри admin{} — сервер перечитает файл на ходу");
         }
         Console.WriteLine(serverConfig.Admin.AdminOnlyCommands.Count == 0
             ? "[config] команд только для админов: нет — все команды доступны всем"
