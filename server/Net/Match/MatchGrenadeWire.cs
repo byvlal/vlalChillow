@@ -22,25 +22,29 @@ namespace StandChillow.LanServer.Net.Match;
 /// Throw payload (45 B, all 24 observed samples byte-aligned):
 /// <c>[0]=grenadeId [1]=00 [2]=00 [3]=throwerActor [4]=itemId [5..11]=00×7 [12..23]=origin
 /// XYZ [24..35]=direction XYZ [36]=flag? [37..39]=00×3 [40..43]=float? [44]=throwerActor</c>.
-/// <c>[0]</c> is the <b>client-assigned grenade id</b>: the explode varint echoes it back as
-/// <c>0x01000000 | [0]</c> in all 24 pairs, and it is <b>not</b> a throw counter — gold has
-/// back-to-back throws both using id=1 (client-side reset, likely per life) — so the host
-/// must reuse the client's id, never mint its own. <c>[3]</c> and <c>[44]</c> are the
-/// <b>thrower's actor nr</b>: captures show 01 (the thrower was always actor 1 there), the
-/// live dedicated-host session shows 02 while actor 2 threw (latest-2.log) — which is what
-/// pinned the author-subject rule for the explode below. Bytes <c>[36]</c> and
-/// <c>[40..43]</c> vary per throw without a recovered meaning — they are <b>not</b>
-/// interpreted here, and the throw itself is relayed verbatim.
+/// <c>[0]</c> is the <b>client-assigned grenade id</b> (low byte): the client keys the
+/// grenade by <c>(throwerActor &lt;&lt; 24) | [0]</c> (decompiled <c>GrenadeManager</c>; the
+/// composite is what the explode varint echoes back in all 24 pairs), and it is <b>not</b> a
+/// throw counter — gold has back-to-back throws both using id=1 (client-side reset, likely
+/// per life) — so the host must reuse the client's id, never mint its own. <c>[3]</c> and
+/// <c>[44]</c> are the <b>thrower's actor nr</b>: captures show 01 (the thrower was always
+/// actor 1 there), the live dedicated-host sessions show 02/03 while actors 2/3 threw
+/// (latest-2/latest-3.log). Bytes <c>[36]</c> and <c>[40..43]</c> vary per throw without a
+/// recovered meaning — they are <b>not</b> interpreted here, and the throw itself is
+/// relayed verbatim.
 /// </para>
 /// <para>
-/// Explode payload (24 B, identical shape in all 24 samples):
-/// <c>&lt;throwerActor&gt; 01 00 &lt;varint 0x01000000|grenadeId&gt; 01 00 &lt;pos XYZ&gt; 01 00 00</c>.
+/// Explode payload (24 B, identical shape in all 24 samples) — the serialized
+/// <c>GrenadeDetonateData</c> of the decompiled client for one grenade:
+/// <c>01 (HasInitiator) 0100 (Ids.Count u16) &lt;varint (throwerActor&lt;&lt;24)|grenadeId&gt;
+/// 0100 (Positions.Count u16) &lt;pos XYZ&gt; 0100 (AlternativeZones.Count u16) 00 (false)</c>.
+/// The initiator itself travels in the frame's <b>rpc author byte</b>, not in the payload.
 /// The frame's <c>timeValue</c> stays on the <b>thrower's clock</b>: the phone host's explode
 /// tv equals the throw tv + fuse to the millisecond (same device clock); a dedicated host
 /// must reproduce that relation (<see cref="BuildGrenadeExplodeRpc"/>) instead of minting
 /// tv from its own uptime — the client clock and <c>Environment.TickCount</c> are unrelated
 /// bases, and a live test showed the client silently ignore such a frame. The position is
-/// the phone host's own physics result; the dedicated host cannot replicate the map
+/// the master client's own physics result; the dedicated host cannot replicate the map
 /// collision, so <see cref="MatchGrenadeBallistics"/> approximates it.
 /// </para>
 /// </summary>
@@ -71,10 +75,17 @@ public static class MatchGrenadeWire
     public const byte ItemMolotov = 0x5E;
 
     /// <summary>
-    /// Explode varint base — every observed counter is <c>0x01000000 | grenadeId</c> where
-    /// <c>grenadeId</c> is throw payload byte <c>[0]</c> (<c>81 80 80 08</c> for id=1).
+    /// Full network id of a grenade: <c>(throwerActorNr &lt;&lt; 24) | grenadeId</c>. The client
+    /// (decompiled <c>GrenadeManager</c>) keys its <c>_droppedGrenades</c> by this composite —
+    /// the low byte comes from the throw payload <c>[0]</c> and resets client-side, so the
+    /// actor prefix is what keeps ids unique — and the detonation handler looks the grenade
+    /// up by exactly this int. A frame carrying any other id is dropped <b>silently</b>
+    /// (<c>ContainsKey</c> fails, the id is merely removed from the active list — three live
+    /// tests failed this way without a single client error). All 24 captured pairs show
+    /// <c>0x01000000 | id</c> because the thrower was always actor 1 there.
     /// </summary>
-    public const int ExplodeCounterBase = 0x0100_0000;
+    public static int GrenadeNetworkId(byte throwerActorNr, byte grenadeId)
+        => (throwerActorNr << 24) | grenadeId;
 
     /// <summary>Observed throw payload length — every one of the 24 samples is exactly 45 B.</summary>
     public const int ThrowPayloadLength = 45;
@@ -130,43 +141,46 @@ public static class MatchGrenadeWire
     }
 
     /// <summary>
-    /// Build the 24-byte explode payload — byte-identical to the phone-host frames. Two
-    /// fields come from the throw, never from the host's own state:
-    /// <list type="bullet">
-    /// <item>the varint echoes the <b>client's</b> grenade id (throw payload byte
-    /// <c>[0]</c>; 24/24 capture pairs, the id resets client-side);</item>
-    /// <item>payload byte <c>[0]</c> is the <b>thrower's actor nr</b> — in captures it is
-    /// always 1 because the thrower was actor 1, and the live client (thrower actor 2,
-    /// its throw payload carries 02 in the actor slots) ignored a frame stamped with 1.
-    /// Same author-subject rule as the phone host's WeaponDrop frames.</item>
-    /// </list>
+    /// Build the 24-byte explode payload — the serialized <c>GrenadeDetonateData</c> from the
+    /// decompiled client (<c>Ids</c>, <c>Positions</c>, <c>AlternativeZones</c>,
+    /// <c>HasInitiator</c>), byte-identical to the phone-host frames for one grenade:
+    /// <c>01</c> HasInitiator=true, <c>0100</c> Ids.Count (u16 LE), varint
+    /// <see cref="GrenadeNetworkId">full id</see>, <c>0100</c> Positions.Count, position XYZ,
+    /// <c>0100</c> AlternativeZones.Count, <c>00</c> InAlternativeZone=false. The master
+    /// client groups same-tick grenades of one thrower into a single frame — counts &gt; 1
+    /// never appear in the captures and are not built here.
     /// </summary>
     public static byte[] BuildExplodePayload(
         byte grenadeId, byte throwerActorNr, float posX, float posY, float posZ)
     {
         var w = new LobbyWriter();
-        w.WriteByte(throwerActorNr);
-        w.WriteByte(1);
-        w.WriteByte(0);
-        w.WriteVarInt(ExplodeCounterBase | grenadeId);
-        w.WriteByte(1);
-        w.WriteByte(0);
+        w.WriteBool(true);                      // HasInitiator — the initiator is known
+        w.WriteInt16(1);                        // Ids.Count
+        w.WriteVarInt(GrenadeNetworkId(throwerActorNr, grenadeId));
+        w.WriteInt16(1);                        // Positions.Count
         w.WriteFloat(posX);
         w.WriteFloat(posY);
         w.WriteFloat(posZ);
-        w.WriteByte(1);
-        w.WriteByte(0);
-        w.WriteByte(0);
+        w.WriteInt16(1);                        // AlternativeZones.Count
+        w.WriteBool(false);                     // InAlternativeZone
         return w.ToArray();
     }
 
     /// <summary>
     /// Host-authored GrenadeManager explode frame: <c>WorldObjectRpc id=5 gaa=2 field=2</c>
-    /// with the 24-byte payload. Three fields come from the throw:
-    /// the <b>rpc author byte</b> is the thrower's actor nr (see
-    /// <see cref="BuildExplodePayload"/> — captures show 1 only because actor 1 threw
-    /// there; the phone host stamps the subject player, not itself, proven by gold
-    /// WeaponDropManager frames rpc=2/3/4 and by ChatManager attribution);
+    /// with the 24-byte payload. On the phone the <b>master client</b> authored this frame
+    /// (<c>GrenadeManager.SendDetonationRPCs</c> — the fuse runs client-side and only
+    /// <c>IsMasterClient</c> sends); a dedicated host has no Unity client, so the server
+    /// stands in for it. Two fields come from the throw, never from the host's own state:
+    /// <list type="bullet">
+    /// <item>the <b>rpc author byte</b> is the thrower's actor nr — the client passes the
+    /// initiator as a separate Rpc argument (<c>CallDetonateViaServer(initiator, …)</c>),
+    /// which lands in the frame's author byte. Captures show 1 only because actor 1 threw
+    /// there (same author-subject rule as the phone host's WeaponDropManager frames
+    /// rpc=2/3/4);</item>
+    /// <item>the payload's varint id is the <see cref="GrenadeNetworkId">full composite
+    /// id</see> — the client's lookup key, silently dropped on mismatch.</item>
+    /// </list>
     /// <paramref name="timeValue"/> must stay on the thrower's clock — pass
     /// <c>throw.TimeValue + fuse</c> (phone host: 24/24 explode tv = throw tv + fuse
     /// within 2 ms; on the phone they shared one device clock, a dedicated host does

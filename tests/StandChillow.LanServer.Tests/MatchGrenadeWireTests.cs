@@ -150,11 +150,12 @@ public sealed class MatchGrenadeWireTests
     }
 
     /// <summary>
-    /// Счётчик взрывов — varint от базы <c>0x01000000</c>: в капчах малые id дают
-    /// <c>81..87 80 80 08</c> (id=1..7), т.е. младшие 7 бит идут первым байтом.
+    /// Полный сетевой id гранаты — <c>(actor&lt;&lt;24)|lowId</c> (ключ _droppedGrenades из
+    /// декомпилированного клиента): actor 1 id 1..7 даёт <c>81..87 80 80 08</c> (как во всех
+    /// капчах), actor 2 id 1 → <c>81 80 80 10</c>, actor 3 id 2 → <c>82 80 80 18</c>.
     /// </summary>
     [Fact]
-    public void ExplodeCounter_EncodesThePhoneHostVarintBase()
+    public void ExplodeIdVarint_EncodesTheCompositeNetworkId()
     {
         for (byte n = 1; n <= 7; n++)
         {
@@ -164,20 +165,27 @@ public sealed class MatchGrenadeWireTests
             Assert.Equal(0x80, payload[5]);
             Assert.Equal(0x08, payload[6]);
         }
+
+        Assert.Equal(0x0200_0001, MatchGrenadeWire.GrenadeNetworkId(2, 1));
+        Assert.Equal(0x0300_0002, MatchGrenadeWire.GrenadeNetworkId(3, 2));
+
+        var actor2 = MatchGrenadeWire.BuildExplodePayload(1, 2, 1f, 2f, 3f);
+        Assert.Equal(new byte[] { 0x81, 0x80, 0x80, 0x10 }, actor2[3..7]);
+
+        var actor3 = MatchGrenadeWire.BuildExplodePayload(2, 3, 1f, 2f, 3f);
+        Assert.Equal(new byte[] { 0x82, 0x80, 0x80, 0x18 }, actor3[3..7]);
     }
 
     /// <summary>
-    /// Кадр взрыва подписан <b>актором бросавшего</b>, а не актором хоста: rpc-байт и
-    /// payload[0] = throwerActorNr, остальные байты формы не тронуты. В капчурах бросал
-    /// всегда актор 1 (rpc=1, payload[0]=1 — потому это и не было видно), но live-сессия
-    /// (latest-2.log: бросал актор 2, его payload броска несёт 02 в акторных слотах
-    /// [3]/[44]) показала, что кадр, подписанный актором 1, клиент молча игнорирует.
-    /// Телефон-хост подписывает per-player кадры актором субъекта: золотые
-    /// WeaponDropManager-кадры (id=4, gaa=2) несут rpc=2/3/4 по владельцу предмета
-    /// (171/171), чат атрибутируется тем же байтом.
+    /// Кадр взрыва для бросавшего-не-актора-1: rpc-байт = актор бросавшего (инициатор идёт
+    /// отдельным аргументом Rpc в клиенте — <c>CallDetonateViaServer(initiator, …)</c>), а
+    /// payload — сериализованный <c>GrenadeDetonateData</c>: <c>HasInitiator=01</c> (НЕ актор —
+    /// третья live-сессия ушла в молоко в том числе из-за 02 в этом байте), счётчики массивов
+    /// <c>0100</c>, varint = полный композитный id <c>(actor&lt;&lt;24)|lowId</c> — именно по нему
+    /// клиент ищет гранату, промах означает тихий дроп без единой ошибки.
     /// </summary>
     [Fact]
-    public void ExplodeFrame_IsSignedWithTheThrowersActor()
+    public void ExplodeFrame_CarriesInitiatorRpcAndCompositeId()
     {
         var stime = 0x056FF8E8; // из live-лога latest-2.log
         var pkt = MatchGrenadeWire.BuildGrenadeExplodeRpc(
@@ -186,18 +194,16 @@ public sealed class MatchGrenadeWireTests
 
         // rpc-байт = актор бросавшего (2), не актор хоста (1).
         Assert.Equal(2, pkt[HostHeaderLen + 2]);
-        // payload[0] = тот же актор; остальная форма — как в капчурах.
+
         var payload = pkt.AsSpan(HostHeaderLen + RpcBodyHeaderLen).ToArray();
         Assert.Equal(24, payload.Length);
-        Assert.Equal(2, payload[0]);
-        Assert.Equal(1, payload[1]);
-        Assert.Equal(0, payload[2]);
-        Assert.Equal(new byte[] { 0x81, 0x80, 0x80, 0x08 }, payload[3..7]);
-        Assert.Equal(1, payload[7]);
-        Assert.Equal(0, payload[8]);
-        Assert.Equal(1, payload[21]);
-        Assert.Equal(0, payload[22]);
-        Assert.Equal(0, payload[23]);
+        // GrenadeDetonateData: HasInitiator=true, Ids.Count=1, полный id (actor<<24)|1.
+        Assert.Equal(1, payload[0]);
+        Assert.Equal(new byte[] { 0x01, 0x00 }, payload[1..3]);
+        Assert.Equal(new byte[] { 0x81, 0x80, 0x80, 0x10 }, payload[3..7]);
+        Assert.Equal(new byte[] { 0x01, 0x00 }, payload[7..9]);
+        Assert.Equal(new byte[] { 0x01, 0x00 }, payload[21..23]);
+        Assert.Equal(0, payload[23]); // InAlternativeZone = false
     }
 
     /// <summary>

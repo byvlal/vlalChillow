@@ -11,15 +11,19 @@ namespace StandChillow.LanServer.Net;
 /// landed and silently did nothing. This partial schedules the detonation when a throw is
 /// observed and fans the explode frame out when the fuse expires.
 /// <para>
-/// Live-test follow-ups: build 1 (host-minted counter, <c>tv = stime/1000</c>) and build 2
-/// (client id + thrower-clock tv, but rpc byte and payload actor still 1) were both silently
-/// ignored by the live client. Every field the phone host's bytes actually carried relative
-/// to the throw is now taken from the throw (24/24 capture pairs + the live logs):
-/// the varint echoes the <b>client's</b> grenade id (throw payload <c>[0]</c>, resets
-/// client-side), the timeValue stays on the <b>thrower's</b> clock
-/// (<c>throw.tv + fuse</c>), and the frame is signed with the <b>thrower's actor nr</b>
-/// (rpc byte + payload <c>[0]</c>; the phone host stamps the subject player into per-player
-/// frames — gold WeaponDropManager rpc=2/3/4 — not its own actor).
+/// Live-test follow-ups: build 1 (host-minted counter, <c>tv = stime/1000</c>), build 2
+/// (client id + thrower-clock tv, but rpc byte and payload actor still 1) and build 3
+/// (thrower-signed rpc byte, but the varint id still based on actor 1 and payload[0] set
+/// to the actor) were all silently ignored by the live client. The decompiled
+/// <c>GrenadeManager</c> explained the silence: the detonation handler looks the grenade
+/// up by its full network id <c>(throwerActor &lt;&lt; 24) | clientLowId</c> and an unknown
+/// id is just dropped from the active list — no error. Everything the frame carries
+/// relative to the throw is now taken from the throw (24/24 capture pairs + live logs +
+/// the client code): the varint is the client's <b>composite id</b>, the rpc author byte
+/// is the <b>thrower's actor</b> (the client passes the initiator as a separate Rpc
+/// argument), the payload is the serialized <c>GrenadeDetonateData</c> with
+/// <c>HasInitiator=true</c> and count-1 arrays, and the timeValue stays on the
+/// <b>thrower's</b> clock (<c>throw.tv + fuse</c>).
 /// </para>
 /// </summary>
 public sealed partial class GameMatchHost
