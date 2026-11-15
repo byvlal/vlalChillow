@@ -51,7 +51,7 @@ public sealed class SiteSessionTests
     public void Find_UnknownTokenIsNull()
     {
         var sessions = new SiteSessions();
-        sessions.Create(4242, "влал", Now)!;
+        sessions.Create(4242, "влал", Now);
 
         Assert.Null(sessions.Find("чужой", Now));
         Assert.Null(sessions.Find(null, Now));

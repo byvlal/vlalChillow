@@ -71,7 +71,7 @@ public sealed class WebRoomOwnerTests
 
     private static string Body(WebResponse response) => Encoding.UTF8.GetString(response.Body);
 
-    private static void CreateRoom(WebPanelRouter router, int asPlayer)
+    private void CreateRoom(WebPanelRouter router, int asPlayer)
     {
         var response = router.Route(Post("/api/rooms", """{"mode":"2v2"}""", asPlayer));
         Assert.Equal(201, response.Status);

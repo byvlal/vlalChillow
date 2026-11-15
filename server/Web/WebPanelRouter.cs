@@ -371,8 +371,18 @@ public sealed partial class WebPanelRouter
 
     private static WebResponse ApiError(int status, string code, string message)
     {
-        var json = JsonSerializer.Serialize(new { code, message });
-        return WebResponse.Json(json, status);
+        // Тот же писатель, что и у остальных ответов: иначе «аккаунт забанен» уедет
+        // на страницу как \u0430\u043A… и человек увидит кракозябры вместо текста.
+        using var stream = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(stream, JsonText.WriterOptions))
+        {
+            writer.WriteStartObject();
+            writer.WriteString("code", code);
+            writer.WriteString("message", message);
+            writer.WriteEndObject();
+        }
+
+        return WebResponse.Json(Encoding.UTF8.GetString(stream.ToArray()), status);
     }
 
     private static WebResponse WithAllow(string allow, WebResponse response) => new(
