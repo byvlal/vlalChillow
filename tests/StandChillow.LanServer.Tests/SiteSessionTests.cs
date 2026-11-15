@@ -115,7 +115,9 @@ public sealed class SiteSessionTests
     private static string Body(WebResponse response) => Encoding.UTF8.GetString(response.Body);
 
     private static (WebPanelRouter Router, SiteSessions Sessions, SiteLoginCodes Codes) NewAuthRouter(
-        string basePath = "")
+        string basePath = "",
+        Func<int, bool>? isBanned = null,
+        Func<int, byte[]?>? avatar = null)
     {
         var sessions = new SiteSessions();
         var codes = new SiteLoginCodes();
@@ -129,6 +131,8 @@ public sealed class SiteSessionTests
                 Sessions = sessions,
                 RedeemCode = (code, now) => codes.TryFind(code, now, out var entry) ? entry : null,
                 CookiePath = WebPanelHost.CookiePathFor(basePath),
+                IsBanned = isBanned,
+                AvatarById = avatar,
             });
 
         return (router, sessions, codes);
@@ -256,5 +260,117 @@ public sealed class SiteSessionTests
 
         Assert.Equal(405, response.Status);
         Assert.Contains(response.ExtraHeaders, h => h.Item1 == "Allow" && h.Item2 == "POST");
+    }
+
+    // ── бан (#51) ───────────────────────────────────────────────────────────
+
+    [Fact]
+    public void Auth_BannedPlayerIsRefused()
+    {
+        var (router, sessions, codes) = NewAuthRouter(isBanned: _ => true);
+        var code = codes.Issue(4242, "влал", DateTime.UtcNow)!;
+
+        var response = router.Route(Post("/api/auth", $"{{\"code\":\"{code}\"}}"));
+
+        Assert.Equal(403, response.Status);
+        Assert.Contains("banned", Body(response));
+        Assert.Contains("забанен", Body(response));
+        Assert.Equal(0, sessions.Count);
+    }
+
+    [Fact]
+    public void Me_BannedSessionDropsImmediately()
+    {
+        var (router, sessions, _) = NewAuthRouter(isBanned: _ => true);
+        var session = sessions.Create(4242, "влал", DateTime.UtcNow)!;
+
+        var response = router.Route(Get("/api/me", ("Cookie", $"sc_session={session.Token}")));
+
+        // Забанили, пока человек сидел на сайте: сессия сгорела в тот же запрос.
+        Assert.Equal(403, response.Status);
+        Assert.Equal(0, sessions.Count);
+        Assert.Equal(401, router.Route(Get("/api/me", ("Cookie", $"sc_session={session.Token}"))).Status);
+    }
+
+    // ── аватар (#51) ────────────────────────────────────────────────────────
+
+    private static byte[] JpegStub()
+    {
+        var bytes = new byte[16];
+        bytes[0] = 0xFF; bytes[1] = 0xD8; bytes[2] = 0xFF; bytes[3] = 0xE0;
+        return bytes;
+    }
+
+    private static byte[] PngStub()
+    {
+        var bytes = new byte[16];
+        bytes[0] = 0x89; bytes[1] = 0x50; bytes[2] = 0x4E; bytes[3] = 0x47;
+        return bytes;
+    }
+
+    [Fact]
+    public void Avatar_ServesLobbyBytesAsJpeg()
+    {
+        var jpeg = JpegStub();
+        var (router, sessions, _) = NewAuthRouter(avatar: id => id == 4242 ? jpeg : null);
+        var session = sessions.Create(4242, "влал", DateTime.UtcNow)!;
+
+        var response = router.Route(Get("/api/avatar", ("Cookie", $"sc_session={session.Token}")));
+
+        Assert.Equal(200, response.Status);
+        Assert.Equal("image/jpeg", response.ContentType);
+        Assert.Equal(jpeg, response.Body);
+        Assert.Contains(response.ExtraHeaders, h => h.Item1 == "Cache-Control" && h.Item2 == "private, max-age=300");
+    }
+
+    [Fact]
+    public void Avatar_PngIsServedAsPng()
+    {
+        var png = PngStub();
+        var (router, sessions, _) = NewAuthRouter(avatar: _ => png);
+        var session = sessions.Create(4242, "влал", DateTime.UtcNow)!;
+
+        var response = router.Route(Get("/api/avatar", ("Cookie", $"sc_session={session.Token}")));
+
+        // Тип определяем по magic-байтам, а не «всегда jpeg»: формат присланного
+        // аватара подтверждён захватом для JPEG, но угадывать за клиента нельзя.
+        Assert.Equal("image/png", response.ContentType);
+    }
+
+    [Fact]
+    public void Avatar_UnknownFormatIs404()
+    {
+        var (router, sessions, _) = NewAuthRouter(avatar: _ => new byte[16]);
+        var session = sessions.Create(4242, "влал", DateTime.UtcNow)!;
+
+        var response = router.Route(Get("/api/avatar", ("Cookie", $"sc_session={session.Token}")));
+
+        Assert.Equal(404, response.Status);
+    }
+
+    [Fact]
+    public void Avatar_MissingOrAbsentPlayerIs404()
+    {
+        var (router, sessions, _) = NewAuthRouter(avatar: _ => null);
+        var session = sessions.Create(4242, "влал", DateTime.UtcNow)!;
+
+        Assert.Equal(404, router.Route(Get("/api/avatar", ("Cookie", $"sc_session={session.Token}"))).Status);
+    }
+
+    [Fact]
+    public void Avatar_WithoutSessionIs401()
+    {
+        var (router, _, _) = NewAuthRouter(avatar: _ => JpegStub());
+
+        Assert.Equal(401, router.Route(Get("/api/avatar")).Status);
+    }
+
+    [Fact]
+    public void Avatar_BannedSessionIs403()
+    {
+        var (router, sessions, _) = NewAuthRouter(avatar: _ => JpegStub(), isBanned: _ => true);
+        var session = sessions.Create(4242, "влал", DateTime.UtcNow)!;
+
+        Assert.Equal(403, router.Route(Get("/api/avatar", ("Cookie", $"sc_session={session.Token}"))).Status);
     }
 }

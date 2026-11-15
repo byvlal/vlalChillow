@@ -26,6 +26,23 @@ public sealed partial class WebPanelRouter
         "код не существует или неактивен — перепроверьте, правильно ли он написан, " +
         "или перезайдите в лобби для получения нового кода";
 
+    /// <summary>Текст отказа забаненному (#51).</summary>
+    private const string BannedMessage = "аккаунт забанен";
+
+    /// <summary>
+    /// Проверить, не забанен ли автор запроса. Бан «на лету» гасит все его сессии:
+    /// человека могли забанить, пока он сидел на сайте, и продолжать он не должен.
+    /// </summary>
+    /// <returns>Готовый ответ-отказ или <c>null</c>, если всё в порядке.</returns>
+    private WebResponse? BannedRefusal(SiteSession session)
+    {
+        if (_options.IsBanned?.Invoke(session.PlayerId) != true)
+            return null;
+
+        _options.Sessions?.DropByPlayer(session.PlayerId);
+        return ApiError(403, "banned", BannedMessage);
+    }
+
     private WebResponse Authenticate(WebRequestContext request)
     {
         if (_options.Sessions is null || _options.RedeemCode is null)
@@ -52,6 +69,13 @@ public sealed partial class WebPanelRouter
             return ApiError(401, "bad_code", CodeRejectedMessage);
         }
 
+        // Забаненный не авторизуется: попытка сразу говорит причину (#51).
+        if (_options.IsBanned?.Invoke(entry.PlayerId) == true)
+        {
+            Console.WriteLine($"[web] авторизация отклонена: ID {entry.PlayerId} забанен");
+            return ApiError(403, "banned", BannedMessage);
+        }
+
         var session = _options.Sessions.Create(entry.PlayerId, entry.Nick, now);
         if (session is null)
             return ApiError(503, "too_many_sessions", "на сервере кончились сессии — попробуй позже");
@@ -71,7 +95,60 @@ public sealed partial class WebPanelRouter
         if (session is null)
             return ApiError(401, "no_auth", "нужно ввести код из лобби");
 
-        return WebResponse.Json(BuildProfileJson(session));
+        return BannedRefusal(session) ?? WebResponse.Json(BuildProfileJson(session));
+    }
+
+    /// <summary>
+    /// Аватар игрока — ровно те байты, что клиент прислал в лобби.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Формат подтверждён захватом (<c>captures/chat.zip</c>, JoinResponse от телефона):
+    /// это JPEG 256×256. Но выдаём мы ровно то, что лежит в профиле, и тип определяем по
+    /// magic-байтам: угадывать «это JPEG» без проверки значило бы врать, если клиент
+    /// когда-нибудь пришлёт другое.
+    /// </para>
+    /// <para>
+    /// Аватар — личная вещь, поэтому только по сессии и с <c>private</c> в кэше.
+    /// </para>
+    /// </remarks>
+    private WebResponse Avatar(WebRequestContext request)
+    {
+        var session = SessionOf(request);
+        if (session is null)
+            return ApiError(401, "no_auth", "нужно ввести код из лобби");
+
+        if (BannedRefusal(session) is { } banned)
+            return banned;
+
+        var bytes = _options.AvatarById?.Invoke(session.PlayerId);
+        var type = ImageContentType(bytes);
+        if (type is null)
+            return WebResponse.Text("нет аватара", 404);
+
+        return new WebResponse(200, type, bytes!, 0,
+            new List<(string, string)> { ("Cache-Control", "private, max-age=300") });
+    }
+
+    /// <summary>
+    /// Тип картинки поmagic-байтам. Неизвестное — <c>null</c>: не угадываем.
+    /// </summary>
+    internal static string? ImageContentType(byte[]? bytes)
+    {
+        if (bytes is null || bytes.Length < 12)
+            return null;
+
+        if (bytes[0] == 0xFF && bytes[1] == 0xD8 && bytes[2] == 0xFF)
+            return "image/jpeg";
+
+        if (bytes[0] == 0x89 && bytes[1] == 0x50 && bytes[2] == 0x4E && bytes[3] == 0x47)
+            return "image/png";
+
+        if (bytes[0] == (byte)'R' && bytes[1] == (byte)'I' && bytes[2] == (byte)'F'
+            && bytes[3] == (byte)'F' && bytes[8] == (byte)'W' && bytes[9] == (byte)'E')
+            return "image/webp";
+
+        return null;
     }
 
     private WebResponse Logout(WebRequestContext request)

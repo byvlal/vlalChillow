@@ -63,6 +63,10 @@ public sealed partial class WebPanelRouter
         if (ownerId != session.PlayerId)
             return ApiError(403, "not_owner", "это не твоя комната — завершить её может только владелец");
 
+        // Забаненный владелец катку не закрывает (#51).
+        if (BannedRefusal(session) is { } banned)
+            return banned;
+
         if (_options.EndRoom is null)
             return ApiError(503, "not_supported", "завершение с сайта не настроено на этом сервере");
 

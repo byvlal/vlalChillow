@@ -17,6 +17,7 @@ public sealed class WebRoomOwnerTests
     private readonly Dictionary<int, string> _tokens = new();
     private readonly List<(int Number, int PlayerId)> _endCalls = new();
     private string? _endError;
+    private Func<int, bool>? _banned;
 
     private WebPanelRouter NewRouter(out RoomRegistry rooms)
     {
@@ -34,6 +35,7 @@ public sealed class WebRoomOwnerTests
                 },
                 Sessions = _sessions,
                 RedeemCode = (_, _) => null,
+                IsBanned = id => _banned?.Invoke(id) ?? false,
                 EndRoom = (number, playerId) =>
                 {
                     _endCalls.Add((number, playerId));
@@ -172,9 +174,39 @@ public sealed class WebRoomOwnerTests
     [InlineData("/api/rooms/-1/end", false, 0)]
     [InlineData("/api/rooms/x/end", false, 0)]
     [InlineData("/api/rooms/1/finish", false, 0)]
-    public void EndRoom_PathParsing(string path, bool expected, int number)
+    public void EndRoom_PathParsingIsExact(string path, bool expected, int number)
     {
         Assert.Equal(expected, WebPanelRouter.TryParseRoomEndPath(path, out var parsed));
         Assert.Equal(number, parsed);
+    }
+
+    // ── бан (#51) ───────────────────────────────────────────────────────────
+
+    [Fact]
+    public void BannedPlayerCannotCreateRoom()
+    {
+        var router = NewRouter(out var rooms);
+        _banned = id => id == 1000;
+
+        var response = router.Route(Post("/api/rooms", """{"mode":"2v2"}""", 1000));
+
+        Assert.Equal(403, response.Status);
+        Assert.Contains("забанен", Body(response));
+        Assert.Equal(0, rooms.Count);
+    }
+
+    [Fact]
+    public void BanMidSessionDropsItOnAnyRequest()
+    {
+        var router = NewRouter(out _);
+        CreateRoom(router, 1000);
+        _banned = id => id == 1000;
+
+        // Забанили, пока человек сидел на сайте: первая же просьба гасит сессию.
+        var response = router.Route(Post("/api/rooms/1/end", "{}", 1000));
+
+        Assert.Equal(403, response.Status);
+        Assert.Empty(_endCalls);
+        Assert.Equal(0, _sessions.Count);
     }
 }

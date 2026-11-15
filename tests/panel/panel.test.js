@@ -58,12 +58,32 @@ let statusState = {
 let posted = null;
 let postResponse = null;
 
+/* Авторизация (#51): кто я по мнению сервера. null — сайт не авторизован.
+   Комната создаётся только авторизованным, «Моя комната» видна только ему. */
+let meState = null;          /* null → /api/me отвечает 401 */
+let authResponse = null;     /* подмена ответа POST /api/auth */
+let ended = null;            /* куда ушёл POST /api/rooms/{n}/end */
+let endResponse = null;      /* подмена ответа завершения */
+
 function fakeFetch(url, opts) {
   const method = (opts && opts.method) || 'GET';
   const u = String(url);
   let body = null, status = 200;
 
-  if (u.indexOf('api/modes') >= 0) body = MODES;
+  /* Порядок важен: «…/api/rooms/1/end» тоже начинается с api/rooms. */
+  if (/\/end$/.test(u) && method === 'POST') {
+    ended = u;
+    if (endResponse) { body = endResponse.body; status = endResponse.status; }
+    else { body = { ok: true, number: 1 }; status = 200; }
+  } else if (u.indexOf('api/auth') >= 0 && method === 'POST') {
+    if (authResponse) { body = authResponse.body; status = authResponse.status; }
+    else { body = { id: 333, nick: 'новичок' }; status = 200; }
+  } else if (u.indexOf('api/me') >= 0 && method === 'GET') {
+    if (meState) { body = meState; status = 200; }
+    else { body = { code: 'no_auth', message: 'нужно ввести код из лобби' }; status = 401; }
+  } else if (u.indexOf('api/logout') >= 0) { body = { ok: true }; status = 200; }
+  else if (u.indexOf('api/avatar') >= 0) { body = null; status = 404; }
+  else if (u.indexOf('api/modes') >= 0) body = MODES;
   else if (u.indexOf('api/rooms') >= 0 && method === 'GET') {
     body = { nextNumber: 3, count: roomsState.length, maxRooms: 64, rooms: roomsState };
   } else if (u.indexOf('api/rooms') >= 0 && method === 'POST') {
@@ -156,15 +176,34 @@ function fakeFetch(url, opts) {
 
   /* ── создание комнаты ── */
   P.switchTab('create');
-  $('player-id').value = '333';
+
+  /* Без авторизации запрос вообще не уходит (#51). */
+  posted = null;
+  $('room-name').value = 'новая';
+  P.createRoom();
+  await new Promise(r => setTimeout(r, 60));
+  check('без входа создание не уходит на сервер', posted === null, JSON.stringify(posted));
+  check('без входа сказано, что нужен код',
+    $('create-err').textContent.indexOf('код') >= 0, $('create-err').textContent);
+
+  /* Входим: сервер отвечает профилем. */
+  meState = { id: 333, nick: 'новичок' };
+  await P.loadMe();
+  check('после входа профиль показан', $('profile').hidden === false);
+  check('профиль: «Привет, <ник>»', $('profile-name').textContent === 'Привет, новичок',
+    $('profile-name').textContent);
+  check('профиль: ID под ником', $('profile-id').textContent === 'ID 333', $('profile-id').textContent);
+  check('после входа форма кода скрыта', $('auth-form').hidden === true);
+
   $('mode').selectedIndex = 0;
   $('mode').dispatchEvent(new window.Event('change'));
   $('room-name').value = 'новая';
   P.createRoom();
   await new Promise(r => setTimeout(r, 120));
 
-  check('POST ушёл с режимом/картой/ID',
-    posted && posted.mode === 'Ranked2v2' && posted.ownerId === 333 && posted.level === 'Sandstone 2x2',
+  check('POST ушёл с режимом и картой, владельца в теле нет',
+    posted && posted.mode === 'Ranked2v2' && posted.level === 'Sandstone 2x2' &&
+    posted.ownerId === undefined && posted.owner === undefined,
     JSON.stringify(posted));
   check('команда /join показана', $('result-cmd').textContent === '/join 2v2 #3',
     $('result-cmd').textContent);
@@ -172,14 +211,17 @@ function fakeFetch(url, opts) {
   check('комната добавлена в список', P.rooms.length === 3, 'rooms=' + P.rooms.length);
   check('поле имени очищено', $('room-name').value === '');
 
-  /* ── ошибки сервера ── */
+  /* ── ошибки сервера ──
+     Список комнат чистим: со своей комнатой страница остановит запрос ещё до сервера
+     («у тебя уже есть комната»), и ответы сервера проверить не удастся. */
+  P.setRooms([]);
+
   postResponse = { status: 409, body: { code: 'one_room_per_player', message: 'x' } };
-  $('player-id').value = '444';
   P.createRoom();
   await new Promise(r => setTimeout(r, 120));
   check('409 показан понятным текстом',
     $('create-err').textContent.indexOf('уже есть комната') >= 0, $('create-err').textContent);
-  check('после ошибки новых комнат не появилось', P.rooms.length === 3);
+  check('после ошибки новых комнат не появилось', P.rooms.length === 0);
 
   postResponse = { status: 409, body: { code: 'player_offline', message: 'x' } };
   P.createRoom();
@@ -187,10 +229,16 @@ function fakeFetch(url, opts) {
   check('«не в сети» объяснён по-русски',
     $('create-err').textContent.indexOf('не в сети') >= 0, $('create-err').textContent);
 
-  postResponse = { status: 400, body: { code: 'nick_not_supported', message: 'x' } };
+  postResponse = { status: 401, body: { code: 'no_auth', message: 'x' } };
   P.createRoom();
   await new Promise(r => setTimeout(r, 120));
-  check('ник вместо ID объяснён', $('create-err').textContent.length > 0);
+  check('401 откатывает страницу к форме входа', $('auth-form').hidden === false);
+  check('401 объяснён по-русски',
+    $('create-err').textContent.indexOf('код') >= 0, $('create-err').textContent);
+
+  /* 401 сбросил авторизацию на странице — входим снова, иначе следующие
+     проверки упрутся в «сначала введи код» ещё до запроса. */
+  await P.loadMe();
 
   postResponse = { status: 429, body: { code: 'rate' } };
   P.createRoom();
@@ -200,20 +248,67 @@ function fakeFetch(url, opts) {
 
   postResponse = null;
 
-  /* ── пустой ID не уходит на сервер ── */
-  posted = null;
-  $('player-id').value = '   ';
-  P.createRoom();
-  await new Promise(r => setTimeout(r, 60));
-  check('пустой ID не создаёт запрос', posted === null);
-  check('пустой ID объяснён', $('create-err').textContent.indexOf('ID из лобби') >= 0);
+  /* ── бан: авторизация слетает ── */
+  meState = { id: 333, nick: 'новичок' };
+  await P.loadMe();
+  meState = null;
+  authResponse = { status: 403, body: { code: 'banned', message: 'аккаунт забанен' } };
+  $('auth-code').value = '123456';
+  P.login();
+  await new Promise(r => setTimeout(r, 120));
+  check('бан при входе показан', $('auth-err').textContent === 'аккаунт забанен',
+    $('auth-err').textContent);
+  check('после бана профиль скрыт', $('profile').hidden === true);
+  authResponse = null;
 
-  /* ── ник вместо ID отвергается на месте ── */
-  posted = null;
-  $('player-id').value = 'влал';
-  P.createRoom();
-  await new Promise(r => setTimeout(r, 60));
-  check('ник вместо ID не уходит на сервер', posted === null);
+  /* ── вход по коду ── */
+  $('auth-code').value = '123456';
+  P.login();
+  await new Promise(r => setTimeout(r, 120));
+  check('вход по коду показал профиль', $('profile').hidden === false);
+  check('вход по коду: ник из лобби', $('profile-name').textContent === 'Привет, новичок',
+    $('profile-name').textContent);
+
+  /* ── «Моя комната» ── */
+  P.setRooms([
+    { n: 1, name: 'чужая', mode: 'Duel', map: 'Yard', players: 1, state: 'waiting',
+      owner: 'x', ownerId: 111, isMine: false },
+    { n: 2, name: 'моя', mode: 'Duel', map: 'Yard', players: 1, state: 'waiting',
+      owner: 'новичок', ownerId: 333, isMine: true },
+  ]);
+  P.switchTab('list');
+  const rows = Array.from($('rooms').children);
+  check('своя комната поднята наверх', rows[0].textContent.indexOf('#2') >= 0,
+    rows[0].textContent);
+  check('своя комната подписана «Моя комната»',
+    rows[0].textContent.indexOf('Моя комната') >= 0);
+  check('у чужой комнаты такой подписи нет',
+    rows[1].textContent.indexOf('Моя комната') < 0);
+  check('у чужой комнаты нет кнопки завершения',
+    rows[1].querySelector('.md-end-btn') === null);
+  check('у своей комнаты есть «Завершить игру»',
+    !!rows[0].querySelector('.md-end-btn'));
+
+  /* ── завершение своей катки ── */
+  window.confirm = () => true;
+  ended = null;
+  rows[0].querySelector('.md-end-btn').dispatchEvent(new window.Event('click'));
+  await new Promise(r => setTimeout(r, 120));
+  check('завершение уходит на /api/rooms/{n}/end',
+    ended && ended.indexOf('api/rooms/2/end') >= 0, String(ended));
+
+  /* ── чужой отказ по завершению объяснён ── */
+  endResponse = { status: 403, body: { code: 'not_owner', message: 'это не твоя комната' } };
+  P.setRooms([
+    { n: 4, name: 'моя', mode: 'Duel', map: 'Yard', players: 1, state: 'waiting',
+      owner: 'новичок', ownerId: 333, isMine: true },
+  ]);
+  P.switchTab('list');
+  $('rooms').querySelector('.md-end-btn').dispatchEvent(new window.Event('click'));
+  await new Promise(r => setTimeout(r, 120));
+  check('отказ «не твоя комната» показан',
+    $('create-err').textContent.indexOf('не твоя') >= 0, $('create-err').textContent);
+  endResponse = null;
 
   /* ── XSS: имя комнаты экранируется ── */
   P.setRooms([{ n: 9, name: '<img src=x onerror=alert(1)>', mode: 'Duel',
@@ -274,9 +369,11 @@ function fakeFetch(url, opts) {
   check('возврат на союзников: выбор помнится',
     again && again.textContent === '1 на 1');
 
-  // Создание комнаты отправляет perTeam.
+  // Создание комнаты отправляет perTeam (и только авторизованным).
+  meState = { id: 333, nick: 'новичок' };
+  await P.loadMe();
+  P.setRooms([]);
   posted = null;
-  $('player-id').value = '999';
   $('create-btn').dispatchEvent(new window.Event('click'));
   return new Promise(resolve => setTimeout(resolve, 30)).then(() => {
     check('perTeam уходит на сервер', posted && posted.perTeam === 1);

@@ -71,6 +71,28 @@ public sealed partial class GameNetHost
         _banStore.Save(_bans.Export(), _directory.Export());
     }
 
+    /// <summary>
+    /// Проверка бана по серверному ID игрока — для сайта (#51).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Сайт знает про человека только ID, поэтому решение принимается через справочник
+    /// игроков: ID → ник и все адреса, с которых человек заходил в лобби.
+    /// </para>
+    /// <para>
+    /// Вызывается редко (обмен кода и запросы панели), поэтому объект поиска создаётся
+    /// на каждый вызов: он крошечный, зато всегда видит текущий реестр.
+    /// </para>
+    /// </remarks>
+    public bool IsPlayerBannedById(int playerId)
+    {
+        if (_bans is null || !_config.Admin.Ban.Enabled || playerId <= 0)
+            return false;
+
+        var lookup = new PlayerBanLookup(_directory, _bans, IsBanExemptNick);
+        return lookup.IsBanned(playerId, DateTime.UtcNow);
+    }
+
     /// <summary>Проверка бана на входе в лобби (ник + IP).</summary>
     private BanDecision InspectBan(string? nick, IPAddress? address)
     {

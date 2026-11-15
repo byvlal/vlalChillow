@@ -72,6 +72,10 @@ public sealed partial class WebPanelRouter
         if (request.Method == "GET" && path == "/api/me")
             return WhoAmI(request);
 
+        // Аватар — личная вещь: только по сессии, кэш только приватный.
+        if (request.Method == "GET" && path == "/api/avatar")
+            return Avatar(request);
+
         if (request.Method == "POST" && path == "/api/logout")
             return Logout(request);
 
@@ -90,7 +94,7 @@ public sealed partial class WebPanelRouter
 
         // Метод не тот — это не «нет маршрута», и панель должна сказать честно.
         if (path is "/" or "/index.html" or "/api/status" or "/api/modes"
-            or "/api/me" or "/healthz")
+            or "/api/me" or "/api/avatar" or "/healthz")
             return WithAllow("GET", WebResponse.Text("405", 405));
 
         if (path is "/api/auth" or "/api/logout")
@@ -258,6 +262,11 @@ public sealed partial class WebPanelRouter
         var session = SessionOf(request);
         if (session is null)
             return ApiError(401, "no_auth", "сначала введи код из лобби");
+
+        // Бан проверяем и здесь: забаненный не создаёт комнату, даже если успел
+        // авторизоваться до бана (#51).
+        if (BannedRefusal(session) is { } banned)
+            return banned;
 
         CreateRoomRequest? parsed;
         try
@@ -427,10 +436,26 @@ public sealed class WebPanelRouterOptions
     public SiteSessions? Sessions { get; init; }
 
     /// <summary>
+    /// Аватар игрока: байты, которые клиент прислал в лобби. <c>null</c> — аватара нет
+    /// (или игрока нет в лобби). Формат определяет вызывающий по magic-байтам.
+    /// </summary>
+    public Func<int, byte[]?>? AvatarById { get; init; }
+
+    /// <summary>
     /// Обменять код из лобби на запись игрока. Возвращает <c>null</c>, если код чужой,
     /// протухший или кривой — вызывающий не обязан различать эти случаи.
     /// </summary>
     public Func<string, DateTime, SiteLoginCode?>? RedeemCode { get; init; }
+
+    /// <summary>
+    /// Забанен ли игрок с таким серверным ID.
+    /// </summary>
+    /// <remarks>
+    /// Проверяется и при обмене кода, и на каждом авторизованном запросе (#51): человека
+    /// могли забанить, пока он сидел на сайте, — тогда авторизация у него слетает.
+    /// <c>null</c> — проверка выключена (тесты и режим без банов).
+    /// </remarks>
+    public Func<int, bool>? IsBanned { get; init; }
 
     /// <summary>
     /// Завершить катку в комнате досрочно (кнопка «Завершить игру» у «Моей комнаты»).

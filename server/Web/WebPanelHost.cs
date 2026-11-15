@@ -97,6 +97,12 @@ public sealed class WebPanelHost : IDisposable
                 // «Завершить игру» — только владельцу комнаты.
                 EndRoom = EndRoomByOwner,
 
+                // Бан по ID игрока: гасит авторизацию и все запросы (#51).
+                IsBanned = IsPlayerBanned,
+
+                // Аватар — те же байты, что клиент прислал в лобби.
+                AvatarById = AvatarOfPlayer,
+
                 // Префикс подпути: со слэшем в proxy_pass прокси его срежет, но
                 // конфиг правит владелец — роутер обязан понимать оба варианта.
                 BasePath = _config.BasePath,
@@ -419,6 +425,32 @@ public sealed class WebPanelHost : IDisposable
 
         return host.SiteCodes.TryFind(code, nowUtc, out var entry) ? entry : null;
     }
+
+    /// <summary>
+    /// Аватар игрока: ровно те байты, что его клиент прислал при входе в лобби
+    /// (по захвату — JPEG 256×256). Игрока в лобби нет — аватара тоже нет.
+    /// </summary>
+    private byte[]? AvatarOfPlayer(int playerId)
+    {
+        var host = _host;
+        if (host is null || playerId <= 0)
+            return null;
+
+        foreach (var player in host.Session.JoinedPlayers())
+        {
+            if (MatchPublicId.ForNick(player.Name) != playerId) continue;
+            return player.Avatar;
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Забанен ли игрок с таким ID. Пока хост не подключён — считаем, что нет: банов
+    /// просто нечем проверять, а ломать панель из-за этого незачем.
+    /// </summary>
+    private bool IsPlayerBanned(int playerId) =>
+        _host?.IsPlayerBannedById(playerId) ?? false;
 
     /// <summary>
     /// Завершить катку в комнате по просьбе владельца (кнопка «Завершить игру», #51).

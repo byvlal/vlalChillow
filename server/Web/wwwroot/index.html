@@ -598,6 +598,24 @@ select.md-field__box{
 /* сетка формы */
 .md-form-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
 @media(max-width:720px){.md-form-grid{grid-template-columns:1fr;gap:24px}}
+
+/* ══════════ профиль (авторизация по коду из лобби) ══════════
+   Аватар — ровно те байты, что клиент прислал в лобби (JPEG 256×256).
+   Нет аватара — показываем букву, а не дырку. */
+.md-avatar{
+  width:56px;height:56px;flex:0 0 auto;border-radius:50%;object-fit:cover;
+  background:var(--md-sys-color-surface-container-highest);
+  border:1px solid var(--md-sys-color-outline-variant);
+}
+.md-avatar--fallback{
+  display:flex;align-items:center;justify-content:center;
+  font:500 22px/1 Roboto,system-ui,sans-serif;text-transform:uppercase;
+  color:var(--md-sys-color-on-surface-variant);
+}
+.md-profile{display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+.md-profile__who{min-width:0}
+.md-profile__spacer{margin-left:auto}
+.md-badge--mine{background:var(--md-sys-color-primary-container);color:var(--md-sys-color-on-primary-container)}
 </style>
 </head>
 <body>
@@ -649,6 +667,44 @@ select.md-field__box{
        создастся в реестре, но играть в неё будет нельзя. Лучше сказать это сразу. -->
   <p class="md-banner md-banner--warn" id="s-warn" role="status" hidden></p>
 
+  <!-- ═══ кто я ═══
+       Без кода из лобби сайт ничего не может: комната создаётся за конкретным
+       игроком, и решает это сервер по сессии, а не страница по введённому тексту. -->
+  <section class="md-card" id="profile-card" aria-label="Вход">
+    <div id="auth-form">
+      <span class="md-section__label">Вход</span>
+      <p class="md-field__helper" style="margin-left:0;margin-top:8px">
+        Код приходит в чат лобби при входе: «Ты &lt;ник&gt; · ID: … · код: 123456».
+        Он действует 30 минут; новый — командой <b>/code</b> в чате лобби.
+      </p>
+      <div class="md-form-grid" style="margin-top:16px">
+        <div class="md-field">
+          <input class="md-field__box" id="auth-code" inputmode="numeric" maxlength="6"
+                 placeholder="123456" autocomplete="off">
+          <label class="md-field__label" for="auth-code">Код из лобби</label>
+        </div>
+      </div>
+      <div class="md-actions">
+        <button class="md-button md-button--filled" id="auth-btn">Войти</button>
+        <span class="md-field__helper md-field__helper--error" id="auth-err" style="margin:0"></span>
+      </div>
+    </div>
+
+    <div class="md-profile" id="profile" hidden>
+      <img class="md-avatar" id="avatar" alt="аватар" width="56" height="56" hidden>
+      <div class="md-avatar md-avatar--fallback" id="avatar-fallback">?</div>
+      <div class="md-profile__who">
+        <div class="md-row__title" id="profile-name">Привет</div>
+        <div class="md-row__meta" id="profile-id">ID</div>
+      </div>
+      <div class="md-profile__spacer">
+        <button class="md-button md-button--text" id="logout-btn">
+          <span>Выйти</span>
+        </button>
+      </div>
+    </div>
+  </section>
+
   <div class="md-tabs" role="tablist" aria-label="Разделы">
     <button class="md-tab" role="tab" id="tab-create" aria-selected="true" aria-controls="panel-create">Создать комнату</button>
     <button class="md-tab" role="tab" id="tab-list" aria-selected="false" aria-controls="panel-list">Публичные комнаты</button>
@@ -685,18 +741,8 @@ select.md-field__box{
       <p class="md-field__helper md-field__helper--error" id="map-note" hidden style="margin-left:0"></p>
     </div>
 
-    <div class="md-section">
-      <div class="md-field">
-        <input class="md-field__box" id="player-id" inputmode="numeric" maxlength="9"
-               placeholder="ID из лобби" autocomplete="off">
-        <label class="md-field__label" for="player-id">Твой ID в лобби</label>
-      </div>
-      <p class="md-field__helper" style="margin-left:0">
-        ID приходит в чат лобби при входе: «Ты &lt;ник&gt; · ID: …».
-        Комната создаётся только за тем, кто сейчас в лобби — вписать чужой ник нельзя.
-      </p>
-    </div>
-
+    <!-- Кто владелец, решает сервер по сессии, поэтому поля «твой ID» здесь больше
+         нет: вписать чужой ID раньше было можно, теперь — нет (#51). -->
     <div class="md-actions">
       <button class="md-button md-button--filled" id="create-btn">
         <svg viewBox="0 0 24 24"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6z"/></svg>
@@ -752,6 +798,10 @@ var MODES = [];
 var MAX_PLAYERS = 16;
 
 var rooms = [];  /* заполняется из /api/rooms */
+
+/* Кто я. null — сайт не авторизован: комната не создаётся, «Моей комнаты» нет.
+   Сессия живёт до перезапуска сервера, кука — до закрытия браузера (#51). */
+var me = null;
 
 var $ = function(id){ return document.getElementById(id); };
 
@@ -937,6 +987,114 @@ function renderStats(){
   if (hint) hint.textContent = rooms.length + ' / ' + online.max;
 }
 
+/* ═══════════ профиль ═══════════ */
+/* Аватар — те же байты, что клиент прислал в лобби (сервер отдаёт их как JPEG).
+   Если аватара нет или он не отдался — показываем букву, а не битую картинку. */
+function setAvatar(id){
+  var img = $('avatar');
+  var fallback = $('avatar-fallback');
+  if (!id || !me){
+    img.hidden = true;
+    fallback.hidden = false;
+    fallback.textContent = me && me.nick ? me.nick.charAt(0) : '?';
+    return;
+  }
+  img.onerror = function(){
+    img.hidden = true;
+    fallback.hidden = false;
+    fallback.textContent = me && me.nick ? me.nick.charAt(0) : '?';
+  };
+  img.src = 'api/avatar?v=' + encodeURIComponent(String(me.id));
+  img.hidden = false;
+  fallback.hidden = true;
+}
+
+function renderProfile(){
+  var form = $('auth-form');
+  var card = $('profile');
+  if (!me){
+    form.hidden = false;
+    card.hidden = true;
+    return;
+  }
+
+  form.hidden = true;
+  card.hidden = false;
+  $('profile-name').textContent = 'Привет, ' + me.nick;
+  $('profile-id').textContent = 'ID ' + me.id;
+  setAvatar(me.id);
+
+  /* Кнопка создания без авторизации — ложь: сервер всё равно откажет. */
+  var btn = $('create-btn');
+  if (btn) btn.disabled = false;
+}
+
+function setMe(next){
+  me = next;
+  $('auth-err').textContent = '';
+  renderProfile();
+  renderRooms();
+}
+
+/* Код из лобби → сессия. Ответ 403 здесь означает бан: авторизация слетает. */
+function login(){
+  var err = $('auth-err');
+  err.textContent = '';
+
+  var code = $('auth-code').value.trim();
+  if (!code){
+    err.textContent = 'введи код из лобби';
+    $('auth-code').focus();
+    return;
+  }
+
+  $('auth-btn').disabled = true;
+  api('POST', 'api/auth', { code: code })
+    .then(function(res){
+      if (!res.ok){
+        if (res.status === 403 && res.data && res.data.code === 'banned'){
+          setMe(null);
+          err.textContent = 'аккаунт забанен';
+          return;
+        }
+        /* Текст про код приходит с сервера целиком — он и есть подсказка человеку. */
+        err.textContent = (res.data && res.data.message) || describeError(res.data, res.status);
+        return;
+      }
+      $('auth-code').value = '';
+      setMe({ id: res.data.id, nick: res.data.nick });
+      loadRooms().then(function(){ renderStats(); renderRooms(); });
+    })
+    .catch(function(){ err.textContent = 'сервер не ответил — проверь, что он запущен'; })
+    .then(function(){ $('auth-btn').disabled = false; });
+}
+
+function logout(){
+  api('POST', 'api/logout', {})
+    .then(function(){ setMe(null); loadRooms().then(renderRooms); })
+    .catch(function(){ setMe(null); });
+}
+
+/* Кто я по мнению сервера. 401 — просто не авторизован, 403 — бан: сессия сгорела. */
+function loadMe(){
+  return api('GET', 'api/me').then(function(res){
+    if (res.ok && res.data){
+      setMe({ id: res.data.id, nick: res.data.nick });
+      return;
+    }
+    setMe(null);
+    if (res.status === 403) $('auth-err').textContent = 'аккаунт забанен';
+  });
+}
+
+/* Любой отказ «нет авторизации» — повод вернуть форму входа. */
+function noteAuthLoss(res){
+  if (res.status === 401 || (res.status === 403 && res.data && res.data.code === 'banned')){
+    setMe(null);
+    if (res.data && res.data.code === 'banned') $('auth-err').textContent = 'аккаунт забанен';
+  }
+}
+
 /* ═══════════ список ═══════════ */
 function joinCmd(r){
   var m = modeById(r.mode);
@@ -949,6 +1107,12 @@ function renderRooms(){
     if (fm && r.mode !== fm) return false;
     if (fmap && r.map !== fmap) return false;
     return true;
+  });
+
+  /* Своя комната всегда сверху: ради неё человек и пришёл на страницу (#51). */
+  list.sort(function(a, b){
+    if (!!a.isMine !== !!b.isMine) return a.isMine ? -1 : 1;
+    return a.n - b.n;
   });
 
   var box = $('rooms');
@@ -982,6 +1146,7 @@ function renderRooms(){
     else badge = '<span class="md-badge md-badge--wait">ожидание</span>';
 
     if (full) badge += ' <span class="md-badge md-badge--full">заполнена</span>';
+    if (r.isMine) badge = '<span class="md-badge md-badge--mine">Моя комната</span> ' + badge;
 
     li.innerHTML =
       '<span class="md-row__num">#' + r.n + '</span>' +
@@ -996,17 +1161,28 @@ function renderRooms(){
         '<button class="md-button md-button--outlined"' +
           (full || r.state === 'finished' ? ' disabled' : '') + '>' +
           (full ? 'мест нет' : r.state === 'finished' ? 'закрыта' : 'Войти') + '</button>' +
+        /* «Завершить игру» — только у своей комнаты: чужую катку закрывать нельзя. */
+        (r.isMine
+          ? '<button class="md-button md-button--text md-end-btn"' +
+              (r.state === 'finished' ? ' disabled' : '') + '>' +
+              '<span>' + (r.state === 'finished' ? 'завершена' : 'Завершить игру') + '</span></button>'
+          : '') +
       '</div>';
 
-    var btn = li.querySelector('button');
-    if (btn && !full && r.state !== 'finished'){
-      btn.addEventListener('click', function(){
+    var joinBtn = li.querySelector('.md-button--outlined');
+    if (joinBtn && !full && r.state !== 'finished'){
+      joinBtn.addEventListener('click', function(){
         $('result-cmd').textContent = joinCmd(r);
         $('result').hidden = false;
         switchTab('create');
         copyText($('result-cmd').textContent, $('copy-btn'));
         window.scrollTo({ top: 0, behavior: 'smooth' });
       });
+    }
+
+    var endBtn = li.querySelector('.md-end-btn');
+    if (endBtn && r.state !== 'finished'){
+      endBtn.addEventListener('click', function(){ endRoom(r); });
     }
 
     box.appendChild(li);
@@ -1023,6 +1199,36 @@ function switchTab(which){
   if (!isCreate) renderRooms();
 }
 
+/* ═══════════ завершение своей катки ═══════════ */
+/* Кнопка видна только у «Моей комнаты», а сервер всё равно проверяет владельца
+   по сессии: чужой запрос получит 403, даже если подделать номер в адресе. */
+var ending = 0;
+
+function endRoom(r){
+  if (!r || ending) return;
+
+  if (!window.confirm('Завершить катку в комнате #' + r.n + '? Все выйдут в лобби.')) return;
+
+  ending = r.n;
+  renderRooms();
+
+  api('POST', 'api/rooms/' + r.n + '/end', {})
+    .then(function(res){
+      if (!res.ok){
+        noteAuthLoss(res);
+        $('create-err').textContent = describeError(res.data, res.status);
+        switchTab('create');
+      }
+      return loadRooms();
+    })
+    .catch(function(){ $('create-err').textContent = 'сервер не ответил — попробуй ещё раз'; })
+    .then(function(){
+      ending = 0;
+      renderStats();
+      renderRooms();
+    });
+}
+
 /* ═══════════ создание ═══════════ */
 var creating = false;
 
@@ -1032,14 +1238,11 @@ function createRoom(){
   var err = $('create-err');
   err.textContent = '';
 
-  /* Владелец комнаты — ID из лобби, а не ник. Ник не уникален и его можно
-     вписать любой; ID сервер знает про конкретного присутствующего игрока. */
-  var rawId = $('player-id').value.trim();
-  var playerId = parseInt(rawId, 10);
-
-  if (!rawId || !isFinite(playerId) || playerId <= 0){
-    err.textContent = 'укажи свой ID из лобби — он приходит в чат при входе';
-    $('player-id').focus();
+  /* Без авторизации сервер не примет создание: владелец берётся из сессии (#51). */
+  if (!me){
+    err.textContent = 'сначала введи код из лобби';
+    var codeInput = $('auth-code');
+    if (codeInput) codeInput.focus();
     return;
   }
 
@@ -1049,11 +1252,10 @@ function createRoom(){
     return;
   }
 
-  /* Свою комнату узнаём по id владельца. Сравнение именно по id: два человека
-     с одинаковым ником — обычное дело, и раньше второй видел «твоя комната #N»
-     про чужую комнату. */
+  /* Свою комнату сервер помечает сам (isMine) — по сессии, а не по нику: два
+     человека с одинаковым ником раньше видели «твоя комната» про чужую. */
   var mine = null;
-  for (var i=0;i<rooms.length;i++) if (rooms[i].ownerId === playerId) mine = rooms[i];
+  for (var i=0;i<rooms.length;i++) if (rooms[i].isMine) mine = rooms[i];
   if (mine){
     err.textContent = 'у тебя уже есть комната #' + mine.n;
     return;
@@ -1072,11 +1274,12 @@ function createRoom(){
   $('create-btn').disabled = true;
 
   api('POST', 'api/rooms', {
-    mode: mode.id, level: map, name: name, ownerId: playerId,
+    mode: mode.id, level: map, name: name,
     perTeam: selectedPerTeam()
   })
     .then(function(res){
       if (!res.ok){
+        noteAuthLoss(res);
         err.textContent = describeError(res.data, res.status);
         return;
       }
@@ -1084,12 +1287,12 @@ function createRoom(){
       rooms.unshift({
         n: r.number, name: r.name, mode: r.mode, map: r.level,
         players: 0, state: r.state, owner: r.owner, ownerId: r.ownerId,
-        perTeam: r.perTeam, maxPlayers: r.maxPlayers, teamLabel: r.teamLabel
+        perTeam: r.perTeam, maxPlayers: r.maxPlayers, teamLabel: r.teamLabel,
+        isMine: true
       });
       $('result-cmd').textContent = r.joinCommand;
       $('result').hidden = false;
       $('room-name').value = '';
-      try { localStorage.setItem('vlal-player-id', String(playerId)); } catch (e) { /* ignore */ }
       renderStats();
       renderRooms();
     })
@@ -1114,6 +1317,14 @@ function describeError(data, status){
   if (code === 'too_many_rooms') return 'комнат уже больше, чем игроков онлайн';
   if (code === 'room_limit') return 'на сервере кончились комнаты — попробуй позже';
   if (code === 'room_not_created') return (data && data.message) || 'комната не создалась';
+  /* Авторизация (#51): причины разные, поэтому говорим прямо. */
+  if (code === 'no_auth') return 'сначала введи код из лобби';
+  if (code === 'bad_code') return (data && data.message) || 'код не подошёл';
+  if (code === 'banned') return 'аккаунт забанен';
+  if (code === 'not_owner') return 'это не твоя комната';
+  if (code === 'no_room') return 'такой комнаты уже нет — обнови список';
+  if (code === 'not_ended') return (data && data.message) || 'катку завершить не получилось';
+  if (code === 'auth_disabled') return 'на этом сервере вход отключён';
   if (status === 429) return 'слишком часто — подожди пару секунд';
   return 'не получилось: ' + (code || status);
 }
@@ -1159,7 +1370,10 @@ function loadRooms(){
       return {
         n: r.number, name: r.name, mode: r.mode, map: r.level,
         players: r.players || 0, state: r.state, owner: r.owner,
-        perTeam: r.perTeam, maxPlayers: r.maxPlayers, teamLabel: r.teamLabel
+        ownerId: r.ownerId,
+        perTeam: r.perTeam, maxPlayers: r.maxPlayers, teamLabel: r.teamLabel,
+        /* Свою комнату сервер помечает только для авторизованного владельца. */
+        isMine: r.isMine === true
       };
     });
   });
@@ -1227,6 +1441,11 @@ function init(){
   $('tab-create').addEventListener('click', function(){ switchTab('create'); });
   $('tab-list').addEventListener('click', function(){ switchTab('list'); });
   $('create-btn').addEventListener('click', createRoom);
+  $('auth-btn').addEventListener('click', login);
+  $('logout-btn').addEventListener('click', logout);
+  $('auth-code').addEventListener('keydown', function(e){
+    if (e.key === 'Enter') login();
+  });
   $('f-mode').addEventListener('change', renderRooms);
   $('f-map').addEventListener('change', renderRooms);
   $('copy-btn').addEventListener('click', function(){
@@ -1236,12 +1455,6 @@ function init(){
     setTheme(document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark');
   });
 
-  // Ник запоминается локально: серверу он нужен, а вводить его каждый раз — лишний шаг.
-  try {
-    var savedId = localStorage.getItem('vlal-player-id');
-    if (savedId) $('player-id').value = savedId;
-  } catch (e) { /* ignore */ }
-
   var saved = 'dark';
   try {
     saved = localStorage.getItem('vlal-theme') ||
@@ -1250,11 +1463,12 @@ function init(){
 
   setTheme(saved);
   switchTab('create');
+  renderProfile();
 
-  // Каталог — первым: без него нечего рисовать. Комнаты и статус — параллельно.
+  // Каталог — первым: без него нечего рисовать. Кто я, комнаты и статус — параллельно.
   loadModes()
     .then(function(){
-      return Promise.all([loadRooms(), loadStatus()]);
+      return Promise.all([loadMe(), loadRooms(), loadStatus()]);
     })
     .then(function(){
       renderTeams();
@@ -1287,10 +1501,16 @@ if (typeof window !== 'undefined') {
   window.__panel = {
     get MODES(){ return MODES; },
     get rooms(){ return rooms; },
+    get me(){ return me; },
     MAX_PLAYERS: MAX_PLAYERS,
     renderRooms: renderRooms, renderMaps: renderMaps, buildSelects: buildSelects,
     switchTab: switchTab, createRoom: createRoom, setTheme: setTheme,
     joinCmd: joinCmd, describeError: describeError,
+    login: login, logout: logout, loadMe: loadMe, renderProfile: renderProfile,
+    endRoom: function(n){
+      for (var i=0;i<rooms.length;i++) if (rooms[i].n === n) return endRoom(rooms[i]);
+    },
+    setMe: setMe,
     setMode: function(list){ MODES = list; buildSelects(); renderTeams(); renderMaps(); },
     setRooms: function(list){ rooms = list; }
   };
