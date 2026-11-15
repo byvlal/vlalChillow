@@ -76,15 +76,6 @@ internal sealed class MatchRoom
     /// </summary>
     public readonly List<PendingGrenade> PendingGrenades = new();
 
-    /// <summary>
-    /// Issue #53: last round whose explode ordinal counter was reset (per-round counter,
-    /// matching the phone-host varint <c>0x01000000+n</c> that restarts at n=1 each round).
-    /// </summary>
-    public int GrenadeExplodeCounter { get; set; }
-
-    /// <summary>Round <see cref="MatchFlowState.RoundIndex"/> the counter above belongs to.</summary>
-    public int GrenadeCounterRoundIndex { get; set; } = -1;
-
     // ── per-room state (несколько комнат на одном 7777) ─────────────────────────
 
     /// <summary>
@@ -140,14 +131,16 @@ internal sealed class MatchRoom
 
 /// <summary>
 /// Issue #53 — a thrown grenade waiting for its host-authored explode
-/// (<c>GameMatchHost.Grenades.cs</c>). The detonation point is resolved once at schedule
-/// time (the ballistics step is deterministic), so the tick-path sweep never re-runs physics.
+/// (<c>GameMatchHost.Grenades.cs</c>). The detonation point and the frame's timeValue are
+/// resolved once at schedule time (the ballistics step is deterministic, and the tv must be
+/// pre-stamped on the thrower's clock), so the tick-path sweep never re-runs physics.
 /// </summary>
 internal readonly record struct PendingGrenade(
     byte ItemId,
     byte ThrowerActorNr,
-    int Ordinal,
+    byte GrenadeId,
     DateTime DetonateAtUtc,
+    double DetonateTimeValue,
     float ExplodeX,
     float ExplodeY,
     float ExplodeZ);

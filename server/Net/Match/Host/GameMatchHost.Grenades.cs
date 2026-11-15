@@ -10,6 +10,15 @@ namespace StandChillow.LanServer.Net;
 /// (hence «все видят куда и как летит») and never authored the explosion — so every grenade
 /// landed and silently did nothing. This partial schedules the detonation when a throw is
 /// observed and fans the explode frame out when the fuse expires.
+/// <para>
+/// Live-test follow-up (latest.log 2026-11-15): a first build that authored the frame with a
+/// host-minted counter and <c>tv = stime/1000</c> was silently ignored by the client. Both
+/// fields are now taken from the throw, as the phone host's bytes actually looked (24/24
+/// capture pairs): the varint echoes the <b>client's</b> grenade id (throw payload <c>[0]</c>,
+/// resets client-side — gold has back-to-back throws both id=1), and the timeValue stays on
+/// the <b>thrower's</b> clock (<c>throw.tv + fuse</c>; our <c>NextServerTime</c> is
+/// machine-boot ms and has nothing to do with the client's game clock).
+/// </para>
 /// </summary>
 public sealed partial class GameMatchHost
 {
@@ -23,6 +32,7 @@ public sealed partial class GameMatchHost
     {
         if (!MatchGrenadeWire.TryParseThrowPayload(
                 parsed.Payload,
+                out var grenadeId,
                 out var itemId,
                 out var posX, out var posY, out var posZ,
                 out var dirX, out var dirY, out var dirZ))
@@ -46,29 +56,27 @@ public sealed partial class GameMatchHost
             out var afterSeconds,
             out var ex, out var ey, out var ez);
 
-        int ordinal;
         lock (_roomGate)
         {
-            // Explode ordinal restarts each round (gold counters 0x01000001+ reset across
-            // round boundaries). Allocated at throw time so it matches the phone-host
-            // order (k-th grenade of the round → k).
-            if (room.GrenadeCounterRoundIndex != room.Flow.RoundIndex)
-            {
-                room.GrenadeCounterRoundIndex = room.Flow.RoundIndex;
-                room.GrenadeExplodeCounter = 0;
-            }
-            ordinal = ++room.GrenadeExplodeCounter;
             room.PendingGrenades.Add(new PendingGrenade(
-                itemId, throwerActorNr, ordinal,
+                itemId, throwerActorNr, grenadeId,
                 DateTime.UtcNow + TimeSpan.FromSeconds(afterSeconds),
+                // Phone host: explode tv = throw tv + fuse (same device clock, 24/24 pairs
+                // within 2 ms). Our stime is machine-boot ms — a different base entirely, and
+                // the live test showed the client ignores frames stamped on it.
+                parsed.TimeValue + afterSeconds,
                 ex, ey, ez));
         }
 
         Console.WriteLine(
-            $"[grenade] throw item=0x{itemId:X} actor={throwerActorNr} " +
+            $"[grenade] throw item=0x{itemId:X} actor={throwerActorNr} grenadeId={grenadeId} " +
             $"pos=({posX:0.##},{posY:0.##},{posZ:0.##}) dir=({dirX:0.##},{dirY:0.##},{dirZ:0.##}) " +
-            $"→ взрыв через {afterSeconds:0.###}с в ({ex:0.##},{ey:0.##},{ez:0.##}) ordinal={ordinal} " +
+            $"throwTv={parsed.TimeValue:0.###} " +
+            $"→ взрыв через {afterSeconds:0.###}с в ({ex:0.##},{ey:0.##},{ez:0.##}) " +
             "(host-authored field=2, как на телефон-хосте)");
+        // Полный hex payload броска: [0] = id гранаты от клиента, остальное — на разбор
+        // следующего live-лога, если взрыв всё ещё будет игнорироваться.
+        Console.WriteLine($"[grenade] throw payload hex={Convert.ToHexString(parsed.Payload)}");
     }
 
     /// <summary>
@@ -95,15 +103,18 @@ public sealed partial class GameMatchHost
         {
             var stime = NextServerTime();
             var pkt = MatchGrenadeWire.BuildGrenadeExplodeRpc(
-                stime, g.Ordinal, g.ExplodeX, g.ExplodeY, g.ExplodeZ);
+                stime, g.GrenadeId, g.DetonateTimeValue, g.ExplodeX, g.ExplodeY, g.ExplodeZ);
             // Critical path: an explode dropped to backpressure is a grenade that never pops
             // on that peer — the exact #53 failure class, and the same reason plant/defuse
             // frames ride the critical path (#33).
             var n = BroadcastInitReadyCritical(room, pkt, tag: "match_tx_WorldObjectRpc");
             Console.WriteLine(
                 $"[grenade] explode item=0x{g.ItemId:X} actor={g.ThrowerActorNr} " +
-                $"pos=({g.ExplodeX:0.##},{g.ExplodeY:0.##},{g.ExplodeZ:0.##}) ordinal={g.Ordinal} " +
-                $"→ peers={n} (GrenadeManager field=2, host-authored)");
+                $"grenadeId={g.GrenadeId} pos=({g.ExplodeX:0.##},{g.ExplodeY:0.##},{g.ExplodeZ:0.##}) " +
+                $"tv={g.DetonateTimeValue:0.###} → peers={n} (GrenadeManager field=2, host-authored)");
+            // Полный hex отправленного кадра: если клиент снова молча проигнорирует взрыв,
+            // следующий лог сразу даст дамп для побайтового разбора (captures обычно off).
+            Console.WriteLine($"[grenade] explode frame hex={Convert.ToHexString(pkt)}");
         }
     }
 }

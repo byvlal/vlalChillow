@@ -17,11 +17,22 @@ namespace StandChillow.LanServer.Tests;
 /// Общий вид кадров (тождественен обеим сессиям, 24 броска + 24 взрыва):
 /// <c>04 cb &lt;i32 stime&gt; 00000000 0500 &lt;rpc=01&gt; &lt;gaa&gt; &lt;field&gt; &lt;f64 timeValue&gt; &lt;payload&gt;</c>.
 /// Бросок: <c>gaa=4 field=1</c>, payload 45 байт. Взрыв: <c>gaa=2 field=2</c>, payload 24 байта
-/// <c>010100 &lt;varint 0x01000000|n&gt; 0100 &lt;pos XYZ&gt; 010000</c> — счётчик <c>n</c>
-/// сквозной внутри раунда (в золоте сбрасывается на границах раундов).
+/// <c>010100 &lt;varint 0x01000000|grenadeId&gt; 0100 &lt;pos XYZ&gt; 010000</c>.
+/// <para>
+/// Два правила, доказанные всеми 24 парами и live-тестом (первая сборка их нарушала —
+/// клиент молча игнорировал кадр):
+/// <list type="bullet">
+/// <item><c>grenadeId</c> — это байт <c>[0]</c> payload броска, id гранаты, назначенный
+/// КЛИЕНТОМ (в золоте бывают два броска подряд с id=1 — сброс на стороне клиента), а не
+/// счётчик хоста;</item>
+/// <item><c>timeValue</c> взрыва живёт на часах бросавшего: <c>tv броска + фит</c> (на
+/// телефон-хосте это одни часы; наш <c>NextServerTime</c> — мс с загрузки машины, другое
+/// основание).</item>
+/// </list>
 /// Позиция взрыва у телефон-хоста — результат его собственной физики с картой;
 /// выделенный хост карты не имеет, поэтому позиция — аппроксимация
 /// (<see cref="MatchGrenadeBallistics"/>), а формат и тайминги — точные.
+/// </para>
 /// </remarks>
 public sealed class MatchGrenadeWireTests
 {
@@ -37,8 +48,12 @@ public sealed class MatchGrenadeWireTests
         "04CB82FF40000000000005000102020091ED7C3FB5A3B040010100838080080100B15A184240D2E9C11EC81BC2010000";
     private const string ExplodeFrameMolotov =
         "04CB93184100000000000500010202001D5A643B1FAAB040010100848080080100A5511F4209A7F0C1B6006AC2010000";
+    // Золотой молотов (второй бросок золотой сессии, grenadesId сброшен клиентом в 1):
+    // взрыв ссылается на id=1, хотя это не первый бросок сессии.
+    private const string ExplodeFrameGoldMolotov =
+        "04CB3C45A300000000000500010202006F1283C00AE6C440010100818080080100FE8F1D41A88C743D87DD12C0010000";
 
-    // Payload броска (45 байт) тех же четырёх бросков.
+    // Payload броска (45 байт) тех же бросков.
     private const string ThrowPayloadFlash =
         "010000015D000000000000001852BA41A4B8D6C129AEF9C192D69D3DE7F4DC3E6C8267BF010000000000000001";
     private const string ThrowPayloadHe =
@@ -47,17 +62,22 @@ public sealed class MatchGrenadeWireTests
         "030000015C00000000000000F3CDF941EC57CFC1EA7622C2105E6B3F3A6AF23E3E0C9A3E00000000BBF29C4001";
     private const string ThrowPayloadMolotov =
         "040000015E000000000000009A12FA41FA6CDBC180231EC29DCBC33EDE74063E61896BBF010000003D0A824001";
+    // Золотой молотов с id=1 (следом за золотой флешкой тоже с id=1) — id назначает клиент
+    // и сбрасывает его сам, счётчиком бросков он не является.
+    private const string ThrowPayloadGoldMolotov =
+        "010000015E00000000000000906138411467BF3FFBC4BB41DDA079BD189FB73EA5D46FBF01000000BB52CC3F01";
 
     /// <summary>
-    /// 24-байтный payload взрыва собирается побайтово как в капче (включая varint-счётчик
-    /// <c>8n 80 80 08</c> — все четыре «n» этой сессии: 1..4).
+    /// 24-байтный payload взрыва собирается побайтово как в капче, включая varint
+    /// <c>0x01000000|grenadeId</c> (<c>8n 80 80 08</c>).
     /// </summary>
     [Theory]
     [InlineData(ExplodeFrameFlash, 1)]
     [InlineData(ExplodeFrameHe, 2)]
     [InlineData(ExplodeFrameSmoke, 3)]
     [InlineData(ExplodeFrameMolotov, 4)]
-    public void ExplodePayload_IsByteIdenticalToTheCapturedOne(string frameHex, int ordinal)
+    [InlineData(ExplodeFrameGoldMolotov, 1)]
+    public void ExplodePayload_IsByteIdenticalToTheCapturedOne(string frameHex, byte grenadeId)
     {
         var golden = Convert.FromHexString(frameHex);
         var goldenPayload = golden.AsSpan(HostHeaderLen + RpcBodyHeaderLen).ToArray();
@@ -67,41 +87,34 @@ public sealed class MatchGrenadeWireTests
         var posY = BinaryPrimitives.ReadSingleLittleEndian(goldenPayload.AsSpan(13, 4));
         var posZ = BinaryPrimitives.ReadSingleLittleEndian(goldenPayload.AsSpan(17, 4));
 
-        var built = MatchGrenadeWire.BuildExplodePayload(ordinal, posX, posY, posZ);
+        var built = MatchGrenadeWire.BuildExplodePayload(grenadeId, posX, posY, posZ);
 
         Assert.Equal(24, built.Length);
         Assert.Equal(goldenPayload, built);
     }
 
     /// <summary>
-    /// Полный кадр взрыва, собранный хостом, совпадает с капчей поле-в-поле. Единственное
-    /// несовпадение — double timeValue: телефон-хост сэмплирует его отдельно от stime
-    /// (разница ~9–16 мс, то же самое отмечено у чата в <c>MatchChatWireTests</c>), мы
-    /// привязываем его к stime/1000 — как и все остальные хост-авторские кадры.
+    /// Полный кадр взрыва, собранный хостом, побайтово равен капче (stime и tv поданы из
+    /// самой капчи): заголовок, id=5, rpc=1, gaa=2, field=2, double и payload.
     /// </summary>
     [Theory]
     [InlineData(ExplodeFrameFlash, 1)]
     [InlineData(ExplodeFrameHe, 2)]
     [InlineData(ExplodeFrameSmoke, 3)]
     [InlineData(ExplodeFrameMolotov, 4)]
-    public void BuiltExplodeFrame_MatchesTheLiveCaptureFieldByField(string frameHex, int ordinal)
+    [InlineData(ExplodeFrameGoldMolotov, 1)]
+    public void BuiltExplodeFrame_IsByteIdenticalToTheLiveCapture(string frameHex, byte grenadeId)
     {
         var golden = Convert.FromHexString(frameHex);
         var goldenPayload = golden.AsSpan(HostHeaderLen + RpcBodyHeaderLen).ToArray();
         var stime = BinaryPrimitives.ReadInt32LittleEndian(golden.AsSpan(2, 4));
+        var timeValue = BinaryPrimitives.ReadDoubleLittleEndian(golden.AsSpan(HostHeaderLen + 6, 8));
         var posX = BinaryPrimitives.ReadSingleLittleEndian(goldenPayload.AsSpan(9, 4));
         var posY = BinaryPrimitives.ReadSingleLittleEndian(goldenPayload.AsSpan(13, 4));
         var posZ = BinaryPrimitives.ReadSingleLittleEndian(goldenPayload.AsSpan(17, 4));
 
-        var rebuilt = MatchGrenadeWire.BuildGrenadeExplodeRpc(stime, ordinal, posX, posY, posZ);
-
-        Assert.Equal(golden.Length, rebuilt.Length);
-        // Заголовок + id=5 + rpc + gaa + field — всё до double.
-        Assert.Equal(golden.AsSpan(0, HostHeaderLen + 6).ToArray(),
-            rebuilt.AsSpan(0, HostHeaderLen + 6).ToArray());
-        // Хвост: payload после double.
-        Assert.Equal(golden.AsSpan(HostHeaderLen + RpcBodyHeaderLen).ToArray(),
-            rebuilt.AsSpan(HostHeaderLen + RpcBodyHeaderLen).ToArray());
+        var rebuilt = MatchGrenadeWire.BuildGrenadeExplodeRpc(
+            stime, grenadeId, timeValue, posX, posY, posZ);
 
         // Идентичность объекта, автора и цели рассылки — суть исправления #53:
         // id=5 (GrenadeManager), rpc=1, gaa=2 (AllCached — всем), field=2 (explode).
@@ -111,16 +124,36 @@ public sealed class MatchGrenadeWireTests
         Assert.Equal(1, rebuilt[HostHeaderLen + 2]);
         Assert.Equal(2, rebuilt[HostHeaderLen + 3]);
         Assert.Equal((short)2, BinaryPrimitives.ReadInt16LittleEndian(rebuilt.AsSpan(HostHeaderLen + 4, 2)));
+
+        Assert.Equal(golden, rebuilt);
     }
 
     /// <summary>
-    /// Счётчик взрывов — varint от базы <c>0x01000000</c>: в капчах малые n дают
-    /// <c>81..87 80 80 08</c> (n=1..7), т.е. младшие 7 бит идут первым байтом.
+    /// tv взрыва обязан жить на часах бросавшего: <c>tv броска + фит</c>. У телефон-хоста
+    /// это одни часы (24/24 пар: разница tv = 1.708–1.712 с для флеш/ХЕ), у выделенного —
+    /// нет, поэтому tv берётся от броска, а не от <c>NextServerTime</c> (live-тест: кадр с
+    /// tv на наших часах клиент молча проигнорировал). Значения tv — из файлов капчур.
+    /// </summary>
+    [Theory]
+    [InlineData(MatchGrenadeWire.ItemFlash, 4240.695, 4242.407)] // 20261115_082326_6215 → 082328_6376
+    [InlineData(MatchGrenadeWire.ItemHe, 4249.243, 4250.952)]    // 20261115_082335_7013 → 082336_7175
+    public void ExplodeTimeValue_StaysOnTheThrowersClock(byte itemId, double throwTv, double boomTv)
+    {
+        // Как в GameMatchHost.Grenades.cs: tv = throwTv + смоделированный фит.
+        var builtTv = throwTv + MatchGrenadeWire.FuseSecondsFor(itemId);
+
+        // Капча: flash 1.712 / HE 1.709 против нашего плоского 1.71 — расхождение ≤ 5 мс.
+        Assert.InRange(builtTv, boomTv - 0.005, boomTv + 0.005);
+    }
+
+    /// <summary>
+    /// Счётчик взрывов — varint от базы <c>0x01000000</c>: в капчах малые id дают
+    /// <c>81..87 80 80 08</c> (id=1..7), т.е. младшие 7 бит идут первым байтом.
     /// </summary>
     [Fact]
     public void ExplodeCounter_EncodesThePhoneHostVarintBase()
     {
-        for (var n = 1; n <= 7; n++)
+        for (byte n = 1; n <= 7; n++)
         {
             var payload = MatchGrenadeWire.BuildExplodePayload(n, 1f, 2f, 3f);
             Assert.Equal(0x80 | n, payload[3]);
@@ -131,26 +164,32 @@ public sealed class MatchGrenadeWireTests
     }
 
     /// <summary>
-    /// Разбор 45-байтного payload броска: предмет, позиция и направление читаются с тех же
-    /// смещений, что и в капчах. Предмет подтверждён чатом сессии: 0x5D=флеш, 0x5B=ХЕ,
-    /// 0x5C=смок, 0x5E=молотов («флешку/хаешку/смок/молотов» перед каждым броском).
+    /// Разбор 45-байтного payload броска: id гранаты, предмет, позиция и направление
+    /// читаются с тех же смещений, что и в капчах. Предмет подтверждён чатом сессии:
+    /// 0x5D=флеш, 0x5B=ХЕ, 0x5C=смок, 0x5E=молотов («флешку/хаешку/смок/молотов» перед
+    /// каждым броском). <c>grenadeId</c> — байт [0]: в grenades-сессии он совпал с порядком
+    /// бросков (1..4), а в золоте два броска подряд имеют id=1 — он назначается клиентом.
     /// </summary>
     [Theory]
-    [InlineData(ThrowPayloadFlash, MatchGrenadeWire.ItemFlash)]
-    [InlineData(ThrowPayloadHe, MatchGrenadeWire.ItemHe)]
-    [InlineData(ThrowPayloadSmoke, MatchGrenadeWire.ItemSmoke)]
-    [InlineData(ThrowPayloadMolotov, MatchGrenadeWire.ItemMolotov)]
-    public void ThrowPayload_ParsesItemAndPoseFromTheCapturedOffsets(string payloadHex, byte expectedItem)
+    [InlineData(ThrowPayloadFlash, MatchGrenadeWire.ItemFlash, 1)]
+    [InlineData(ThrowPayloadHe, MatchGrenadeWire.ItemHe, 2)]
+    [InlineData(ThrowPayloadSmoke, MatchGrenadeWire.ItemSmoke, 3)]
+    [InlineData(ThrowPayloadMolotov, MatchGrenadeWire.ItemMolotov, 4)]
+    [InlineData(ThrowPayloadGoldMolotov, MatchGrenadeWire.ItemMolotov, 1)]
+    public void ThrowPayload_ParsesIdItemAndPoseFromTheCapturedOffsets(
+        string payloadHex, byte expectedItem, byte expectedGrenadeId)
     {
         var payload = Convert.FromHexString(payloadHex);
 
         var ok = MatchGrenadeWire.TryParseThrowPayload(
             payload,
+            out var grenadeId,
             out var itemId,
             out var posX, out var posY, out var posZ,
             out var dirX, out var dirY, out var dirZ);
 
         Assert.True(ok);
+        Assert.Equal(expectedGrenadeId, grenadeId);
         Assert.Equal(expectedItem, itemId);
         // Позиция [12..23] и направление [24..35] — как в файле, без перекоса смещений.
         Assert.Equal(BinaryPrimitives.ReadSingleLittleEndian(payload.AsSpan(12, 4)), posX);
@@ -170,14 +209,14 @@ public sealed class MatchGrenadeWireTests
     {
         var ok = MatchGrenadeWire.TryParseThrowPayload(
             new byte[44],
-            out _, out _, out _, out _, out _, out _, out _);
+            out _, out _, out _, out _, out _, out _, out _, out _);
         Assert.False(ok);
     }
 
     /// <summary>
     /// Политика предохранителей по предметам, из 24 пар капчур: флеш и ХЕ — плоский
     /// таймер ~1.71 с (наблюдено 1.708–1.712, взрыв в воздухе), смок — плоский ~2.5 с
-    /// (две пары: 2.009/3.071), молотов — детонация при касании земли (0.275–1.635 с) с
+    /// (две пары: 2.009/3.071), молотов — детонация при касании земли (0.28–1.64 с) с
     /// предохранительным потолком.
     /// </summary>
     [Fact]
@@ -225,7 +264,7 @@ public sealed class MatchGrenadeWireTests
     {
         var payload = Convert.FromHexString(ThrowPayloadFlash);
         Assert.True(MatchGrenadeWire.TryParseThrowPayload(
-            payload, out _, out var px, out var py, out var pz, out var dx, out var dy, out var dz));
+            payload, out _, out _, out var px, out var py, out var pz, out var dx, out var dy, out var dz));
 
         MatchGrenadeBallistics.ResolveDetonation(
             px, py, pz, dx, dy, dz,
@@ -255,7 +294,7 @@ public sealed class MatchGrenadeWireTests
     {
         var payload = Convert.FromHexString(ThrowPayloadMolotov);
         Assert.True(MatchGrenadeWire.TryParseThrowPayload(
-            payload, out var itemId, out var px, out var py, out var pz, out var dx, out var dy, out var dz));
+            payload, out _, out var itemId, out var px, out var py, out var pz, out var dx, out var dy, out var dz));
         Assert.Equal(MatchGrenadeWire.ItemMolotov, itemId);
 
         MatchGrenadeBallistics.ResolveDetonation(

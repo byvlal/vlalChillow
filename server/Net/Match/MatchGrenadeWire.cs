@@ -20,19 +20,25 @@ namespace StandChillow.LanServer.Net.Match;
 /// </para>
 /// <para>
 /// Throw payload (45 B, all 24 observed samples byte-aligned):
-/// <c>[0]=slot? [1]=00 [2]=00 [3]=01 [4]=itemId [5..11]=00×7 [12..23]=origin XYZ
+/// <c>[0]=grenadeId [1]=00 [2]=00 [3]=01 [4]=itemId [5..11]=00×7 [12..23]=origin XYZ
 /// [24..35]=direction XYZ [36]=flag? [37..39]=00×3 [40..43]=float? [44]=01</c>.
-/// Bytes <c>[0]</c>, <c>[36]</c> and <c>[40..43]</c> vary per throw without a recovered
-/// meaning (slot / charge?) — they are <b>not</b> interpreted here, and the throw itself is
-/// relayed verbatim. Only <c>itemId</c> + pose are read.
+/// <c>[0]</c> is the <b>client-assigned grenade id</b>: the explode varint echoes it back as
+/// <c>0x01000000 | [0]</c> in all 24 pairs, and it is <b>not</b> a throw counter — gold has
+/// back-to-back throws both using id=1 (client-side reset, likely per life) — so the host
+/// must reuse the client's id, never mint its own. Bytes <c>[36]</c> and <c>[40..43]</c>
+/// vary per throw without a recovered meaning — they are <b>not</b> interpreted here, and
+/// the throw itself is relayed verbatim.
 /// </para>
 /// <para>
 /// Explode payload (24 B, identical shape in all 24 samples):
-/// <c>01 01 00 &lt;varint 0x01000000|ordinal&gt; 01 00 &lt;pos XYZ&gt; 01 00 00</c>.
-/// The varint (<c>81 80 80 08</c> for ordinal 1) restarts at 1 across rounds in the gold
-/// set — treated as a per-round explode ordinal. The position is the phone host's own
-/// physics result; the dedicated host cannot replicate the map collision, so
-/// <see cref="MatchGrenadeBallistics"/> approximates it (see the fitting notes there).
+/// <c>01 01 00 &lt;varint 0x01000000|grenadeId&gt; 01 00 &lt;pos XYZ&gt; 01 00 00</c>.
+/// The frame's <c>timeValue</c> stays on the <b>thrower's clock</b>: the phone host's explode
+/// tv equals the throw tv + fuse to the millisecond (same device clock); a dedicated host
+/// must reproduce that relation (<see cref="BuildGrenadeExplodeRpc"/>) instead of minting
+/// tv from its own uptime — the client clock and <c>Environment.TickCount</c> are unrelated
+/// bases, and a live test showed the client silently ignore such a frame. The position is
+/// the phone host's own physics result; the dedicated host cannot replicate the map
+/// collision, so <see cref="MatchGrenadeBallistics"/> approximates it.
 /// </para>
 /// </summary>
 public static class MatchGrenadeWire
@@ -65,8 +71,8 @@ public static class MatchGrenadeWire
     public const byte ItemMolotov = 0x5E;
 
     /// <summary>
-    /// Explode varint base — every observed counter is <c>0x01000000 | ordinal</c>
-    /// (<c>81 80 80 08</c> = 0x01000001 for the first grenade of a round).
+    /// Explode varint base — every observed counter is <c>0x01000000 | grenadeId</c> where
+    /// <c>grenadeId</c> is throw payload byte <c>[0]</c> (<c>81 80 80 08</c> for id=1).
     /// </summary>
     public const int ExplodeCounterBase = 0x0100_0000;
 
@@ -100,16 +106,19 @@ public static class MatchGrenadeWire
     /// </summary>
     public static bool TryParseThrowPayload(
         ReadOnlySpan<byte> payload,
+        out byte grenadeId,
         out byte itemId,
         out float posX, out float posY, out float posZ,
         out float dirX, out float dirY, out float dirZ)
     {
+        grenadeId = 0;
         itemId = 0;
         posX = posY = posZ = 0f;
         dirX = dirY = dirZ = 0f;
         if (payload.Length != ThrowPayloadLength)
             return false;
 
+        grenadeId = payload[0];
         itemId = payload[4];
         posX = BinaryPrimitives.ReadSingleLittleEndian(payload.Slice(12, 4));
         posY = BinaryPrimitives.ReadSingleLittleEndian(payload.Slice(16, 4));
@@ -121,16 +130,18 @@ public static class MatchGrenadeWire
     }
 
     /// <summary>
-    /// Build the 24-byte explode payload — byte-identical to the phone-host frames
-    /// (<c>grenades.zip</c> flash: <c>010100818080080100…010000</c> and 23 more samples).
+    /// Build the 24-byte explode payload — byte-identical to the phone-host frames. The
+    /// varint echoes the <b>client's</b> grenade id from throw payload byte <c>[0]</c>
+    /// (24/24 capture pairs; the id is client-assigned and resets client-side, so a
+    /// host-minted counter is wrong even when it coincides).
     /// </summary>
-    public static byte[] BuildExplodePayload(int ordinal, float posX, float posY, float posZ)
+    public static byte[] BuildExplodePayload(byte grenadeId, float posX, float posY, float posZ)
     {
         var w = new LobbyWriter();
         w.WriteByte(1);
         w.WriteByte(1);
         w.WriteByte(0);
-        w.WriteVarInt(ExplodeCounterBase | ordinal);
+        w.WriteVarInt(ExplodeCounterBase | grenadeId);
         w.WriteByte(1);
         w.WriteByte(0);
         w.WriteFloat(posX);
@@ -144,13 +155,17 @@ public static class MatchGrenadeWire
 
     /// <summary>
     /// Host-authored GrenadeManager explode frame: <c>WorldObjectRpc id=5 rpc=1 gaa=2 field=2</c>
-    /// with the 24-byte payload. Same envelope as every host operation
-    /// (<see cref="MatchCodec.BuildWorldObjectRpc"/>), so the phone-host shape is reproduced
-    /// through the regular codec path — not by replaying a captured blob.
+    /// with the 24-byte payload. <paramref name="timeValue"/> must stay on the thrower's
+    /// clock — pass <c>throw.TimeValue + fuse</c> (phone host: 24/24 explode tv = throw tv +
+    /// fuse within 2 ms; on the phone they shared one device clock, a dedicated host does
+    /// not). The envelope's <paramref name="serverTime"/> stays ours, exactly like every
+    /// other host frame the clients already accept (relay echoes carry our stime with the
+    /// client's original tv — same combination, and the throw echo works).
     /// </summary>
     public static byte[] BuildGrenadeExplodeRpc(
         int serverTime,
-        int ordinal,
+        byte grenadeId,
+        double timeValue,
         float posX, float posY, float posZ) =>
         MatchCodec.BuildWorldObjectRpc(
             serverTime,
@@ -158,8 +173,8 @@ public static class MatchGrenadeWire
             rpcId: ExplodeRpcId,
             gaaTarget: ExplodeGaaTarget,
             field: ExplodeField,
-            timeValue: serverTime / 1000.0,
-            payload: BuildExplodePayload(ordinal, posX, posY, posZ));
+            timeValue: timeValue,
+            payload: BuildExplodePayload(grenadeId, posX, posY, posZ));
 
     /// <summary>
     /// Fuse policy per item id. Timed items (flash, HE, unknown) detonate on the flat timer;
