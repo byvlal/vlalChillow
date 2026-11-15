@@ -38,6 +38,11 @@ public sealed class WebPanelHost : IDisposable
     private readonly ServerConfig _server;
     private readonly RoomRegistry _rooms;
     private readonly StatusSnapshotCache _status = new();
+
+    /// <summary>
+    /// Сессии сайта. Одни на запуск сервера: перезапуск гасит все сессии и коды (#51).
+    /// </summary>
+    private readonly SiteSessions _sessions = new();
     private readonly SiteAddressResolver _addresses;
     private readonly WebPanelServer _server_;
     private readonly WebPanelRouter _router;
@@ -82,6 +87,16 @@ public sealed class WebPanelHost : IDisposable
                 // Кто сейчас в лобби — источник правды для «комната за этим ID».
                 // Ник берётся отсюда, а не из тела запроса: вписать чужой нельзя.
                 OnlinePlayers = ListOnlinePlayers,
+
+                // Авторизация: код из лобби меняем на сессию сайта (#51).
+                Sessions = _sessions,
+                RedeemCode = RedeemSiteLoginCode,
+                CookiePath = CookiePathFor(_config.BasePath),
+                SecureCookies = _config.SecureCookies,
+
+                // Префикс подпути: со слэшем в proxy_pass прокси его срежет, но
+                // конфиг правит владелец — роутер обязан понимать оба варианта.
+                BasePath = _config.BasePath,
             });
 
         _server_ = new WebPanelServer(
@@ -193,6 +208,9 @@ public sealed class WebPanelHost : IDisposable
         _rooms.OnlinePlayerCount = () => host.JoinedCount + host.Match.HumanActorCount;
         host.Match.PendingRooms.Warning += msg => Console.WriteLine(msg);
 
+        // Срок кода — из конфига (горячая перезагрузка подхватит при следующей выдаче).
+        host.SiteCodes.Ttl = TimeSpan.FromSeconds(_config.CodeTtlSec);
+
         Console.WriteLine(
             $"[web] игровой хост подключён: онлайн {_rooms.OnlinePlayerCount()}, " +
             $"квота комнат по игрокам активна");
@@ -226,6 +244,10 @@ public sealed class WebPanelHost : IDisposable
                 // Раз в секунду: заодно закрывает комнаты, из которых все ушли.
                 _status.Refresh(BuildStatusJson);
                 SweepExpiredRooms();
+
+                // Протухшие коды выбрасываем, чтобы не копить записи за ушедшими игроками.
+                // Дёшево: активных кодов столько же, сколько людей онлайн.
+                _host?.SiteCodes.Prune(DateTime.UtcNow);
             }
             catch (Exception ex)
             {
@@ -381,6 +403,25 @@ public sealed class WebPanelHost : IDisposable
 
         return list;
     }
+
+    /// <summary>
+    /// Обменять код из лобби на запись игрока. Код чужой или протухший — <c>null</c>:
+    /// сайт не различает эти случаи и отвечает одним и тем же текстом (#51).
+    /// </summary>
+    private SiteLoginCode? RedeemSiteLoginCode(string code, DateTime nowUtc)
+    {
+        var host = _host;
+        if (host is null)
+            return null;
+
+        return host.SiteCodes.TryFind(code, nowUtc, out var entry) ? entry : null;
+    }
+
+    /// <summary>
+    /// Путь куки: за прокси панель живёт в подпути, и кука обязана совпадать с ним.
+    /// </summary>
+    internal static string CookiePathFor(string? basePath) =>
+        string.IsNullOrWhiteSpace(basePath) ? "/" : "/" + basePath.Trim().Trim('/');
 
     /// <summary>Подпись комнаты для лога и страницы: имя или «Комната #N».</summary>
     public static string BuildRoomLabel(RoomDescriptor room) =>

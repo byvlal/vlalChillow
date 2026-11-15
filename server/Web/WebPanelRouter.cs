@@ -64,16 +64,33 @@ public sealed class WebPanelRouter
         if (request.Method == "GET" && path == "/api/modes")
             return WebResponse.Json(BuildModesJson());
 
+        // Авторизация: обменять код из лобби на сессию (#51). Чтение доступно всем,
+        // всё, что меняет состояние, — только по сессии (см. CreateRoom и RoomEnd).
+        if (request.Method == "POST" && path == "/api/auth")
+            return Authenticate(request);
+
+        if (request.Method == "GET" && path == "/api/me")
+            return WhoAmI(request);
+
+        if (request.Method == "POST" && path == "/api/logout")
+            return Logout(request);
+
         if (request.Method == "POST" && path == "/api/rooms")
-            return CreateRoom(request.Body);
+            return CreateRoom(request);
 
         if (request.Method == "GET" && path == "/healthz")
             return WebResponse.Text("ok");
 
         // Метод не тот — это не «нет маршрута», и панель должна сказать честно.
-        if (path is "/" or "/index.html" or "/api/status" or "/api/rooms"
-            or "/api/modes" or "/healthz")
-            return WithAllow(path == "/api/rooms" ? "GET, POST" : "GET", WebResponse.Text("405", 405));
+        if (path is "/" or "/index.html" or "/api/status" or "/api/modes"
+            or "/api/me" or "/healthz")
+            return WithAllow("GET", WebResponse.Text("405", 405));
+
+        if (path is "/api/auth" or "/api/logout")
+            return WithAllow("POST", WebResponse.Text("405", 405));
+
+        if (path == "/api/rooms")
+            return WithAllow("GET, POST", WebResponse.Text("405", 405));
 
         return WebResponse.Text("404", status: 404);
     }
@@ -386,6 +403,32 @@ public sealed class WebPanelRouterOptions
     /// Поднять игровую комнату по записи реестра. Возвращает текст ошибки или <c>null</c>.
     /// </summary>
     public Func<RoomDescriptor, string?>? OnRoomCreated { get; init; }
+
+    /// <summary>
+    /// Сессии сайта. <c>null</c> — авторизация выключена (создание комнаты закрыто).
+    /// </summary>
+    /// <remarks>
+    /// Хранилище одно на запуск: рестарт сервера гасит все сессии и все коды, и человек
+    /// авторизуется заново (#51).
+    /// </remarks>
+    public SiteSessions? Sessions { get; init; }
+
+    /// <summary>
+    /// Обменять код из лобби на запись игрока. Возвращает <c>null</c>, если код чужой,
+    /// протухший или кривой — вызывающий не обязан различать эти случаи.
+    /// </summary>
+    public Func<string, DateTime, SiteLoginCode?>? RedeemCode { get; init; }
+
+    /// <summary>
+    /// Путь куки сессии. За прокси панель живёт в подпути, и кука обязана совпадать.
+    /// </summary>
+    public string CookiePath { get; init; } = "/";
+
+    /// <summary>
+    /// Ставить ли куке <c>Secure</c>. По LAN панель часто открывают по http, и с этим
+    /// флагом браузер куку просто не сохранит.
+    /// </summary>
+    public bool SecureCookies { get; init; }
 
     /// <summary>
     /// Кто сейчас в лобби: (серверный id, ник).

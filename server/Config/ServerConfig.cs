@@ -251,6 +251,35 @@ public sealed class WebConfig
     /// </remarks>
     public string PublicBaseUrl { get; set; } = "";
 
+    /// <summary>
+    /// Подпуть, если панель стоит за обратным прокси (<c>/vlalchillow</c>).
+    /// Пусто — панель в корне.
+    /// </summary>
+    /// <remarks>
+    /// Отсюда же берётся путь куки сессии: за прокси кука обязана совпадать с подпутём,
+    /// иначе браузер её не пришлёт и авторизация будет слетать на каждом запросе (#51).
+    /// </remarks>
+    public string BasePath { get; set; } = "";
+
+    /// <summary>
+    /// Ставить ли куке сессии флаг <c>Secure</c> (только https).
+    /// </summary>
+    /// <remarks>
+    /// По умолчанию выключено: по LAN панель открывают по http, и с этим флагом браузер
+    /// куку не сохранит — человек будет вечно «не авторизован». Включать, когда перед
+    /// панелью есть https (nginx с сертификатом).
+    /// </remarks>
+    public bool SecureCookies { get; set; }
+
+    /// <summary>
+    /// Сколько секунд живёт код входа из лобби (по умолчанию 30 минут).
+    /// </summary>
+    /// <remarks>
+    /// Новый код выдаётся при следующем входе в лобби или по <c>/code</c>; сессия сайта
+    /// от ротации кода не зависит (#51).
+    /// </remarks>
+    public int CodeTtlSec { get; set; } = 1800;
+
     /// <summary>Лимиты запросов (флуд-защита без паролей и куки).</summary>
     public WebLimitsConfig Limits { get; set; } = new();
 }
@@ -808,9 +837,16 @@ public sealed class ServerConfig
         Web.MaxRooms = Check(Web.MaxRooms, 1, 1024, 64, "web.maxRooms");
         Web.EmptyRoomTtlSec = Check(Web.EmptyRoomTtlSec, 30, 86400, 180, "web.emptyRoomTtlSec");
 
+        // Код входа с сайта: минуты — мало (человек ещё в лобби), сутки — много.
+        Web.CodeTtlSec = Check(Web.CodeTtlSec, 60, 86400, 1800, "web.codeTtlSec");
+
         Web.BindAddress = string.IsNullOrWhiteSpace(Web.BindAddress)
             ? "0.0.0.0"
             : Web.BindAddress.Trim();
+
+        // Подпуть за прокси: «/vlalchillow/», «vlalchillow» и « vlalchillow » — одно и то же.
+        // Храним без слешей по краям; слеш добавляют роутер и кука.
+        Web.BasePath = (Web.BasePath ?? string.Empty).Trim().Trim('/');
 
         // Пустая строка — «определи сам», а не ошибка.
         Web.PublicBaseUrl = (Web.PublicBaseUrl ?? string.Empty).Trim();
@@ -1168,6 +1204,9 @@ public sealed class ServerConfig
     "maxRooms": 64,              // предохранитель; правило — одна комната на игрока
     "emptyRoomTtlSec": 180,      // пустая комната закрывается через 3 минуты, номер освобождается
     "publicBaseUrl": "",         // адрес сайта для «создать можно здесь»; пусто — определить
+    "basePath": "",              // подпуть за прокси (nginx: location /vlalchillow/)
+    "secureCookies": false,      // true — только если перед панелью есть https
+    "codeTtlSec": 1800,          // сколько живёт код входа из лобби (30 минут)
 
     "limits": {
       "requestsPerSecond": 10,   // больше — 429 с Retry-After
