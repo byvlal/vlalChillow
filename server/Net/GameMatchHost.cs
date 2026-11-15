@@ -106,8 +106,16 @@ public sealed partial class GameMatchHost : IDisposable
 
     private static readonly TimeSpan ReconnectRestoreSettle = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan ReconnectRestoreTimeout = TimeSpan.FromSeconds(15);
-    /// <summary>After MatchResults C2=205 — delay before tearing down 7777 and lobby idle.</summary>
+    /// <summary>
+    /// Выдержка после C2=201 (FinalHud) — экран итогов успевает показаться до teardown.
+    /// </summary>
     private static readonly TimeSpan MatchOverReturnToLobbyDelay = TimeSpan.FromSeconds(5);
+
+    /// <summary>
+    /// Пауза между C2=255 и разрывом: пакет должен уйти в сокет, а не раствориться
+    /// в закрытом соединении. Полсекунды — заведомо больше одного тика и RTT по LAN.
+    /// </summary>
+    private static readonly TimeSpan TeardownFlushDelay = TimeSpan.FromMilliseconds(500);
 
     private readonly int _listenPort;
     private volatile bool _acceptMatchConnections = true;
@@ -149,6 +157,24 @@ public sealed partial class GameMatchHost : IDisposable
     /// Lobby host should HardReset, stop 7777 advertise, restore idle lobby (keep mode/map).
     /// </summary>
     public Action? OnMatchOverReturnToLobby { get; set; }
+
+    /// <summary>
+    /// Комната закрывается: игрокам пора сказать, что катки для них больше нет.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Вызывается <b>до</b> отключения пиров на 7777. Порядок принципиален: клиент
+    /// отличает «матч кончился» от «сеть оборвалась» только по этому сигналу в
+    /// лобби-канале. Без него он видит голый разрыв и лезет переподключаться на
+    /// 7777 в комнату, которой уже нет — а там <c>RoomNotFound</c>, и на клиенте
+    /// это вылезает как Object reference в <c>OnJoinRoomResponse</c>.
+    /// </para>
+    /// <para>
+    /// Аргумент — адрес пира в катке. Лобби-пир ищется по нему: сокеты 7777 и 7778
+    /// разные, и «отключить пира» не значит «сказать игроку».
+    /// </para>
+    /// </remarks>
+    public Action<IPAddress?>? OnRoomClosing { get; set; }
 
     /// <summary>
     /// Host-originated debug chat (Server nick) when <see cref="MatchHostSettings.DebugMatchChat"/>
@@ -291,7 +317,7 @@ public sealed partial class GameMatchHost : IDisposable
         var lan = advertiseHint ?? LanInterfacePicker.PickLanBindAddress();
         Console.WriteLine(
             $"[match-host] LiteNetLib listen *:{port} key='{ConnectionKey}' channels={ChannelsCount} " +
-            $"advertiseLAN={(lan?.ToString() ?? "?")} (one bind; Stop after MatchOver, Start again on /play)");
+            $"advertiseLAN={(lan?.ToString() ?? "?")} (one bind; комната с сайта, стартует сама)");
         // Pre-create LAN room under password key Dedik so JoinOnly finds it as soon as op9 fires.
         EnsureLanRoom();
 
@@ -373,7 +399,7 @@ public sealed partial class GameMatchHost : IDisposable
     }
 
     /// <summary>
-    /// After series MatchResults + delay: disconnect peers / clear Dedik, then <c>Stop()</c> UDP
+    /// После катки: закрыть её комнату / очистить Dedik, затем при необходимости <c>Stop()</c> UDP
     /// so 7777 is down until the next <see cref="EnsureMatchListening"/>.
     /// </summary>
     /// <remarks>
@@ -415,7 +441,7 @@ public sealed partial class GameMatchHost : IDisposable
         }
         Console.WriteLine(
             $"[match-host] match listen SUSPENDED UDP {_listenPort} ({reason}) — " +
-            "lobby idle until /play");
+            "ждём следующую комнату с сайта");
     }
 
     /// <summary>
@@ -452,6 +478,49 @@ public sealed partial class GameMatchHost : IDisposable
                 .ToList();
         }
 
+        // Бронь жила ровно для этой комнаты. Комната закрыта — бронь не значит ничего,
+        // и оставлять её нельзя: при следующем входе в лобби JoinResponse по ней снова
+        // скажет «тебя ждут» и утащит клиент на 7777 к несуществующей комнате.
+        try { PendingRooms.Release(passwordKey); }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[match-host] закрытие комнаты: снять бронь: {ex.Message}");
+        }
+
+        // И из реестра — сразу, а не по TTL через три минуты.
+        //
+        // Номер обязан вернуться в оборот в ту же секунду, когда катка кончилась:
+        // следующая комната с сайта должна получить наименьший свободный номер, а не
+        // ждать, пока веб-панель заметит протухшую запись. Комната уже мертва — её
+        // пиров сейчас отключим, — и держать её в списке незачем.
+        try
+        {
+            if (Rooms is { } registry && registry.TryRemoveRoomByKey(passwordKey, out var removed))
+            {
+                Console.WriteLine(
+                    $"[match-host] номер комнаты #{removed.Number} освобождён " +
+                    $"('{passwordKey}' закрыта)");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[match-host] закрытие комнаты: убрать из реестра: {ex.Message}");
+        }
+
+        // Сначала — «катки больше нет» в лобби-канал, потом разрыв.
+        //
+        // Голый Disconnect клиент читает как обрыв связи и переподключается на 7777,
+        // где комнаты уже нет: JoinRoom → RoomNotFound → Object reference в
+        // OnJoinRoomResponse. Сигнал hasHosting=0 говорит ему не искать комнату.
+        foreach (var peer in peers)
+        {
+            try { OnRoomClosing?.Invoke(peer.Address); }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[match-host] закрытие комнаты: сигнал о конце катки: {ex.Message}");
+            }
+        }
+
         foreach (var peer in peers)
         {
             try
@@ -468,7 +537,7 @@ public sealed partial class GameMatchHost : IDisposable
 
         Console.WriteLine(
             $"[match-host] комната '{passwordKey}' закрыта и убрана из хоста " +
-            $"(пиров отключено: {peers.Count})");
+            $"(пиров отключено: {peers.Count}, каждому сказано «катка кончилась»)");
 
         // Последняя панельная комната ушла — 7777 больше не нужен.
         if (!HasPanelRooms())
@@ -524,31 +593,88 @@ public sealed partial class GameMatchHost : IDisposable
     }
 
     /// <summary>
-    /// MatchResults C2=205 + arm 5s lobby return (Allies first-to-N / Ranked-Escalation series over).
+    /// Конец катки: <c>C2=201</c> FinalHud, выдержка, <c>C2=255</c> teardown — и закрытие комнаты.
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Раньше здесь публиковалось <c>C2=205</c> «MatchResults». Клиент такого состояния
+    /// не знает: в его лог уходило «Can't change game state to 205, is not found», экран
+    /// итогов не открывался, и катка висела навсегда — ни перехода в лобби, ни разрыва.
+    /// </para>
+    /// <para>
+    /// Теперь — путь, подтверждённый телефонным захватом
+    /// (<c>MATCH_ALLIES_PROBE.md</c>, <c>GameMatchHost.DeathMatch.cs</c>):
+    /// <c>FinalWinTeam</c> → <c>C2=201</c> FinalHud (то самое «WIN/LOSE») → <c>C2=255</c>
+    /// teardown. Только после этого рвём соединение — иначе клиент не успевает показать
+    /// результат и считает разрыв обрывом сети.
+    /// </para>
+    /// </remarks>
     private void EnterMatchResultsAndArmLobbyReturn(
         MatchRoom room, int scoreTr, int scoreCt, string logTag, int round, string? extra = null)
     {
+        MatchTeam winner;
+        byte[] finalPlayers;
         lock (_roomGate)
         {
+            winner = scoreTr > scoreCt ? MatchTeam.Tr
+                : scoreCt > scoreTr ? MatchTeam.Ct
+                : MatchTeam.None;
+            // Номера актёров — те, кто был в комнате. По ним клиент строит таблицу
+            // итогов: без них он падает с «Can't retrive final players, is empty».
+            finalPlayers = room.Actors
+                .Select(a => a.Nr)
+                .OrderBy(n => n)
+                .ToArray();
             room.Flow.Phase = MatchFlowPhase.MatchOver;
             room.Flow.PhaseEndsUtc = DateTime.UtcNow + MatchOverReturnToLobbyDelay;
             room.Flow.LobbyReturnPending = true;
         }
+
+        var nowSec = ServerTimeSeconds();
+
+        // FinalHud (C2=201) читает FinalWinTeam, а НЕ раундовый WinTeam: это разные
+        // мешки с разной формой. С раундовым WinTeam экран итогов открылся бы с
+        // пустыми очками — то есть «ничего не произошло».
+        var finalWinTeam = new List<(string Key, LobbyVariant Value)>
+        {
+            (MatchFinalWinTeamKeys.IsDraw, LobbyVariant.FromBool(winner == MatchTeam.None)),
+            (MatchFinalWinTeamKeys.IsGiveUp, LobbyVariant.FromBool(false)),
+            (MatchFinalWinTeamKeys.Team, LobbyVariant.FromByte((byte)winner)),
+        };
+
         BroadcastRoomProps(room,
         [
-            (MatchRoomPropKeys.C2, LobbyVariant.FromByte(MatchC2States.MatchResults)),
-        ], reason: $"MatchResults Tr={scoreTr} Ct={scoreCt}");
+            (MatchRoomPropKeys.Time, LobbyVariant.FromDouble(nowSec)),
+            (MatchRoomPropKeys.FinalPlayers, LobbyVariant.FromBytes(finalPlayers)),
+            (MatchRoomPropKeys.FinalWinTeam, LobbyVariant.FromProps(finalWinTeam)),
+            (MatchRoomPropKeys.C2, LobbyVariant.FromByte(MatchC2States.FinalHud)),
+        ], reason: $"MatchOver FinalHud Tr={scoreTr} Ct={scoreCt}");
+
         Console.WriteLine(
-            $"[match-host] {logTag}: MatchResults C2={MatchC2States.MatchResults} " +
-            $"Tr={scoreTr} Ct={scoreCt} after round={round}" +
+            $"[match-host] {logTag}: final C2={MatchC2States.FinalHud} (FinalHud) " +
+            $"Tr={scoreTr} Ct={scoreCt} winner={winner} after round={round}" +
             (extra is null ? "" : $" {extra}") +
-            $" — lobby return in {MatchOverReturnToLobbyDelay.TotalSeconds:0}s");
+            $"FinalPlayers=[{string.Join(" ", finalPlayers.Select(b => b.ToString("X2")))}] " +
+            $" — teardown через {MatchOverReturnToLobbyDelay.TotalSeconds:0}s");
     }
 
     /// <summary>
-    /// Tick helper: when MatchOver + LobbyReturnPending and deadline elapsed, fire once.
+    /// Tick helper: когда катка кончилась и выдержка вышла — закрыть её комнату.
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Панельная комната закрывается <b>локально</b>: <c>C2=255</c> её игрокам,
+    /// <c>TryCloseRoom</c> — и всё. Глобальный возврат в лобби здесь не годится: он
+    /// снимает состояние у всех и рассчитан на legacy-слот 'Dedik', а конец одной
+    /// комнаты не должен трогать остальные.
+    /// </para>
+    /// <para>
+    /// Раньше вызов шёл только в глобальный <see cref="OnMatchOverReturnToLobby"/>,
+    /// который для панельной комнаты ничего не закрывал: <c>SuspendMatchListen</c>
+    /// видел живые комнаты, писал «UDP 7777 НЕ гасим» и выходил. Пиры оставались
+    /// висеть на 7777 в комнате, которой уже нет, — отсюда и «конец катки навсегда».
+    /// </para>
+    /// </remarks>
     private bool TryFireMatchOverLobbyReturn(MatchRoom room, DateTime phaseEndsUtc)
     {
         bool fire;
@@ -563,8 +689,49 @@ public sealed partial class GameMatchHost : IDisposable
         if (!fire)
             return false;
 
+        if (room.IsPanelRoom)
+        {
+            Console.WriteLine(
+                $"[match-host] match-over: выдержка вышла — закрываю комнату '{room.PasswordKey}'");
+
+            // C2=255 teardown — как в золотом захвате TDM: клиент получает «катка
+            // закончилась» до разрыва, иначе видит просто обрыв сети.
+            try
+            {
+                BroadcastRoomProps(room,
+                [
+                    (MatchRoomPropKeys.C2, LobbyVariant.FromByte(MatchC2States.MatchTeardown)),
+                ], reason: "MatchOver teardown");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[match-host] match-over: C2=255 не ушёл: {ex.Message}");
+            }
+
+            // Пауза перед разрывом: C2=255 должен реально уйти в сокет, иначе клиент
+            // увидит только закрытие соединения. Ждём в отложенной очереди, чтобы не
+            // держать тик хоста.
+            var closingKey = room.PasswordKey;
+            _ = Task.Delay(TeardownFlushDelay).ContinueWith(_ =>
+            {
+                // Ровно эту комнату: пиры собираются по Room == room, остальные не тронуты.
+                try
+                {
+                    if (!TryCloseRoom(closingKey))
+                        Console.WriteLine(
+                            $"[match-host] match-over: комната '{closingKey}' уже закрыта");
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[match-host] match-over: закрыть комнату: {ex.Message}");
+                }
+            }, TaskScheduler.Default);
+
+            return true;
+        }
+
         Console.WriteLine(
-            "[match-host] match-over: 5s elapsed after MatchResults → return players to lobby");
+            "[match-host] match-over: выдержка вышла → return players to lobby");
         try { OnMatchOverReturnToLobby?.Invoke(); }
         catch (Exception ex)
         {

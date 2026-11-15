@@ -238,14 +238,12 @@ public sealed partial class GameMatchHost
             (MatchRoomPropKeys.Time, LobbyVariant.FromDouble(nowSec)),
             (MatchRoomPropKeys.FinalWinTeam, LobbyVariant.FromProps(finalWinTeam)),
             (MatchRoomPropKeys.MvpPlayer, LobbyVariant.FromByte(mvpNr)),
-            // FinalPlayers intentionally omitted — ByteArray inner layout not reversed yet.
             (MatchRoomPropKeys.C2, LobbyVariant.FromByte(MatchC2States.DeathMatchEnded)),
         ]);
         Console.WriteLine(
             $"[match-host] tdm-flow: End C2={MatchC2States.DeathMatchEnded} reason={reason} " +
             $"TrScore={scoreTr} CtScore={scoreCt} isDraw={isDraw} winnerTeam={winnerTeam} " +
-            $"mvpPlayer={mvpNr} hold={hold.TotalSeconds:0}s src=phone-gold RX#18692→#18879 " +
-            "(FinalPlayers omitted — layout unknown)");
+            $"mvpPlayer={mvpNr} hold={hold.TotalSeconds:0}s src=phone-gold RX#18692→#18879");
 
         var winner = (MatchTeam)winnerTeam;
         var winSide = isDraw ? "DRAW" : winner == MatchTeam.Tr ? "ATTACK (T)" : "DEFENSE (CT)";
@@ -256,11 +254,20 @@ public sealed partial class GameMatchHost
     }
 
     /// <summary>C2=201 FinalHud — phone gold RX#18879 {Time, C2=201}.</summary>
+    /// <remarks>
+    /// <c>FinalPlayers</c> обязателен: клиент строит по нему таблицу итогов и без него
+    /// падает с «Can't retrive final players, is empty», оставляя экран пустым.
+    /// </remarks>
     private void EnterDeathMatchFinalHud(MatchRoom room)
     {
         var pause = DeathMatchFlowParams.FinalHudPause;
+        byte[] finalPlayers;
         lock (_roomGate)
         {
+            finalPlayers = room.Actors
+                .Select(a => a.Nr)
+                .OrderBy(n => n)
+                .ToArray();
             room.Flow.Phase = MatchFlowPhase.DeathMatchFinalHud;
             room.Flow.PhaseEndsUtc = DateTime.UtcNow + pause;
         }
@@ -269,14 +276,22 @@ public sealed partial class GameMatchHost
         BroadcastRoomProps(room,
         [
             (MatchRoomPropKeys.Time, LobbyVariant.FromDouble(nowSec)),
+            (MatchRoomPropKeys.FinalPlayers, LobbyVariant.FromBytes(finalPlayers)),
             (MatchRoomPropKeys.C2, LobbyVariant.FromByte(MatchC2States.FinalHud)),
         ]);
         Console.WriteLine(
             $"[match-host] tdm-flow: FinalHud C2={MatchC2States.FinalHud} " +
+            $"FinalPlayers=[{string.Join(" ", finalPlayers.Select(b => b.ToString("X2")))}] " +
             $"dur={pause.TotalSeconds:0}s src=phone-gold RX#18879→#18889 (match WIN/LOSE)");
     }
 
     /// <summary>C2=255 teardown — phone gold RX#18889 {C2=255} then disconnect. Terminal.</summary>
+    /// <remarks>
+    /// После <c>C2=255</c> комнату надо закрыть, а не «поставить MatchOver и забыть».
+    /// Раньше здесь фаза просто переводилась в терминальную, и комната оставалась в
+    /// хосте навсегда: номер не освобождался, пиры висели на 7777 в комнате, которой
+    /// для них уже нет. Золотой захват заканчивается разрывом — повторяем.
+    /// </remarks>
     private void EnterDeathMatchTeardown(MatchRoom room)
     {
         lock (_roomGate)
@@ -290,7 +305,26 @@ public sealed partial class GameMatchHost
             (MatchRoomPropKeys.C2, LobbyVariant.FromByte(MatchC2States.MatchTeardown)),
         ]);
         Console.WriteLine(
-            $"[match-host] tdm-flow: Teardown C2={MatchC2States.MatchTeardown} (match over)");
+            $"[match-host] tdm-flow: Teardown C2={MatchC2States.MatchTeardown} (match over) — " +
+            $"закрываю комнату '{room.PasswordKey}'");
+
+        // C2=255 должен реально уйти в сокет до разрыва, иначе клиент увидит
+        // только закрытие соединения. Ждём в отложенной задаче, не держа тик.
+        var closingKey = room.PasswordKey;
+        _ = Task.Delay(TeardownFlushDelay).ContinueWith(_ =>
+        {
+            // Ровно эта комната, остальные не тронуты.
+            try
+            {
+                if (!TryCloseRoom(closingKey))
+                    Console.WriteLine(
+                        $"[match-host] tdm-flow: комната '{closingKey}' уже закрыта");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[match-host] tdm-flow: закрыть комнату: {ex.Message}");
+            }
+        }, TaskScheduler.Default);
     }
 
     /// <summary>

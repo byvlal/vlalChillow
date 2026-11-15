@@ -204,33 +204,6 @@ public sealed partial class GameNetHost
             return true;
         }
 
-        if (IsPlayCommand("/" + cmd)
-            || cmd.Equals("play", StringComparison.OrdinalIgnoreCase)
-            || cmd.Equals("игра", StringComparison.OrdinalIgnoreCase))
-        {
-            TryStartMatch(who);
-            reply("play — запуск/рематч");
-            return true;
-        }
-
-        if (IsArmWarmupCommand("/" + cmd)
-            || cmd.Equals("start", StringComparison.OrdinalIgnoreCase)
-            || cmd.Equals("startmatch", StringComparison.OrdinalIgnoreCase)
-            || cmd.Equals("старт", StringComparison.OrdinalIgnoreCase))
-        {
-            // Bare start only — "set start" is under /set.
-            if (args.Length == 0)
-            {
-                var startedNow = TryArmWarmupOrFirstPlay(who);
-                // Персональный ответ обязателен: BroadcastServerChat идёт в лобби-канал,
-                // а игрок в катке его не видит — команда выглядела «проигнорированной».
-                reply(startedNow
-                    ? "start — матч запущен (первый запуск)"
-                    : "start — armed: WarmUp пойдёт, когда в обеих командах будет по игроку");
-                return true;
-            }
-        }
-
         try
         {
             if (PluginChatCommandHandler?.Invoke(who, cmd, args) == true)
@@ -275,13 +248,11 @@ public sealed partial class GameNetHost
     /// </summary>
     public static string FormatConsoleHelp() =>
         """
-        команды: /mode /map /join /set /play /start /end /ready /ban /help
+        команды: /mode /map /join /set /end /ready /ban /help
           /mode [alias]  список или сменить режим
           /map [alias]   карты текущего режима (короткие alias)
           /join <режим> #<номер>  войти в комнату с сайта (только из лобби)
-          /set …         параметры (start, end, round, wins, …)
-          /play          запуск / рематч
-          /start         WarmUp (когда матч уже поднят)
+          /set …         параметры (round, wins, team, money, …) — не запуск
           /end           завершить матч сразу (без 5с)
           /ready         отметить готовность (режим старта ready)
           /unready       отменить готовность
@@ -294,6 +265,7 @@ public sealed partial class GameNetHost
           /auth                     код админа (только из консоли сервера)
         Те же команды работают в чате катки: ответ придёт туда же и только тебе.
         «Только админ» — это ник в admin.nicknames плюс код этого запуска (/whoami).
+        Запуска катки командой нет: комната с сайта стартует сама, когда обе команды ≥1.
         """.Trim();
 
     /// <summary>
@@ -412,6 +384,44 @@ public sealed partial class GameNetHost
     }
 
     /// <summary>
+    /// Сказать всем, кто сидит за этим адресом: катки больше нет (<c>hasHosting=0</c>).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Комната закрывается, и матч-пир вот-вот отключат. Отключение клиент видит как
+    /// обрыв связи и идёт переподключаться — на 7777, в комнату, которой нет. Здесь
+    /// мы сначала снимаем hosting в лобби-канале, чтобы клиент знал: комната кончилась,
+    /// искать нечего. Присоединяться снова можно только через <c>/join</c>.
+    /// </para>
+    /// <para>
+    /// По адресу, а не по нику: у матч-пира фаза игры кончилась и имя могло смениться,
+    /// а IP — то же самое. Один адрес может дать несколько лобби-пиров (несколько игр
+    /// за одним NAT), и это нормально: снять hosting каждому.
+    /// </para>
+    /// </remarks>
+    private void ClearHostingForAddress(IPAddress? address)
+    {
+        if (address is null)
+            return;
+
+        foreach (var player in _session.JoinedPlayersByIp(address))
+        {
+            try
+            {
+                Send(player.Peer, LobbyCodec.BuildGameHostingState(null, 0));
+                Send(player.Peer, LobbyCodec.BuildCustomProperty(
+                    LobbyPropKeys.SearchingStarted, LobbyVariant.FromBool(false)));
+                Console.WriteLine(
+                    $"[lobby] '{player.Name}' ({address}): катка закрыта — hasHosting=0 отправлен до разрыва");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[lobby] '{player.Name}': снять hosting перед закрытием: {ex.Message}");
+            }
+        }
+    }
+
+    /// <summary>
     /// Immediate match teardown — same cleanup as series end, no MatchResults 5s wait.
     /// </summary>
     public bool TryEndMatchNow(string who, Action<string>? reply = null)
@@ -470,11 +480,9 @@ public sealed partial class GameNetHost
         if (key.Equals("start", StringComparison.OrdinalIgnoreCase)
             || key.Equals("startmatch", StringComparison.OrdinalIgnoreCase))
         {
-            // Раньше эта ветка молчала: ArmMatchStart шлёт только общий чат,
-            // который из катки может быть не виден — и команда выглядела как
-            // «ушла в никуда». Теперь есть и персональный ответ.
-            ArmMatchStart(who);
-            reply("старт армлен — WarmUp, как только в обеих командах будет минимум по игроку");
+            // Запуска катки командой больше нет: комната с сайта уже armed и стартует
+            // сама, как только в обеих командах появится по игроку.
+            reply("/set start убран — комната с сайта стартует сама, когда обе команды соберутся");
             return;
         }
 
@@ -596,7 +604,7 @@ public sealed partial class GameNetHost
 
         if (player.Status != PlayerLobbyStatus.InMatch)
         {
-            reply("ты не в катке — /ready работает только из матча (сначала /play)");
+            reply("ты не в катке — /ready работает только из матча (сначала /join)");
             return;
         }
 

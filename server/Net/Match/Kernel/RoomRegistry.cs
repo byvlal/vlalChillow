@@ -47,7 +47,11 @@ public sealed record RoomDescriptor(
     RoomState State,
     int Players,
     DateTime? EmptySinceUtc,
-    int PerTeam);
+    int PerTeam,
+    // Когда катка закончилась (null — ещё не кончалась). Отсчёт жизни завершённой
+    // комнаты идёт отсюда, а не от создания: катка, шедшая полчаса, иначе удалялась
+    // бы в ту же секунду.
+    DateTime? FinishedAtUtc = null);
 
 /// <summary>
 /// Верхняя граница номера комнаты. Номер печатается в команде <c>/join 2v2 #N</c>,
@@ -362,8 +366,17 @@ public sealed class RoomRegistry
             else if (current.Players > 0)
                 emptySince = DateTime.UtcNow;
 
+            // Момент конца катки фиксируем один раз: от него считается, сколько
+            // завершённая комната ещё висит в списке.
+            var finishedAt = current.FinishedAtUtc;
+            if (state == RoomState.Finished && finishedAt is null)
+                finishedAt = DateTime.UtcNow;
+            else if (state != RoomState.Finished)
+                finishedAt = null;
+
             if (current.State == state && current.Players == clampedPlayers
-                && current.EmptySinceUtc == emptySince)
+                && current.EmptySinceUtc == emptySince
+                && current.FinishedAtUtc == finishedAt)
                 return true;
 
             _rooms[number] = current with
@@ -371,6 +384,7 @@ public sealed class RoomRegistry
                 State = state,
                 Players = clampedPlayers,
                 EmptySinceUtc = emptySince,
+                FinishedAtUtc = finishedAt,
             };
             return true;
         }
@@ -397,6 +411,33 @@ public sealed class RoomRegistry
     }
 
     /// <summary>
+    /// Удалить комнату по её ключу (<c>room#3</c>). Номер сразу возвращается в оборот.
+    /// </summary>
+    /// <remarks>
+    /// Нужно, когда комната закрывается не по TTL, а по событию: катка закончилась,
+    /// владелец удалил её с сайта. <see cref="TryRemove"/> работает по номеру, а у
+    /// матч-хоста на руках ключ — отсюда этот вход.
+    /// </remarks>
+    public bool TryRemoveRoomByKey(string passwordKey, out RoomDescriptor room)
+    {
+        room = null!;
+        if (string.IsNullOrWhiteSpace(passwordKey))
+            return false;
+
+        int number;
+        lock (_gate)
+        {
+            var hit = _rooms.Values.FirstOrDefault(r => string.Equals(
+                r.PasswordKey, passwordKey, StringComparison.Ordinal));
+            if (hit is null)
+                return false;
+            number = hit.Number;
+        }
+
+        return TryRemove(number, out room);
+    }
+
+    /// <summary>
     /// Кого можно удалить по TTL: комната пустая (0 игроков) и живёт дольше
     /// <paramref name="emptyTtl"/>. Завершённая катка удаляется сразу по <paramref name="finishedTtl"/>.
     /// </summary>
@@ -412,9 +453,15 @@ public sealed class RoomRegistry
             {
                 if (room.State == RoomState.Finished)
                 {
-                    // Завершённая катка живёт от конца матча, а не от создания.
-                    var finishedAge = (nowUtc - room.CreatedUtc).TotalSeconds;
-                    if (finishedAge >= finishedSeconds)
+                    // Завершённая катка живёт от КОНЦА матча, а не от создания.
+                    //
+                    // Раньше здесь стоял CreatedUtc, хотя комментарий говорил обратное.
+                    // Катка, которая шла двадцать минут, закрывалась в ту же секунду,
+                    // когда заканчивалась (её «возраст» давно перевалил за TTL), и
+                    // игроков вышвыривало из комнаты без предупреждения — клиент
+                    // считал это обрывом и лез переподключаться.
+                    var finishedSince = room.FinishedAtUtc ?? room.EmptySinceUtc ?? room.CreatedUtc;
+                    if ((nowUtc - finishedSince).TotalSeconds >= finishedSeconds)
                         expired.Add(room.Number);
                     continue;
                 }

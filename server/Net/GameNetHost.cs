@@ -78,9 +78,13 @@ public sealed partial class GameNetHost : IDisposable
                 string.IsNullOrWhiteSpace(nick) ? "?" : nick, text, fromServer: false);
         // Decisive match reactions → Server OpChat when MatchHostSettings.DebugMatchChat.
         _match.OnServerDebugChat = BroadcastConsoleChat;
-        // Wins-needed / series MatchResults + 5s → stop 7777, idle lobby (keep mode/map).
+        // Конец катки + выдержка → закрыть комнату, idle lobby (режим/карта сохранены).
         _match.OnMatchOverReturnToLobby = () =>
             _deferred.Enqueue(() => ReturnPlayersToLobbyIdle("match-over"));
+        // Комната закрывается — сказать игрокам, что катки больше нет, ДО разрыва 7777.
+        // Ищем лобби-пира по адресу матч-пира: это разные сокеты (7778 vs 7777).
+        _match.OnRoomClosing = ip => _deferred.Enqueue(() => ClearHostingForAddress(ip));
+
         // Match JoinRoom Found / peer leave → Server chat + per-player lobby presence.
         _match.OnMatchPlayerJoined = name =>
             _deferred.Enqueue(() => NotifyMatchPlayerJoined(name));
@@ -152,6 +156,27 @@ public sealed partial class GameNetHost : IDisposable
                     BroadcastServerChat($"{name} Отключился!");
                 BroadcastServerChat(_session.BuildPlayerListMessage());
                 _onRosterChanged?.Invoke();
+            }
+
+            // Бронь живёт, пока человек в лобби: он написал /join и вот-вот зайдёт
+            // в игру. Ушёл — брони нет, иначе при следующем входе JoinResponse по
+            // ней отдаст адрес 7777, и клиент прыгнет в комнату, ничего не нажимая.
+            //
+            // Снимаем только у лобби-статуса: у игравшего (InMatch) бронь снимает
+            // NotifyMatchPlayerLeft / TryCloseRoom, когда он реально вернётся.
+            if (name is not null && left is { Status: not PlayerLobbyStatus.InMatch })
+            {
+                try
+                {
+                    if (_match.PendingRooms.ReleaseByNick(name))
+                        Console.WriteLine(
+                            $"[lobby] '{name}' вышел из лобби — бронь снята " +
+                            "(вход в катку только по /join)");
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[lobby] '{name}': снять бронь при выходе: {ex.Message}");
+                }
             }
         };
         _listener.NetworkReceiveUnconnectedEvent += (ep, reader, type) =>
@@ -233,14 +258,17 @@ public sealed partial class GameNetHost : IDisposable
             return false;
         }
 
-        lock (_gate)
-            _matchStarted = true;
-
-        // ВАЖНО: здесь НЕ шлём op9 всем. Клиент на любой op9 с hasHosting=1 сразу
-        // прыгает на 7777 (BeginMatchConnect), где без брони его ждёт fallback в
-        // legacy-комнату 'Dedik' с глобальными режимом и картой. Именно поэтому
-        // всех, кто ничего не писал, уносило «в параллельное измерение».
-        // Сигнал уходит адресно — см. NotifyPanelRoomReady(nick).
+        // ВАЖНО: _matchStarted здесь НЕ трогаем.
+        //
+        // _matchStarted означает «идёт катка через глобальный legacy-путь»: он гонит
+        // hasHosting в JoinResponse каждому новому игроку, красит discovery в
+        // «IN PROGRESS» и шлёт op9 всем. Комната с сайта — это не катка: она стоит
+        // пустая и ждёт, пока в неё войдут. Раньше флаг взводился прямо здесь, и
+        // одного создания комнаты хватало, чтобы любого, кто зашёл в лобби, клиент
+        // утащил на 7777, где его ждал RoomNotFound.
+        //
+        // Приглашение — это бронь на ник (PendingRooms.HasReservation), и сигнал
+        // уходит адресно: см. NotifyPanelRoomReady(nick).
         Console.WriteLine(
             $"[lobby] матч-порт открыт ({reason}): ждём /join " +
             $"<режим> #<номер> (баннер всем не шлём — только вошедшим)");
@@ -278,10 +306,12 @@ public sealed partial class GameNetHost : IDisposable
 
         if (target is null)
         {
-            // Игрок ещё не в лобби: он узнает адрес матча из JoinResponse
-            // (hasHosting=1 проставляется по _matchStarted) — путь штатный.
+            // Игрок ещё не в лобби — бронь уже лежит, и при входе он получит
+            // hasHosting=1 из JoinResponse: там решает HasReservation, а не факт,
+            // что существует какая-то комната. Путь штатный.
             Console.WriteLine(
-                $"[lobby] игрок '{nick}' ещё не в лобби — адрес матча получит при входе");
+                $"[lobby] игрок '{nick}' ещё не в лобби — адрес матча получит при входе " +
+                "(бронь уже стоит)");
             return false;
         }
 
@@ -343,16 +373,30 @@ public sealed partial class GameNetHost : IDisposable
         _session.Searching = true;
         _session.GameInProgress = true;
 
-        PushInProgressLobbySignals(broadcastAll: true);
+        // op9 — ТОЛЬКО тем, на кого лежит бронь, а не всем в лобби.
+        //
+        // Раньше здесь стоял PushInProgressLobbySignals(broadcastAll: true), и одного
+        // этого хватало, чтобы у каждого, кто сидел в лобби, телефон прыгал в катку.
+        // Клиент не знает, бронировал ли он что-то: увидел hasHosting=1 — идёт на 7777.
+        // Приглашение всегда адресное: его ставит собственный /join игрока.
+        var invitedByNick = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var p in _session.JoinedPlayers())
+        {
+            if (!_match.PendingRooms.HasReservation(p.Name))
+                continue;
+            invitedByNick.Add(ServerConfig.NormalizeNick(p.Name));
+            PushInProgressLobbySignals(broadcastAll: false, onlyPeer: p.Peer);
+        }
 
         Console.WriteLine(
             $"[lobby] MATCH IN PROGRESS ({reason}{(rematch ? ", rematch" : "")}): " +
             $"mode={_session.GameModeId} " +
             $"levels=[{string.Join(", ", _session.SelectedLevels)}] → " +
             $"op9 {_advertiseLanIp}:{GameMatchHost.DefaultMatchPort} " +
-            "(discovery flips to Join / no-map extras)");
+            $"(только приглашённым: {invitedByNick.Count}, остальные остаются в лобби)");
         BroadcastServerChat(
-            $"матч идёт: {_session.GameModeId} / {string.Join(", ", _session.SelectedLevels)} → {_advertiseLanIp}:{GameMatchHost.DefaultMatchPort}");
+            $"матч идёт: {_session.GameModeId} / {string.Join(", ", _session.SelectedLevels)} → " +
+            $"вход по /join");
 
         try { _onMatchStarted?.Invoke(); }
         catch (Exception ex) { Console.WriteLine($"[lobby] onMatchStarted: {ex.Message}"); }
@@ -361,8 +405,8 @@ public sealed partial class GameNetHost : IDisposable
     }
 
     /// <summary>
-    /// After MatchResults + 5s: stop match listen (7777), clear Dedik, lobby idle with
-    /// mode/map preserved. Next <c>/play</c> + <c>/set start</c> launches cleanly.
+    /// После катки и выдержки: остановить 7777 (если живых комнат не осталось),
+    /// очистить Dedik, вернуть лобби с сохранённым режимом/картой. Новая катка — через <c>/join</c>.
     /// </summary>
     public void ReturnPlayersToLobbyIdle(string reason)
     {
@@ -383,6 +427,12 @@ public sealed partial class GameNetHost : IDisposable
         _startGate.Clear();
 
         _match.SuspendMatchListen(reason);
+
+        // hasHosting=0 + SearchingStarted=false — ВСЕМ, кто в лобби.
+        //
+        // Возврат в лобби обязан снимать рекламу катки у каждого: клиент держит
+        // последнее полученное состояние и по нему решает, что матч ещё идёт.
+        // Иначе после выхода в лобби он продолжает «видеть» катку и сам лезет на 7777.
         PushIdleLobbySignals(broadcastAll: true);
 
         Console.WriteLine(
@@ -390,7 +440,7 @@ public sealed partial class GameNetHost : IDisposable
             $"levels=[{string.Join(", ", _session.SelectedLevels)}] " +
             "SearchingStarted=false hasHosting=0 match UDP stopped");
         BroadcastServerChat(
-            $"матч окончен — лобби (режим {_session.GameModeId} / карта сохранена). /play затем /set start");
+            $"матч окончен — лобби (режим {_session.GameModeId} / карта сохранена). Новая катка — /join");
 
         try { _onRosterChanged?.Invoke(); }
         catch (Exception ex) { Console.WriteLine($"[lobby] onRosterChanged after return: {ex.Message}"); }
@@ -567,11 +617,21 @@ public sealed partial class GameNetHost : IDisposable
         if (banDecision.AdminExempt)
             Console.WriteLine($"[ban] '{req.Profile.Name}' — админ или сервер, бан не применяется");
 
+        // Адрес катки в JoinResponse получает ТОЛЬКО приглашённый.
+        //
+        // «Приглашён» = на его ник лежит бронь (её ставит его собственный /join)
+        // и игровой порт действительно слушает. Раньше здесь стоял глобальный признак
+        // «матч идёт»: одного создания комнаты с сайта хватало, чтобы каждый новый
+        // игрок получал hasHosting=7777, клиент прыгал на 7777, а там его ждал
+        // RoomNotFound — со стороны это выглядело как «зашёл в лобби и меня закинуло».
+        var invited = _match.IsListening
+            && _match.PendingRooms.HasReservation(req.Profile.Name);
+
         var result = _session.HandleJoinRequest(
             peer,
             req,
-            matchHostingIp: _matchStarted ? _advertiseLanIp.ToString() : null,
-            matchHostingPort: _matchStarted ? (ushort)GameMatchHost.DefaultMatchPort : (ushort)0);
+            matchHostingIp: invited ? _advertiseLanIp.ToString() : null,
+            matchHostingPort: invited ? (ushort)GameMatchHost.DefaultMatchPort : (ushort)0);
         if (!result.Success)
         {
             Console.WriteLine($"[lobby] join REJECT {result.FailReason}: {result.Detail}");
@@ -582,9 +642,9 @@ public sealed partial class GameNetHost : IDisposable
 
         Console.WriteLine(
             $"[lobby] join OK → {result.Player!.Name} id={result.Player.ServerMemberId}" +
-            (_matchStarted
-                ? $" mid-match hasHosting={_advertiseLanIp}:{GameMatchHost.DefaultMatchPort}"
-                : " pre-match hasHosting=0"));
+            (invited
+                ? $" приглашён hasHosting={_advertiseLanIp}:{GameMatchHost.DefaultMatchPort}"
+                : " в лобби hasHosting=0 (брони нет — в катку не зовём)"));
         Send(peer, result.ResponseBytes!);
 
         // Full roster: announce joiner to everyone already in lobby (op4 NewMember).
@@ -617,21 +677,22 @@ public sealed partial class GameNetHost : IDisposable
         // раньше, чем человек успевал что-то прочитать, и половина строк была про
         // команды, которые больше не нужны (комнаты теперь создаются на сайте).
         // Игрок видит только «кто он такой», а список — по /help, когда сам попросит.
-        if (_matchStarted)
+
+        // «Матч идёт» и op9 с hasHosting=1 — ТОЛЬКО приглашённому (у кого есть бронь).
+        //
+        // Это был второй путь того же бага: даже после того, как JoinResponse перестал
+        // врать, здесь любому новому игроку через 100 мс уходил op9 с адресом 7777,
+        // и клиент прыгал в катку, где его не ждали. Остальным — ничего: они в лобби,
+        // и единственный способ позвать их в комнату — их собственный /join.
+        if (invited)
         {
             Schedule(80, () => SendServerChatTo(peer,
-                "матч уже идёт — /join <режим> #<номер> или JoinRoom Dedik на 7777"));
-        }
-
-        // Late joiner into running match: also push PropertyChanged + op9 (JoinResponse may already
-        // embed hasHosting; op9 is the live phone path clients always listen for).
-        if (_matchStarted)
-        {
+                "тебя ждут в комнате — входи: клиент подключится к матчу сам"));
             Schedule(100, () =>
             {
                 Console.WriteLine(
-                    $"[lobby] late-join → push in-progress signals to {peer.Address} " +
-                    $"(existing Dedik room on singleton {_match.Port})");
+                    $"[lobby] приглашённый → push hosting to {peer.Address} " +
+                    $"(бронь есть, комната на 7777)");
                 PushInProgressLobbySignals(broadcastAll: false, onlyPeer: peer);
             });
         }
@@ -780,36 +841,6 @@ public sealed partial class GameNetHost : IDisposable
             : LobbyPropKeys.DefaultSelectedLevel;
         _match.SetMatchSelection(_session.GameModeId, level);
     }
-
-    /// <summary>
-    /// Explicit rematch / first Play: <c>/play</c> (or Russian <c>игра</c>). May HardReset.
-    /// </summary>
-    public static bool IsPlayCommand(string message)
-    {
-        var m = message.Trim();
-        if (m.StartsWith('/'))
-            m = m[1..];
-        return m.Equals("play", StringComparison.OrdinalIgnoreCase)
-               || m.Equals("игра", StringComparison.OrdinalIgnoreCase);
-    }
-
-    /// <summary>
-    /// Arm WarmUp gate (<c>/start</c>, <c>старт</c>, <c>startmatch</c>) — never HardReset.
-    /// First launch still needs <see cref="IsPlayCommand"/> / <c>play</c> if match not up.
-    /// </summary>
-    public static bool IsArmWarmupCommand(string message)
-    {
-        var m = message.Trim();
-        if (m.StartsWith('/'))
-            m = m[1..];
-        return m.Equals("start", StringComparison.OrdinalIgnoreCase)
-               || m.Equals("startmatch", StringComparison.OrdinalIgnoreCase)
-               || m.Equals("старт", StringComparison.OrdinalIgnoreCase);
-    }
-
-    /// <summary>Legacy alias — prefer <see cref="IsPlayCommand"/> / <see cref="IsArmWarmupCommand"/>.</summary>
-    public static bool IsStartCommand(string message) =>
-        IsPlayCommand(message) || IsArmWarmupCommand(message);
 
     /// <summary>
     /// Console/chat <c>start</c>: if match not launched yet, first Play (no rematch teardown);
