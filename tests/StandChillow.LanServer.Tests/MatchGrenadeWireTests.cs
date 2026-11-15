@@ -72,12 +72,13 @@ public sealed class MatchGrenadeWireTests
     /// <c>0x01000000|grenadeId</c> (<c>8n 80 80 08</c>).
     /// </summary>
     [Theory]
-    [InlineData(ExplodeFrameFlash, 1)]
-    [InlineData(ExplodeFrameHe, 2)]
-    [InlineData(ExplodeFrameSmoke, 3)]
-    [InlineData(ExplodeFrameMolotov, 4)]
-    [InlineData(ExplodeFrameGoldMolotov, 1)]
-    public void ExplodePayload_IsByteIdenticalToTheCapturedOne(string frameHex, byte grenadeId)
+    [InlineData(ExplodeFrameFlash, 1, 1)]
+    [InlineData(ExplodeFrameHe, 2, 1)]
+    [InlineData(ExplodeFrameSmoke, 3, 1)]
+    [InlineData(ExplodeFrameMolotov, 4, 1)]
+    [InlineData(ExplodeFrameGoldMolotov, 1, 1)]
+    public void ExplodePayload_IsByteIdenticalToTheCapturedOne(
+        string frameHex, byte grenadeId, byte throwerActorNr)
     {
         var golden = Convert.FromHexString(frameHex);
         var goldenPayload = golden.AsSpan(HostHeaderLen + RpcBodyHeaderLen).ToArray();
@@ -87,23 +88,25 @@ public sealed class MatchGrenadeWireTests
         var posY = BinaryPrimitives.ReadSingleLittleEndian(goldenPayload.AsSpan(13, 4));
         var posZ = BinaryPrimitives.ReadSingleLittleEndian(goldenPayload.AsSpan(17, 4));
 
-        var built = MatchGrenadeWire.BuildExplodePayload(grenadeId, posX, posY, posZ);
+        var built = MatchGrenadeWire.BuildExplodePayload(grenadeId, throwerActorNr, posX, posY, posZ);
 
         Assert.Equal(24, built.Length);
         Assert.Equal(goldenPayload, built);
     }
 
     /// <summary>
-    /// Полный кадр взрыва, собранный хостом, побайтово равен капче (stime и tv поданы из
-    /// самой капчи): заголовок, id=5, rpc=1, gaa=2, field=2, double и payload.
+    /// Полный кадр взрыва, собранный хостом, побайтово равен капче (stime, tv и актор
+    /// бросавшего поданы из самой капчи — в капчурах бросал всегда актор 1): заголовок,
+    /// id=5, rpc=актор бросавшего, gaa=2, field=2, double и payload.
     /// </summary>
     [Theory]
-    [InlineData(ExplodeFrameFlash, 1)]
-    [InlineData(ExplodeFrameHe, 2)]
-    [InlineData(ExplodeFrameSmoke, 3)]
-    [InlineData(ExplodeFrameMolotov, 4)]
-    [InlineData(ExplodeFrameGoldMolotov, 1)]
-    public void BuiltExplodeFrame_IsByteIdenticalToTheLiveCapture(string frameHex, byte grenadeId)
+    [InlineData(ExplodeFrameFlash, 1, 1)]
+    [InlineData(ExplodeFrameHe, 2, 1)]
+    [InlineData(ExplodeFrameSmoke, 3, 1)]
+    [InlineData(ExplodeFrameMolotov, 4, 1)]
+    [InlineData(ExplodeFrameGoldMolotov, 1, 1)]
+    public void BuiltExplodeFrame_IsByteIdenticalToTheLiveCapture(
+        string frameHex, byte grenadeId, byte throwerActorNr)
     {
         var golden = Convert.FromHexString(frameHex);
         var goldenPayload = golden.AsSpan(HostHeaderLen + RpcBodyHeaderLen).ToArray();
@@ -114,14 +117,14 @@ public sealed class MatchGrenadeWireTests
         var posZ = BinaryPrimitives.ReadSingleLittleEndian(goldenPayload.AsSpan(17, 4));
 
         var rebuilt = MatchGrenadeWire.BuildGrenadeExplodeRpc(
-            stime, grenadeId, timeValue, posX, posY, posZ);
+            stime, grenadeId, throwerActorNr, timeValue, posX, posY, posZ);
 
         // Идентичность объекта, автора и цели рассылки — суть исправления #53:
-        // id=5 (GrenadeManager), rpc=1, gaa=2 (AllCached — всем), field=2 (explode).
+        // id=5 (GrenadeManager), rpc=throwerActor, gaa=2 (AllCached — всем), field=2 (explode).
         Assert.Equal(0x04, rebuilt[0]);
         Assert.Equal((byte)MatchOpcode.WorldObjectRpc, rebuilt[1]);
         Assert.Equal((short)5, BinaryPrimitives.ReadInt16LittleEndian(rebuilt.AsSpan(HostHeaderLen, 2)));
-        Assert.Equal(1, rebuilt[HostHeaderLen + 2]);
+        Assert.Equal(throwerActorNr, rebuilt[HostHeaderLen + 2]);
         Assert.Equal(2, rebuilt[HostHeaderLen + 3]);
         Assert.Equal((short)2, BinaryPrimitives.ReadInt16LittleEndian(rebuilt.AsSpan(HostHeaderLen + 4, 2)));
 
@@ -155,12 +158,46 @@ public sealed class MatchGrenadeWireTests
     {
         for (byte n = 1; n <= 7; n++)
         {
-            var payload = MatchGrenadeWire.BuildExplodePayload(n, 1f, 2f, 3f);
+            var payload = MatchGrenadeWire.BuildExplodePayload(n, 1, 1f, 2f, 3f);
             Assert.Equal(0x80 | n, payload[3]);
             Assert.Equal(0x80, payload[4]);
             Assert.Equal(0x80, payload[5]);
             Assert.Equal(0x08, payload[6]);
         }
+    }
+
+    /// <summary>
+    /// Кадр взрыва подписан <b>актором бросавшего</b>, а не актором хоста: rpc-байт и
+    /// payload[0] = throwerActorNr, остальные байты формы не тронуты. В капчурах бросал
+    /// всегда актор 1 (rpc=1, payload[0]=1 — потому это и не было видно), но live-сессия
+    /// (latest-2.log: бросал актор 2, его payload броска несёт 02 в акторных слотах
+    /// [3]/[44]) показала, что кадр, подписанный актором 1, клиент молча игнорирует.
+    /// Телефон-хост подписывает per-player кадры актором субъекта: золотые
+    /// WeaponDropManager-кадры (id=4, gaa=2) несут rpc=2/3/4 по владельцу предмета
+    /// (171/171), чат атрибутируется тем же байтом.
+    /// </summary>
+    [Fact]
+    public void ExplodeFrame_IsSignedWithTheThrowersActor()
+    {
+        var stime = 0x056FF8E8; // из live-лога latest-2.log
+        var pkt = MatchGrenadeWire.BuildGrenadeExplodeRpc(
+            stime, grenadeId: 1, throwerActorNr: 2, timeValue: 91224.17,
+            posX: 17.89f, posY: 0.74f, posZ: 4.95f);
+
+        // rpc-байт = актор бросавшего (2), не актор хоста (1).
+        Assert.Equal(2, pkt[HostHeaderLen + 2]);
+        // payload[0] = тот же актор; остальная форма — как в капчурах.
+        var payload = pkt.AsSpan(HostHeaderLen + RpcBodyHeaderLen).ToArray();
+        Assert.Equal(24, payload.Length);
+        Assert.Equal(2, payload[0]);
+        Assert.Equal(1, payload[1]);
+        Assert.Equal(0, payload[2]);
+        Assert.Equal(new byte[] { 0x81, 0x80, 0x80, 0x08 }, payload[3..7]);
+        Assert.Equal(1, payload[7]);
+        Assert.Equal(0, payload[8]);
+        Assert.Equal(1, payload[21]);
+        Assert.Equal(0, payload[22]);
+        Assert.Equal(0, payload[23]);
     }
 
     /// <summary>

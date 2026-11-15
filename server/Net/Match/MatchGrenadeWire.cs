@@ -20,18 +20,21 @@ namespace StandChillow.LanServer.Net.Match;
 /// </para>
 /// <para>
 /// Throw payload (45 B, all 24 observed samples byte-aligned):
-/// <c>[0]=grenadeId [1]=00 [2]=00 [3]=01 [4]=itemId [5..11]=00×7 [12..23]=origin XYZ
-/// [24..35]=direction XYZ [36]=flag? [37..39]=00×3 [40..43]=float? [44]=01</c>.
+/// <c>[0]=grenadeId [1]=00 [2]=00 [3]=throwerActor [4]=itemId [5..11]=00×7 [12..23]=origin
+/// XYZ [24..35]=direction XYZ [36]=flag? [37..39]=00×3 [40..43]=float? [44]=throwerActor</c>.
 /// <c>[0]</c> is the <b>client-assigned grenade id</b>: the explode varint echoes it back as
 /// <c>0x01000000 | [0]</c> in all 24 pairs, and it is <b>not</b> a throw counter — gold has
 /// back-to-back throws both using id=1 (client-side reset, likely per life) — so the host
-/// must reuse the client's id, never mint its own. Bytes <c>[36]</c> and <c>[40..43]</c>
-/// vary per throw without a recovered meaning — they are <b>not</b> interpreted here, and
-/// the throw itself is relayed verbatim.
+/// must reuse the client's id, never mint its own. <c>[3]</c> and <c>[44]</c> are the
+/// <b>thrower's actor nr</b>: captures show 01 (the thrower was always actor 1 there), the
+/// live dedicated-host session shows 02 while actor 2 threw (latest-2.log) — which is what
+/// pinned the author-subject rule for the explode below. Bytes <c>[36]</c> and
+/// <c>[40..43]</c> vary per throw without a recovered meaning — they are <b>not</b>
+/// interpreted here, and the throw itself is relayed verbatim.
 /// </para>
 /// <para>
 /// Explode payload (24 B, identical shape in all 24 samples):
-/// <c>01 01 00 &lt;varint 0x01000000|grenadeId&gt; 01 00 &lt;pos XYZ&gt; 01 00 00</c>.
+/// <c>&lt;throwerActor&gt; 01 00 &lt;varint 0x01000000|grenadeId&gt; 01 00 &lt;pos XYZ&gt; 01 00 00</c>.
 /// The frame's <c>timeValue</c> stays on the <b>thrower's clock</b>: the phone host's explode
 /// tv equals the throw tv + fuse to the millisecond (same device clock); a dedicated host
 /// must reproduce that relation (<see cref="BuildGrenadeExplodeRpc"/>) instead of minting
@@ -51,9 +54,6 @@ public static class MatchGrenadeWire
 
     /// <summary>WorldObjectRpc <c>field</c> of the host-authored explosion (gaa=2 AllCached).</summary>
     public const short ExplodeField = 2;
-
-    /// <summary>Author byte of the explode Rpc — 1 in all 24 samples (host actor).</summary>
-    public const byte ExplodeRpcId = 1;
 
     /// <summary>gaa of the explode Rpc — AllCached(2) in all 24 samples.</summary>
     public const byte ExplodeGaaTarget = 2;
@@ -130,15 +130,22 @@ public static class MatchGrenadeWire
     }
 
     /// <summary>
-    /// Build the 24-byte explode payload — byte-identical to the phone-host frames. The
-    /// varint echoes the <b>client's</b> grenade id from throw payload byte <c>[0]</c>
-    /// (24/24 capture pairs; the id is client-assigned and resets client-side, so a
-    /// host-minted counter is wrong even when it coincides).
+    /// Build the 24-byte explode payload — byte-identical to the phone-host frames. Two
+    /// fields come from the throw, never from the host's own state:
+    /// <list type="bullet">
+    /// <item>the varint echoes the <b>client's</b> grenade id (throw payload byte
+    /// <c>[0]</c>; 24/24 capture pairs, the id resets client-side);</item>
+    /// <item>payload byte <c>[0]</c> is the <b>thrower's actor nr</b> — in captures it is
+    /// always 1 because the thrower was actor 1, and the live client (thrower actor 2,
+    /// its throw payload carries 02 in the actor slots) ignored a frame stamped with 1.
+    /// Same author-subject rule as the phone host's WeaponDrop frames.</item>
+    /// </list>
     /// </summary>
-    public static byte[] BuildExplodePayload(byte grenadeId, float posX, float posY, float posZ)
+    public static byte[] BuildExplodePayload(
+        byte grenadeId, byte throwerActorNr, float posX, float posY, float posZ)
     {
         var w = new LobbyWriter();
-        w.WriteByte(1);
+        w.WriteByte(throwerActorNr);
         w.WriteByte(1);
         w.WriteByte(0);
         w.WriteVarInt(ExplodeCounterBase | grenadeId);
@@ -154,10 +161,15 @@ public static class MatchGrenadeWire
     }
 
     /// <summary>
-    /// Host-authored GrenadeManager explode frame: <c>WorldObjectRpc id=5 rpc=1 gaa=2 field=2</c>
-    /// with the 24-byte payload. <paramref name="timeValue"/> must stay on the thrower's
-    /// clock — pass <c>throw.TimeValue + fuse</c> (phone host: 24/24 explode tv = throw tv +
-    /// fuse within 2 ms; on the phone they shared one device clock, a dedicated host does
+    /// Host-authored GrenadeManager explode frame: <c>WorldObjectRpc id=5 gaa=2 field=2</c>
+    /// with the 24-byte payload. Three fields come from the throw:
+    /// the <b>rpc author byte</b> is the thrower's actor nr (see
+    /// <see cref="BuildExplodePayload"/> — captures show 1 only because actor 1 threw
+    /// there; the phone host stamps the subject player, not itself, proven by gold
+    /// WeaponDropManager frames rpc=2/3/4 and by ChatManager attribution);
+    /// <paramref name="timeValue"/> must stay on the thrower's clock — pass
+    /// <c>throw.TimeValue + fuse</c> (phone host: 24/24 explode tv = throw tv + fuse
+    /// within 2 ms; on the phone they shared one device clock, a dedicated host does
     /// not). The envelope's <paramref name="serverTime"/> stays ours, exactly like every
     /// other host frame the clients already accept (relay echoes carry our stime with the
     /// client's original tv — same combination, and the throw echo works).
@@ -165,16 +177,17 @@ public static class MatchGrenadeWire
     public static byte[] BuildGrenadeExplodeRpc(
         int serverTime,
         byte grenadeId,
+        byte throwerActorNr,
         double timeValue,
         float posX, float posY, float posZ) =>
         MatchCodec.BuildWorldObjectRpc(
             serverTime,
             objectId: GrenadeManagerObjectId,
-            rpcId: ExplodeRpcId,
+            rpcId: throwerActorNr,
             gaaTarget: ExplodeGaaTarget,
             field: ExplodeField,
             timeValue: timeValue,
-            payload: BuildExplodePayload(grenadeId, posX, posY, posZ));
+            payload: BuildExplodePayload(grenadeId, throwerActorNr, posX, posY, posZ));
 
     /// <summary>
     /// Fuse policy per item id. Timed items (flash, HE, unknown) detonate on the flat timer;

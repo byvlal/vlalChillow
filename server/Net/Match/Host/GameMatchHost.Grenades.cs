@@ -11,13 +11,15 @@ namespace StandChillow.LanServer.Net;
 /// landed and silently did nothing. This partial schedules the detonation when a throw is
 /// observed and fans the explode frame out when the fuse expires.
 /// <para>
-/// Live-test follow-up (latest.log 2026-11-15): a first build that authored the frame with a
-/// host-minted counter and <c>tv = stime/1000</c> was silently ignored by the client. Both
-/// fields are now taken from the throw, as the phone host's bytes actually looked (24/24
-/// capture pairs): the varint echoes the <b>client's</b> grenade id (throw payload <c>[0]</c>,
-/// resets client-side — gold has back-to-back throws both id=1), and the timeValue stays on
-/// the <b>thrower's</b> clock (<c>throw.tv + fuse</c>; our <c>NextServerTime</c> is
-/// machine-boot ms and has nothing to do with the client's game clock).
+/// Live-test follow-ups: build 1 (host-minted counter, <c>tv = stime/1000</c>) and build 2
+/// (client id + thrower-clock tv, but rpc byte and payload actor still 1) were both silently
+/// ignored by the live client. Every field the phone host's bytes actually carried relative
+/// to the throw is now taken from the throw (24/24 capture pairs + the live logs):
+/// the varint echoes the <b>client's</b> grenade id (throw payload <c>[0]</c>, resets
+/// client-side), the timeValue stays on the <b>thrower's</b> clock
+/// (<c>throw.tv + fuse</c>), and the frame is signed with the <b>thrower's actor nr</b>
+/// (rpc byte + payload <c>[0]</c>; the phone host stamps the subject player into per-player
+/// frames — gold WeaponDropManager rpc=2/3/4 — not its own actor).
 /// </para>
 /// </summary>
 public sealed partial class GameMatchHost
@@ -103,7 +105,8 @@ public sealed partial class GameMatchHost
         {
             var stime = NextServerTime();
             var pkt = MatchGrenadeWire.BuildGrenadeExplodeRpc(
-                stime, g.GrenadeId, g.DetonateTimeValue, g.ExplodeX, g.ExplodeY, g.ExplodeZ);
+                stime, g.GrenadeId, g.ThrowerActorNr, g.DetonateTimeValue,
+                g.ExplodeX, g.ExplodeY, g.ExplodeZ);
             // Critical path: an explode dropped to backpressure is a grenade that never pops
             // on that peer — the exact #53 failure class, and the same reason plant/defuse
             // frames ride the critical path (#33).
