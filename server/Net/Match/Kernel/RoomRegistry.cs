@@ -47,7 +47,11 @@ public sealed record RoomDescriptor(
     RoomState State,
     int Players,
     DateTime? EmptySinceUtc,
-    int PerTeam);
+    int PerTeam,
+    // Когда катка закончилась (null — ещё не кончалась). Отсчёт жизни завершённой
+    // комнаты идёт отсюда, а не от создания: катка, шедшая полчаса, иначе удалялась
+    // бы в ту же секунду.
+    DateTime? FinishedAtUtc = null);
 
 /// <summary>
 /// Верхняя граница номера комнаты. Номер печатается в команде <c>/join 2v2 #N</c>,
@@ -362,8 +366,17 @@ public sealed class RoomRegistry
             else if (current.Players > 0)
                 emptySince = DateTime.UtcNow;
 
+            // Момент конца катки фиксируем один раз: от него считается, сколько
+            // завершённая комната ещё висит в списке.
+            var finishedAt = current.FinishedAtUtc;
+            if (state == RoomState.Finished && finishedAt is null)
+                finishedAt = DateTime.UtcNow;
+            else if (state != RoomState.Finished)
+                finishedAt = null;
+
             if (current.State == state && current.Players == clampedPlayers
-                && current.EmptySinceUtc == emptySince)
+                && current.EmptySinceUtc == emptySince
+                && current.FinishedAtUtc == finishedAt)
                 return true;
 
             _rooms[number] = current with
@@ -371,6 +384,7 @@ public sealed class RoomRegistry
                 State = state,
                 Players = clampedPlayers,
                 EmptySinceUtc = emptySince,
+                FinishedAtUtc = finishedAt,
             };
             return true;
         }
@@ -412,9 +426,15 @@ public sealed class RoomRegistry
             {
                 if (room.State == RoomState.Finished)
                 {
-                    // Завершённая катка живёт от конца матча, а не от создания.
-                    var finishedAge = (nowUtc - room.CreatedUtc).TotalSeconds;
-                    if (finishedAge >= finishedSeconds)
+                    // Завершённая катка живёт от КОНЦА матча, а не от создания.
+                    //
+                    // Раньше здесь стоял CreatedUtc, хотя комментарий говорил обратное.
+                    // Катка, которая шла двадцать минут, закрывалась в ту же секунду,
+                    // когда заканчивалась (её «возраст» давно перевалил за TTL), и
+                    // игроков вышвыривало из комнаты без предупреждения — клиент
+                    // считал это обрывом и лез переподключаться.
+                    var since = room.FinishedAtUtc ?? room.EmptySinceUtc ?? room.CreatedUtc;
+                    if ((nowUtc - since).TotalSeconds >= finishedSeconds)
                         expired.Add(room.Number);
                     continue;
                 }

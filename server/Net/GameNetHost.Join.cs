@@ -70,6 +70,37 @@ public sealed partial class GameNetHost
             return;
         }
 
+        // Катка в комнате уже кончилась (MatchOver): входить в неё некуда.
+        // Реестр держит завершённую комнату ещё какое-то время, и без этой проверки
+        // /join бросал бы бронь и слал op9 в комнату, где бой уже прошёл.
+        if (room.State == RoomState.Finished)
+        {
+            var doneMsg =
+                $"комната «{room.Name}» ({mode.DisplayName} * {parsed.RoomNumber}) уже сыграна — " +
+                "выбери другую или создай свою на сайте";
+            reply(doneMsg);
+            Console.WriteLine($"[lobby] {who}: /join отклонён — {doneMsg}");
+            return;
+        }
+
+        // Места кончились — не бронируем и не зовём.
+        //
+        // Раньше /join проверял только существование комнаты: в «1 на 1» с двумя
+        // игроками третий всё равно получал бронь и op9, летел на 7777, а там
+        // JoinRoom отвечал RoomIsFull. Со стороны это выглядело как «сервер
+        // знает, что мест нет, но всё равно тащит меня туда».
+        var capacity = RoomCapacity.TotalFor(room.ModeId, room.PerTeam);
+        if (capacity > 0 && room.Players >= capacity)
+        {
+            var fullMsg =
+                $"комната «{room.Name}» ({mode.DisplayName} * {parsed.RoomNumber}) заполнена " +
+                $"({room.Players}/{capacity}, {RoomCapacity.Describe(room.ModeId, room.PerTeam)}) — " +
+                "выбери другую или создай свою на сайте";
+            reply(fullMsg);
+            Console.WriteLine($"[lobby] {who}: /join отклонён — {fullMsg}");
+            return;
+        }
+
         var nick = player.Name;
         // IdentityKey появится только на 7777 (handshake 207), в лобби его ещё нет —
         // бронируем по нику + адресу, этого достаточно для одного игрока в комнате.

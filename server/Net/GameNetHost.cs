@@ -81,6 +81,10 @@ public sealed partial class GameNetHost : IDisposable
         // Wins-needed / series MatchResults + 5s → stop 7777, idle lobby (keep mode/map).
         _match.OnMatchOverReturnToLobby = () =>
             _deferred.Enqueue(() => ReturnPlayersToLobbyIdle("match-over"));
+        // Комната закрывается — сказать игрокам, что катки больше нет, ДО разрыва 7777.
+        // Ищем лобби-пира по адресу матч-пира: это разные сокеты (7778 vs 7777).
+        _match.OnRoomClosing = ip => _deferred.Enqueue(() => ClearHostingForAddress(ip));
+
         // Match JoinRoom Found / peer leave → Server chat + per-player lobby presence.
         _match.OnMatchPlayerJoined = name =>
             _deferred.Enqueue(() => NotifyMatchPlayerJoined(name));
@@ -348,16 +352,30 @@ public sealed partial class GameNetHost : IDisposable
         _session.Searching = true;
         _session.GameInProgress = true;
 
-        PushInProgressLobbySignals(broadcastAll: true);
+        // op9 — ТОЛЬКО тем, на кого лежит бронь, а не всем в лобби.
+        //
+        // Раньше здесь стоял PushInProgressLobbySignals(broadcastAll: true), и одного
+        // этого хватало, чтобы у каждого, кто сидел в лобби, телефон прыгал в катку.
+        // Клиент не знает, бронировал ли он что-то: увидел hasHosting=1 — идёт на 7777.
+        // Приглашение всегда адресное: его ставит собственный /join игрока.
+        var invitedByNick = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var p in _session.JoinedPlayers())
+        {
+            if (!_match.PendingRooms.HasReservation(p.Name))
+                continue;
+            invitedByNick.Add(ServerConfig.NormalizeNick(p.Name));
+            PushInProgressLobbySignals(broadcastAll: false, onlyPeer: p.Peer);
+        }
 
         Console.WriteLine(
             $"[lobby] MATCH IN PROGRESS ({reason}{(rematch ? ", rematch" : "")}): " +
             $"mode={_session.GameModeId} " +
             $"levels=[{string.Join(", ", _session.SelectedLevels)}] → " +
             $"op9 {_advertiseLanIp}:{GameMatchHost.DefaultMatchPort} " +
-            "(discovery flips to Join / no-map extras)");
+            $"(только приглашённым: {invitedByNick.Count}, остальные остаются в лобби)");
         BroadcastServerChat(
-            $"матч идёт: {_session.GameModeId} / {string.Join(", ", _session.SelectedLevels)} → {_advertiseLanIp}:{GameMatchHost.DefaultMatchPort}");
+            $"матч идёт: {_session.GameModeId} / {string.Join(", ", _session.SelectedLevels)} → " +
+            $"вход по /join");
 
         try { _onMatchStarted?.Invoke(); }
         catch (Exception ex) { Console.WriteLine($"[lobby] onMatchStarted: {ex.Message}"); }
@@ -367,7 +385,7 @@ public sealed partial class GameNetHost : IDisposable
 
     /// <summary>
     /// After MatchResults + 5s: stop match listen (7777), clear Dedik, lobby idle with
-    /// mode/map preserved. Next <c>/play</c> + <c>/set start</c> launches cleanly.
+    /// mode/map preserved. Новая катка — только через <c>/join</c>.
     /// </summary>
     public void ReturnPlayersToLobbyIdle(string reason)
     {
@@ -388,6 +406,12 @@ public sealed partial class GameNetHost : IDisposable
         _startGate.Clear();
 
         _match.SuspendMatchListen(reason);
+
+        // hasHosting=0 + SearchingStarted=false — ВСЕМ, кто в лобби.
+        //
+        // Возврат в лобби обязан снимать рекламу катки у каждого: клиент держит
+        // последнее полученное состояние и по нему решает, что матч ещё идёт.
+        // Иначе после выхода в лобби он продолжает «видеть» катку и сам лезет на 7777.
         PushIdleLobbySignals(broadcastAll: true);
 
         Console.WriteLine(
@@ -395,7 +419,7 @@ public sealed partial class GameNetHost : IDisposable
             $"levels=[{string.Join(", ", _session.SelectedLevels)}] " +
             "SearchingStarted=false hasHosting=0 match UDP stopped");
         BroadcastServerChat(
-            $"матч окончен — лобби (режим {_session.GameModeId} / карта сохранена). /play затем /set start");
+            $"матч окончен — лобби (режим {_session.GameModeId} / карта сохранена). Новая катка — /join");
 
         try { _onRosterChanged?.Invoke(); }
         catch (Exception ex) { Console.WriteLine($"[lobby] onRosterChanged after return: {ex.Message}"); }

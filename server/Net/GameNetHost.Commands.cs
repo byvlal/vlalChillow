@@ -384,6 +384,44 @@ public sealed partial class GameNetHost
     }
 
     /// <summary>
+    /// Сказать всем, кто сидит за этим адресом: катки больше нет (<c>hasHosting=0</c>).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Комната закрывается, и матч-пир вот-вот отключат. Отключение клиент видит как
+    /// обрыв связи и идёт переподключаться — на 7777, в комнату, которой нет. Здесь
+    /// мы сначала снимаем hosting в лобби-канале, чтобы клиент знал: комната кончилась,
+    /// искать нечего. Присоединяться снова можно только через <c>/join</c>.
+    /// </para>
+    /// <para>
+    /// По адресу, а не по нику: у матч-пира фаза игры кончилась и имя могло смениться,
+    /// а IP — то же самое. Один адрес может дать несколько лобби-пиров (несколько игр
+    /// за одним NAT), и это нормально: снять hosting каждому.
+    /// </para>
+    /// </remarks>
+    private void ClearHostingForAddress(IPAddress? address)
+    {
+        if (address is null)
+            return;
+
+        foreach (var player in _session.JoinedPlayersByIp(address))
+        {
+            try
+            {
+                Send(player.Peer, LobbyCodec.BuildGameHostingState(null, 0));
+                Send(player.Peer, LobbyCodec.BuildCustomProperty(
+                    LobbyPropKeys.SearchingStarted, LobbyVariant.FromBool(false)));
+                Console.WriteLine(
+                    $"[lobby] '{player.Name}' ({address}): катка закрыта — hasHosting=0 отправлен до разрыва");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[lobby] '{player.Name}': снять hosting перед закрытием: {ex.Message}");
+            }
+        }
+    }
+
+    /// <summary>
     /// Immediate match teardown — same cleanup as series end, no MatchResults 5s wait.
     /// </summary>
     public bool TryEndMatchNow(string who, Action<string>? reply = null)
@@ -566,7 +604,7 @@ public sealed partial class GameNetHost
 
         if (player.Status != PlayerLobbyStatus.InMatch)
         {
-            reply("ты не в катке — /ready работает только из матча (сначала /play)");
+            reply("ты не в катке — /ready работает только из матча (сначала /join)");
             return;
         }
 

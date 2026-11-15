@@ -356,6 +356,65 @@ public sealed class RoomRegistryTests
     }
 
     [Fact]
+    public void FindExpired_FinishedRoom_CountsFromMatchEnd_NotFromCreation()
+    {
+        // Сценарий из лога: катка шла долго, закончилась — и её сносило в ту же секунду.
+        // Отсчёт «сколько завершённая комната ещё висит» шёл от создания, поэтому у
+        // комнаты, созданной двадцать минут назад, «возраст» уже был больше TTL.
+        // Игроков вышвыривало из неё мгновенно, клиент считал это обрывом и лез
+        // переподключаться в комнату, которой уже нет.
+        var reg = new RoomRegistry();
+        Assert.True(Create(reg, "2v2", null, "a", out var room, out _));
+
+        var emptyTtl = TimeSpan.FromMinutes(10);
+        var finishedTtl = TimeSpan.FromSeconds(30);
+
+        // Катка идёт: комната «старая», но живая.
+        Assert.True(reg.TryUpdate(room!.Number, RoomState.Live, 4));
+        var live = reg.Snapshot().Single(r => r.Number == room.Number);
+        Assert.Null(live.FinishedAtUtc);
+        Assert.Empty(reg.FindExpired(live.CreatedUtc.AddHours(5), emptyTtl, finishedTtl));
+
+        // Катка кончилась. Момент конца записан отдельно — от него и считаем.
+        Assert.True(reg.TryUpdate(room.Number, RoomState.Finished, 4));
+        var finished = reg.Snapshot().Single(r => r.Number == room.Number);
+        Assert.NotNull(finished.FinishedAtUtc);
+        var finishedAt = finished.FinishedAtUtc!.Value;
+
+        // Пять часов игры не должны «съесть» TTL завершённой комнаты: сразу после
+        // конца она ещё висит, иначе игроков вышвыривало бы в ту же секунду.
+        Assert.Empty(reg.FindExpired(finishedAt, emptyTtl, finishedTtl));
+        Assert.Empty(reg.FindExpired(finishedAt.AddSeconds(29), emptyTtl, finishedTtl));
+
+        // Через TTL ПОСЛЕ конца — пора.
+        var expired = reg.FindExpired(finishedAt.AddSeconds(31), emptyTtl, finishedTtl);
+        Assert.Single(expired);
+        Assert.Equal(room.Number, expired[0]);
+    }
+
+    [Fact]
+    public void FindExpired_FinishedRoom_DoesNotRestartClockWhilePlayersRemain()
+    {
+        // Пока в завершённой комнате ещё кто-то есть (клиенты не успели выйти),
+        // TryUpdate по одному и тому же состоянию не должен перезапускать отсчёт:
+        // иначе комната висела бы вечно, пока матч-хост раз в секунду повторяет
+        // «Finished, игроков N».
+        var reg = new RoomRegistry();
+        Assert.True(Create(reg, "2v2", null, "a", out var room, out _));
+        Assert.True(reg.TryUpdate(room!.Number, RoomState.Finished, 4));
+
+        var first = reg.Snapshot().Single(r => r.Number == room.Number).FinishedAtUtc;
+        Assert.NotNull(first);
+
+        // Повторные тики с теми же значениями — метка конца не сдвигается.
+        Assert.True(reg.TryUpdate(room.Number, RoomState.Finished, 4));
+        Assert.True(reg.TryUpdate(room.Number, RoomState.Finished, 4));
+
+        var after = reg.Snapshot().Single(r => r.Number == room.Number).FinishedAtUtc;
+        Assert.Equal(first, after);
+    }
+
+    [Fact]
     public void Quota_ReportsOwnershipAndLimit()
     {
         var reg = new RoomRegistry { MaxRooms = 1 };

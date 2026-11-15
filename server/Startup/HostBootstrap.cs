@@ -152,7 +152,7 @@ public static class HostBootstrap
             : $"[config] команд только для админов: " +
               string.Join(", ", serverConfig.Admin.AdminOnlyCommands));
         Console.WriteLine(serverConfig.Admin.AnyoneCanStart
-            ? "[config] катку может запускать кто угодно (/mode /map /start /play /set start)"
+            ? "[config] катку может запускать кто угодно (/mode /map /set start)"
             : "[config] запускать катку может только админ");
         Console.WriteLine($"[config] режим старта: {serverConfig.DescribeStartMode()}");
         Console.WriteLine($"[config] приветствие: {(string.IsNullOrWhiteSpace(serverConfig.Server.WelcomeMessage) ? "(выкл)" : serverConfig.Server.WelcomeMessage)}");

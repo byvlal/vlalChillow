@@ -151,6 +151,24 @@ public sealed partial class GameMatchHost : IDisposable
     public Action? OnMatchOverReturnToLobby { get; set; }
 
     /// <summary>
+    /// Комната закрывается: игрокам пора сказать, что катки для них больше нет.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Вызывается <b>до</b> отключения пиров на 7777. Порядок принципиален: клиент
+    /// отличает «матч кончился» от «сеть оборвалась» только по этому сигналу в
+    /// лобби-канале. Без него он видит голый разрыв и лезет переподключаться на
+    /// 7777 в комнату, которой уже нет — а там <c>RoomNotFound</c>, и на клиенте
+    /// это вылезает как Object reference в <c>OnJoinRoomResponse</c>.
+    /// </para>
+    /// <para>
+    /// Аргумент — адрес пира в катке. Лобби-пир ищется по нему: сокеты 7777 и 7778
+    /// разные, и «отключить пира» не значит «сказать игроку».
+    /// </para>
+    /// </remarks>
+    public Action<IPAddress?>? OnRoomClosing { get; set; }
+
+    /// <summary>
     /// Host-originated debug chat (Server nick) when <see cref="MatchHostSettings.DebugMatchChat"/>
     /// is on. Wired from <see cref="GameNetHost.BroadcastConsoleChat"/> — same lobby OpChat path
     /// phones already see (not silent slash commands).
@@ -291,7 +309,7 @@ public sealed partial class GameMatchHost : IDisposable
         var lan = advertiseHint ?? LanInterfacePicker.PickLanBindAddress();
         Console.WriteLine(
             $"[match-host] LiteNetLib listen *:{port} key='{ConnectionKey}' channels={ChannelsCount} " +
-            $"advertiseLAN={(lan?.ToString() ?? "?")} (one bind; Stop after MatchOver, Start again on /play)");
+            $"advertiseLAN={(lan?.ToString() ?? "?")} (one bind; комната с сайта, стартует сама)");
         // Pre-create LAN room under password key Dedik so JoinOnly finds it as soon as op9 fires.
         EnsureLanRoom();
 
@@ -415,7 +433,7 @@ public sealed partial class GameMatchHost : IDisposable
         }
         Console.WriteLine(
             $"[match-host] match listen SUSPENDED UDP {_listenPort} ({reason}) — " +
-            "lobby idle until /play");
+            "ждём следующую комнату с сайта");
     }
 
     /// <summary>
@@ -452,6 +470,29 @@ public sealed partial class GameMatchHost : IDisposable
                 .ToList();
         }
 
+        // Бронь жила ровно для этой комнаты. Комната закрыта — бронь не значит ничего,
+        // и оставлять её нельзя: при следующем входе в лобби JoinResponse по ней снова
+        // скажет «тебя ждут» и утащит клиент на 7777 к несуществующей комнате.
+        try { PendingRooms.Release(passwordKey); }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[match-host] закрытие комнаты: снять бронь: {ex.Message}");
+        }
+
+        // Сначала — «катки больше нет» в лобби-канал, потом разрыв.
+        //
+        // Голый Disconnect клиент читает как обрыв связи и переподключается на 7777,
+        // где комнаты уже нет: JoinRoom → RoomNotFound → Object reference в
+        // OnJoinRoomResponse. Сигнал hasHosting=0 говорит ему не искать комнату.
+        foreach (var peer in peers)
+        {
+            try { OnRoomClosing?.Invoke(peer.Address); }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[match-host] закрытие комнаты: сигнал о конце катки: {ex.Message}");
+            }
+        }
+
         foreach (var peer in peers)
         {
             try
@@ -468,7 +509,7 @@ public sealed partial class GameMatchHost : IDisposable
 
         Console.WriteLine(
             $"[match-host] комната '{passwordKey}' закрыта и убрана из хоста " +
-            $"(пиров отключено: {peers.Count})");
+            $"(пиров отключено: {peers.Count}, каждому сказано «катка кончилась»)");
 
         // Последняя панельная комната ушла — 7777 больше не нужен.
         if (!HasPanelRooms())
