@@ -25,7 +25,7 @@ namespace StandChillow.LanServer.Web;
 /// Поэтому все ветки проверяются тестами без сети.
 /// </para>
 /// </remarks>
-public sealed class WebPanelRouter
+public sealed partial class WebPanelRouter
 {
     private readonly RoomRegistry _rooms;
     private readonly Func<string> _indexHtml;
@@ -57,23 +57,51 @@ public sealed class WebPanelRouter
             return WebResponse.Json(_status.Current);
 
         if (request.Method == "GET" && path == "/api/rooms")
-            return WebResponse.Json(BuildRoomsJson());
+            return WebResponse.Json(BuildRoomsJson(SessionOf(request)));
 
         // Каталог режимов и карт отдаёт сервер, а не страница: иначе копия в JS
         // разъедется с GameModeCatalog, и панель начнёт предлагать несуществующие карты.
         if (request.Method == "GET" && path == "/api/modes")
             return WebResponse.Json(BuildModesJson());
 
+        // Авторизация: обменять код из лобби на сессию (#51). Чтение доступно всем,
+        // всё, что меняет состояние, — только по сессии (см. CreateRoom и RoomEnd).
+        if (request.Method == "POST" && path == "/api/auth")
+            return Authenticate(request);
+
+        if (request.Method == "GET" && path == "/api/me")
+            return WhoAmI(request);
+
+        // Аватар — личная вещь: только по сессии, кэш только приватный.
+        if (request.Method == "GET" && path == "/api/avatar")
+            return Avatar(request);
+
+        if (request.Method == "POST" && path == "/api/logout")
+            return Logout(request);
+
         if (request.Method == "POST" && path == "/api/rooms")
-            return CreateRoom(request.Body);
+            return CreateRoom(request);
+
+        // «Завершить игру» у своей комнаты (#51). Путь с номером — поэтому отдельная
+        // проверка, а не сравнение строкой.
+        if (TryParseRoomEndPath(path, out _))
+            return request.Method == "POST"
+                ? EndRoom(request, path)
+                : WithAllow("POST", WebResponse.Text("405", 405));
 
         if (request.Method == "GET" && path == "/healthz")
             return WebResponse.Text("ok");
 
         // Метод не тот — это не «нет маршрута», и панель должна сказать честно.
-        if (path is "/" or "/index.html" or "/api/status" or "/api/rooms"
-            or "/api/modes" or "/healthz")
-            return WithAllow(path == "/api/rooms" ? "GET, POST" : "GET", WebResponse.Text("405", 405));
+        if (path is "/" or "/index.html" or "/api/status" or "/api/modes"
+            or "/api/me" or "/api/avatar" or "/healthz")
+            return WithAllow("GET", WebResponse.Text("405", 405));
+
+        if (path is "/api/auth" or "/api/logout")
+            return WithAllow("POST", WebResponse.Text("405", 405));
+
+        if (path == "/api/rooms")
+            return WithAllow("GET, POST", WebResponse.Text("405", 405));
 
         return WebResponse.Text("404", status: 404);
     }
@@ -166,9 +194,14 @@ public sealed class WebPanelRouter
         return Encoding.UTF8.GetString(stream.ToArray());
     }
 
-    private string BuildRoomsJson()
+    /// <summary>
+    /// Список комнат. Для авторизованного зрителя его собственная комната помечена
+    /// <c>isMine</c> — страница поднимает её наверх и показывает «Моя комната» (#51).
+    /// </summary>
+    private string BuildRoomsJson(SiteSession? viewer)
     {
         var rooms = _rooms.Snapshot();
+        var viewerId = viewer?.PlayerId ?? 0;
         using var stream = new MemoryStream();
         using (var writer = new Utf8JsonWriter(stream, JsonText.WriterOptions))
         {
@@ -196,6 +229,10 @@ public sealed class WebPanelRouter
                     RoomCapacity.Describe(room.ModeId, room.PerTeam));
                 writer.WriteString("joinCommand", FormatJoinCommand(room));
                 writer.WriteString("createdUtc", room.CreatedUtc.ToString("O"));
+
+                // Своя комната: только владельцу и только по сессии. Без авторизации
+                // флага нет ни у кого — анонимный зритель не узнает, чья это комната.
+                writer.WriteBoolean("isMine", viewerId > 0 && room.OwnerId == viewerId);
                 writer.WriteEndObject();
             }
             writer.WriteEndArray();
@@ -217,12 +254,24 @@ public sealed class WebPanelRouter
     private static string DisplayModeName(string modeId) =>
         GameModeCatalog.TryGetMode(modeId, out var mode) ? mode.DisplayName : modeId;
 
-    private WebResponse CreateRoom(byte[] body)
+    private WebResponse CreateRoom(WebRequestContext request)
     {
+        // Комнату создаёт только авторизованный (#51): без сессии панель не принимает
+        // вообще ничего, что меняет состояние. Кто владелец, решаем по сессии, а не по
+        // телу запроса: раньше ID присылала страница, и вписать можно было любой.
+        var session = SessionOf(request);
+        if (session is null)
+            return ApiError(401, "no_auth", "сначала введи код из лобби");
+
+        // Бан проверяем и здесь: забаненный не создаёт комнату, даже если успел
+        // авторизоваться до бана (#51).
+        if (BannedRefusal(session) is { } banned)
+            return banned;
+
         CreateRoomRequest? parsed;
         try
         {
-            parsed = JsonSerializer.Deserialize<CreateRoomRequest>(body, JsonOptions);
+            parsed = JsonSerializer.Deserialize<CreateRoomRequest>(request.Body, JsonOptions);
         }
         catch (JsonException)
         {
@@ -232,27 +281,16 @@ public sealed class WebPanelRouter
         if (parsed is null)
             return ApiError(400, "bad_json", "пустое тело запроса");
 
-        // Одна кнопка: владелец — тот, кто создаёт. Теперь это ID из лобби, а не ник:
-        // ник в лобби не уникален и его можно вписать какой угодно.
-        if (parsed.OwnerId <= 0)
-        {
-            // Прислали ник вместо ID — объясняем прямо, а не «пустое поле»:
-            // иначе человек ищет ошибку в форме, где всё заполнено.
-            return string.IsNullOrWhiteSpace(parsed.Owner)
-                ? ApiError(400, "empty_owner", "укажи свой ID из лобби")
-                : ApiError(400, "nick_not_supported",
-                    "комната создаётся по ID игрока, а не по нику — возьми ID из чата лобби");
-        }
-
         var ownerNick = string.Empty;
         var online = _options.OnlinePlayers?.Invoke();
         if (online is not null)
         {
-            // Ник берём с сервера: человек его не вводит и подделать не может.
+            // Комната — за живым человеком из лобби: сессия выдана по коду, но человек
+            // мог уже выйти из игры. Без этой проверки комната висела бы за призраком.
             var found = false;
             foreach (var (id, nick) in online)
             {
-                if (id != parsed.OwnerId)
+                if (id != session.PlayerId)
                     continue;
                 ownerNick = nick;
                 found = true;
@@ -261,7 +299,7 @@ public sealed class WebPanelRouter
 
             if (!found)
                 return ApiError(409, "player_offline",
-                    $"игрока с ID {parsed.OwnerId} нет в лобби — зайди в игру и создай комнату оттуда");
+                    $"тебя (ID {session.PlayerId}) нет в лобби — зайди в игру и создай комнату оттуда");
         }
 
         var modeToken = string.IsNullOrWhiteSpace(parsed.Mode)
@@ -270,7 +308,7 @@ public sealed class WebPanelRouter
 
         if (!_rooms.TryCreate(
                 modeToken, parsed.Level, parsed.Name, ownerNick, out var room, out var error,
-                perTeam: parsed.PerTeam, ownerId: parsed.OwnerId)
+                perTeam: parsed.PerTeam, ownerId: session.PlayerId)
             || room is null)
         {
             var (status, code, message) = MapCreateError(error);
@@ -333,8 +371,18 @@ public sealed class WebPanelRouter
 
     private static WebResponse ApiError(int status, string code, string message)
     {
-        var json = JsonSerializer.Serialize(new { code, message });
-        return WebResponse.Json(json, status);
+        // Тот же писатель, что и у остальных ответов: иначе «аккаунт забанен» уедет
+        // на страницу как \u0430\u043A… и человек увидит кракозябры вместо текста.
+        using var stream = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(stream, JsonText.WriterOptions))
+        {
+            writer.WriteStartObject();
+            writer.WriteString("code", code);
+            writer.WriteString("message", message);
+            writer.WriteEndObject();
+        }
+
+        return WebResponse.Json(Encoding.UTF8.GetString(stream.ToArray()), status);
     }
 
     private static WebResponse WithAllow(string allow, WebResponse response) => new(
@@ -355,19 +403,20 @@ public sealed class WebPanelRouter
     /// <param name="Mode">Режим: алиас или id (<c>2v2</c>, <c>Duel</c>).</param>
     /// <param name="Level">Карта; пусто — карта по умолчанию для режима.</param>
     /// <param name="Name">Название комнаты; пусто — придумает реестр.</param>
-    /// <param name="Owner">Ник создателя (из лобби).</param>
-    /// <summary>
-    /// Тело создания комнаты. <paramref name="PerTeam"/> — размер команды для режимов,
-    /// где он выбирается (1 или 2 у союзников и дуэли); <c>0</c> — «как в режиме».
-    /// </summary>
+    /// <param name="PerTeam">Размер команды, где он выбирается; <c>0</c> — «как в режиме».</param>
+    /// <remarks>
+    /// Владельца здесь нет и быть не может: он берётся из сессии, а не из присланного
+    /// JSON (#51). Поля <c>OwnerId</c>/<c>Owner</c> принимаются и игнорируются — старая
+    /// страница шлёт их по привычке, а решением они больше не являются.
+    /// </remarks>
     private sealed record CreateRoomRequest(
         string? Mode,
         string? Level,
         string? Name,
-        int OwnerId = 0,
         int PerTeam = 0,
-        // Оставлено только чтобы отличить «прислали ник» от «не прислали ничего».
-        // Значение никак не используется: подпись берётся из списка лобби.
+        // Принимаем и игнорируем: старая страница шлёт ownerId/owner по привычке.
+        // Решение принимает сессия, а не эти поля — подделать владельца нельзя.
+        int OwnerId = 0,
         string? Owner = null);
 }
 
@@ -386,6 +435,58 @@ public sealed class WebPanelRouterOptions
     /// Поднять игровую комнату по записи реестра. Возвращает текст ошибки или <c>null</c>.
     /// </summary>
     public Func<RoomDescriptor, string?>? OnRoomCreated { get; init; }
+
+    /// <summary>
+    /// Сессии сайта. <c>null</c> — авторизация выключена (создание комнаты закрыто).
+    /// </summary>
+    /// <remarks>
+    /// Хранилище одно на запуск: рестарт сервера гасит все сессии и все коды, и человек
+    /// авторизуется заново (#51).
+    /// </remarks>
+    public SiteSessions? Sessions { get; init; }
+
+    /// <summary>
+    /// Аватар игрока: байты, которые клиент прислал в лобби. <c>null</c> — аватара нет
+    /// (или игрока нет в лобби). Формат определяет вызывающий по magic-байтам.
+    /// </summary>
+    public Func<int, byte[]?>? AvatarById { get; init; }
+
+    /// <summary>
+    /// Обменять код из лобби на запись игрока. Возвращает <c>null</c>, если код чужой,
+    /// протухший или кривой — вызывающий не обязан различать эти случаи.
+    /// </summary>
+    public Func<string, DateTime, SiteLoginCode?>? RedeemCode { get; init; }
+
+    /// <summary>
+    /// Забанен ли игрок с таким серверным ID.
+    /// </summary>
+    /// <remarks>
+    /// Проверяется и при обмене кода, и на каждом авторизованном запросе (#51): человека
+    /// могли забанить, пока он сидел на сайте, — тогда авторизация у него слетает.
+    /// <c>null</c> — проверка выключена (тесты и режим без банов).
+    /// </remarks>
+    public Func<int, bool>? IsBanned { get; init; }
+
+    /// <summary>
+    /// Завершить катку в комнате досрочно (кнопка «Завершить игру» у «Моей комнаты»).
+    /// </summary>
+    /// <remarks>
+    /// Первый аргумент — номер комнаты, второй — ID игрока, который просит. Возвращает
+    /// текст ошибки или <c>null</c>, если катка уже пошла завершаться. Права проверяет
+    /// и роутер, и сам хост: обе проверки дешёвые, а цена ошибки — чужая катка.
+    /// </remarks>
+    public Func<int, int, string?>? EndRoom { get; init; }
+
+    /// <summary>
+    /// Путь куки сессии. За прокси панель живёт в подпути, и кука обязана совпадать.
+    /// </summary>
+    public string CookiePath { get; init; } = "/";
+
+    /// <summary>
+    /// Ставить ли куке <c>Secure</c>. По LAN панель часто открывают по http, и с этим
+    /// флагом браузер куку просто не сохранит.
+    /// </summary>
+    public bool SecureCookies { get; init; }
 
     /// <summary>
     /// Кто сейчас в лобби: (серверный id, ник).

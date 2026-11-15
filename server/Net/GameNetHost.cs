@@ -43,6 +43,11 @@ public sealed partial class GameNetHost : IDisposable
     /// <summary>Кто нажал /ready и какой режим старта активен.</summary>
     private readonly MatchStartGate _startGate = new();
 
+    /// <summary>
+    /// Коды входа на сайт. Живут только в памяти: перезапуск сервера гасит все коды (#51).
+    /// </summary>
+    private readonly SiteLoginCodes _siteCodes = new();
+
     /// <summary>Как часто опрашивать гейт старта (автостарт / готовность).</summary>
     private static readonly TimeSpan StartGateInterval = TimeSpan.FromSeconds(1);
     private DateTime _lastStartGateCheckUtc = DateTime.MinValue;
@@ -154,7 +159,11 @@ public sealed partial class GameNetHost : IDisposable
 
                 if (!wasInMatch)
                     BroadcastServerChat($"{name} Отключился!");
-                BroadcastServerChat(_session.BuildPlayerListMessage());
+
+                // Вышел именно из лобби (а не ушёл в катку) — код сайта протухает сразу,
+                // новый дадим на следующем входе (#51).
+                ExpireSiteCodeFor(left);
+
                 _onRosterChanged?.Invoke();
             }
 
@@ -209,6 +218,30 @@ public sealed partial class GameNetHost : IDisposable
     public long UnconnectedMessages => Interlocked.Read(ref _unconnected);
     public int PeerCount => _manager.ConnectedPeersCount;
     public int JoinedCount => _session.JoinedCount;
+
+    /// <summary>
+    /// Онлайн одной строкой: сколько всего человек (лобби + катка) и сколько именно в катке.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Считаем по двум источникам, потому что один человек виден в обоих: пока он играет
+    /// на 7777, его лобби-пир на 7778 ещё жив (иначе некуда было бы вернуть его после
+    /// катки). Поэтому «в катке» берём у матч-хоста — это актёры во всех комнатах, — а в
+    /// лобби считаем только тех, у кого статус не <c>InMatch</c>. Складывать статус лобби и
+    /// актёров матча напрямую нельзя: играющий человек попался бы дважды.
+    /// </para>
+    /// <para>
+    /// Строка уходит ровно один раз и только тому, кто вошёл (#51): состав лобби в чат
+    /// больше не рассылается ни при каком событии.
+    /// </para>
+    /// </remarks>
+    public string BuildOnlineSummary()
+    {
+        var (lobby, _) = _session.CountPresence();
+        var match = _match.HumanActorCount;
+        return $"онлайн {lobby + match} (в матче {match})";
+    }
+
     public int Port => _manager.LocalPort;
     public LobbySession Session => _session;
     public GameMatchHost Match => _match;
@@ -663,14 +696,12 @@ public sealed partial class GameNetHost : IDisposable
             if (!string.IsNullOrWhiteSpace(welcome))
                 SendServerChatTo(peer, welcome);
 
-            // Свой id — только самому игроку, не в общий чат. Он же потом приходит
-            // в катке (uid = MatchPublicId.ForNick), поэтому человек видит одно и то же
-            // число и в лобби, и в игре, и может назвать его админу для /ban.
-            SendServerChatTo(peer,
-                $"Ты {self.Name} · ID: {MatchPublicId.ForNick(self.Name)}");
+            // Кто я, мой ID, код для сайта и онлайн одной строкой — только самому игроку
+            // (#51). Раньше вместо этого в чат уходила вся роспись лобби, и на каждое
+            // событие её получали все; состав теперь не рассылается вовсе.
+            SendIdentityLine(self);
 
             // Lobby join is quiet for match-style Подключился — that fires on JoinRoom Found.
-            BroadcastServerChat(_session.BuildPlayerListMessage());
         });
 
         // Инструкцию по командам при входе НЕ шлём: она занимала весь экран чата

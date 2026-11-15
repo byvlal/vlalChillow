@@ -38,6 +38,11 @@ public sealed class WebPanelHost : IDisposable
     private readonly ServerConfig _server;
     private readonly RoomRegistry _rooms;
     private readonly StatusSnapshotCache _status = new();
+
+    /// <summary>
+    /// Сессии сайта. Одни на запуск сервера: перезапуск гасит все сессии и коды (#51).
+    /// </summary>
+    private readonly SiteSessions _sessions = new();
     private readonly SiteAddressResolver _addresses;
     private readonly WebPanelServer _server_;
     private readonly WebPanelRouter _router;
@@ -82,6 +87,25 @@ public sealed class WebPanelHost : IDisposable
                 // Кто сейчас в лобби — источник правды для «комната за этим ID».
                 // Ник берётся отсюда, а не из тела запроса: вписать чужой нельзя.
                 OnlinePlayers = ListOnlinePlayers,
+
+                // Авторизация: код из лобби меняем на сессию сайта (#51).
+                Sessions = _sessions,
+                RedeemCode = RedeemSiteLoginCode,
+                CookiePath = CookiePathFor(_config.BasePath),
+                SecureCookies = _config.SecureCookies,
+
+                // «Завершить игру» — только владельцу комнаты.
+                EndRoom = EndRoomByOwner,
+
+                // Бан по ID игрока: гасит авторизацию и все запросы (#51).
+                IsBanned = IsPlayerBanned,
+
+                // Аватар — те же байты, что клиент прислал в лобби.
+                AvatarById = AvatarOfPlayer,
+
+                // Префикс подпути: со слэшем в proxy_pass прокси его срежет, но
+                // конфиг правит владелец — роутер обязан понимать оба варианта.
+                BasePath = _config.BasePath,
             });
 
         _server_ = new WebPanelServer(
@@ -193,6 +217,9 @@ public sealed class WebPanelHost : IDisposable
         _rooms.OnlinePlayerCount = () => host.JoinedCount + host.Match.HumanActorCount;
         host.Match.PendingRooms.Warning += msg => Console.WriteLine(msg);
 
+        // Срок кода — из конфига (горячая перезагрузка подхватит при следующей выдаче).
+        host.SiteCodes.Ttl = TimeSpan.FromSeconds(_config.CodeTtlSec);
+
         Console.WriteLine(
             $"[web] игровой хост подключён: онлайн {_rooms.OnlinePlayerCount()}, " +
             $"квота комнат по игрокам активна");
@@ -226,6 +253,10 @@ public sealed class WebPanelHost : IDisposable
                 // Раз в секунду: заодно закрывает комнаты, из которых все ушли.
                 _status.Refresh(BuildStatusJson);
                 SweepExpiredRooms();
+
+                // Протухшие коды выбрасываем, чтобы не копить записи за ушедшими игроками.
+                // Дёшево: активных кодов столько же, сколько людей онлайн.
+                _host?.SiteCodes.Prune(DateTime.UtcNow);
             }
             catch (Exception ex)
             {
@@ -381,6 +412,87 @@ public sealed class WebPanelHost : IDisposable
 
         return list;
     }
+
+    /// <summary>
+    /// Обменять код из лобби на запись игрока. Код чужой или протухший — <c>null</c>:
+    /// сайт не различает эти случаи и отвечает одним и тем же текстом (#51).
+    /// </summary>
+    private SiteLoginCode? RedeemSiteLoginCode(string code, DateTime nowUtc)
+    {
+        var host = _host;
+        if (host is null)
+            return null;
+
+        return host.SiteCodes.TryFind(code, nowUtc, out var entry) ? entry : null;
+    }
+
+    /// <summary>
+    /// Аватар игрока: ровно те байты, что его клиент прислал при входе в лобби
+    /// (по захвату — JPEG 256×256). Игрока в лобби нет — аватара тоже нет.
+    /// </summary>
+    private byte[]? AvatarOfPlayer(int playerId)
+    {
+        var host = _host;
+        if (host is null || playerId <= 0)
+            return null;
+
+        foreach (var player in host.Session.JoinedPlayers())
+        {
+            if (MatchPublicId.ForNick(player.Name) != playerId) continue;
+            return player.Avatar;
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// Забанен ли игрок с таким ID. Пока хост не подключён — считаем, что нет: банов
+    /// просто нечем проверять, а ломать панель из-за этого незачем.
+    /// </summary>
+    private bool IsPlayerBanned(int playerId) =>
+        _host?.IsPlayerBannedById(playerId) ?? false;
+
+    /// <summary>
+    /// Завершить катку в комнате по просьбе владельца (кнопка «Завершить игру», #51).
+    /// </summary>
+    /// <returns>Текст ошибки или <c>null</c>, если завершение пошло.</returns>
+    private string? EndRoomByOwner(int number, int playerId)
+    {
+        var ownerId = _rooms.OwnerIdOf(number);
+        if (ownerId <= 0)
+            return $"комнаты #{number} нет — обнови страницу";
+        if (ownerId != playerId)
+            return "это не твоя комната";
+
+        RoomDescriptor? room = null;
+        foreach (var candidate in _rooms.Snapshot())
+        {
+            if (candidate.Number != number) continue;
+            room = candidate;
+            break;
+        }
+
+        if (room is null)
+            return $"комнаты #{number} нет — обнови страницу";
+
+        var host = _host;
+        if (host is null)
+            return "игровой сервер ещё не поднялся";
+
+        // Катка кончается как по-настоящему: C2=201 FinalHud по текущему счёту →
+        // выдержка → C2=255 → закрытие комнаты и освобождение номера.
+        var finished = host.Match.TryFinishRoomEarly(room.PasswordKey, $"веб: владелец ID {playerId}");
+
+        return finished
+            ? null
+            : "эту катку уже завершили — обнови страницу";
+    }
+
+    /// <summary>
+    /// Путь куки: за прокси панель живёт в подпути, и кука обязана совпадать с ним.
+    /// </summary>
+    internal static string CookiePathFor(string? basePath) =>
+        string.IsNullOrWhiteSpace(basePath) ? "/" : "/" + basePath.Trim().Trim('/');
 
     /// <summary>Подпись комнаты для лога и страницы: имя или «Комната #N».</summary>
     public static string BuildRoomLabel(RoomDescriptor room) =>

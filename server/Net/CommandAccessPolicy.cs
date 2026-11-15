@@ -61,7 +61,10 @@ public static class CommandAccessPolicy
         || parsed.Command.Equals("готов", StringComparison.OrdinalIgnoreCase)
         || parsed.Command.Equals("неготов", StringComparison.OrdinalIgnoreCase)
         || parsed.Command.Equals("г", StringComparison.OrdinalIgnoreCase)
-        || parsed.Command.Equals("нг", StringComparison.OrdinalIgnoreCase);
+        || parsed.Command.Equals("нг", StringComparison.OrdinalIgnoreCase)
+        // Код для сайта — свой, поэтому команда доступна каждому в лобби.
+        || parsed.Command.Equals("code", StringComparison.OrdinalIgnoreCase)
+        || parsed.Command.Equals("код", StringComparison.OrdinalIgnoreCase);
 
     /// <summary>
     /// Можно ли игроку выполнить команду. <paramref name="denyReason"/> заполняется только
