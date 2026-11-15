@@ -44,7 +44,7 @@ Mode FSMs are driven from ConnectAsClient captures and decompile — not invente
 ### Honest limits
 
 - **Escalation** — only **Prison** is a working map right now (other Escalation maps untested / not ready)
-- **Duel OnlyGrenades** — modifier fully defined in `DuelLoadouts`, but **RNG-gated off** until host grenade throw works
+- **Duel OnlyGrenades** — modifier fully defined in `DuelLoadouts`, still **RNG-gated off**: the host-authored grenade detonation landed (#53), but it should be validated on a live handset before the modifier unlocks
 - **ArmsRace / FreeForAll / DeathMatch** — catalog stubs or not listed as playable; refuse or incomplete wire drive
 - Maps: use each mode’s `SelectedLevels` list where the mode is playable
 
