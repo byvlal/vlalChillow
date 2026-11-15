@@ -148,6 +148,25 @@ jobs:
       - name: Check formatting
         run: dotnet format server/StandChillow.LanServer.csproj --verify-no-changes --severity warn
 
+  panel:
+    name: panel page (jsdom)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # Страница панели — единственный JS в проекте, и до сих пор её проверяли
+      # только руками. jsdom не в dependencies: ставим отдельно, как написано в
+      # шапке tests/panel/panel.test.js.
+      - name: Install jsdom
+        run: npm install --prefix "$RUNNER_TEMP/panel" jsdom --no-audit --no-fund
+
+      - name: Check panel page
+        run: NODE_PATH="$RUNNER_TEMP/panel/node_modules" node tests/panel/panel.test.js
+
   hygiene:
     name: hygiene guard
     runs-on: ubuntu-latest
