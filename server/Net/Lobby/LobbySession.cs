@@ -444,21 +444,30 @@ public sealed class LobbySession
         _ => "Лобби",
     };
 
-    /// <summary>Full roster text (Server + all real members) with lobby/match presence.</summary>
-    public string BuildPlayerListMessage()
+    /// <summary>
+    /// Сколько людей в лобби и сколько ушло в катку. Цифры, а не список ников.
+    /// </summary>
+    /// <remarks>
+    /// Раньше на каждое изменение онлайна в чат уходила вся роспись
+    /// (<c>«Текущие игроки в лобби:»</c> + строка на человека): вход, выход, вход в катку и
+    /// выход из катки — четыре рассылки полного состава на одно событие, и чат тонул в
+    /// списках (#51). Теперь состав никуда не рассылается: сводку цифрами получает только
+    /// тот, кто вошёл, и только один раз — в той же строке, где его ник и ID.
+    /// </remarks>
+    public (int Lobby, int InMatch) CountPresence()
     {
-        var roster = SnapshotRoster();
-        var sb = new System.Text.StringBuilder();
-        sb.Append("Текущие игроки в лобби:");
-        foreach (var (name, status) in roster)
+        lock (_gate)
         {
-            sb.Append('\n');
-            sb.Append(name);
-            sb.Append('(');
-            sb.Append(FormatStatus(status));
-            sb.Append(')');
+            var lobby = 0;
+            var match = 0;
+            foreach (var p in _order)
+            {
+                if (!p.Joined) continue;
+                if (p.Status == PlayerLobbyStatus.InMatch) match++;
+                else lobby++;
+            }
+            return (lobby, match);
         }
-        return sb.ToString();
     }
 }
 

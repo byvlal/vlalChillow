@@ -315,7 +315,6 @@ public sealed partial class GameNetHost
         if (player is not null)
             _session.TrySetPlayerStatus(player, PlayerLobbyStatus.InMatch);
         BroadcastServerChat($"{name} Подключился!");
-        BroadcastServerChat(_session.BuildPlayerListMessage());
 
         // Команда, набранная до подключения к катке, ждала именно этого момента.
         FlushMatchReplies(name);
@@ -338,7 +337,6 @@ public sealed partial class GameNetHost
         }
 
         BroadcastServerChat($"{name} Отключился!");
-        BroadcastServerChat(_session.BuildPlayerListMessage());
         try { _onRosterChanged?.Invoke(); } catch { /* ignore */ }
 
         // Вернувшемуся в лобби нельзя оставлять «игра идёт»: клиент рисует кнопку

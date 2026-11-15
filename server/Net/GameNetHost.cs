@@ -154,7 +154,6 @@ public sealed partial class GameNetHost : IDisposable
 
                 if (!wasInMatch)
                     BroadcastServerChat($"{name} Отключился!");
-                BroadcastServerChat(_session.BuildPlayerListMessage());
                 _onRosterChanged?.Invoke();
             }
 
@@ -209,6 +208,30 @@ public sealed partial class GameNetHost : IDisposable
     public long UnconnectedMessages => Interlocked.Read(ref _unconnected);
     public int PeerCount => _manager.ConnectedPeersCount;
     public int JoinedCount => _session.JoinedCount;
+
+    /// <summary>
+    /// Онлайн одной строкой: сколько всего человек (лобби + катка) и сколько именно в катке.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Считаем по двум источникам, потому что один человек виден в обоих: пока он играет
+    /// на 7777, его лобби-пир на 7778 ещё жив (иначе некуда было бы вернуть его после
+    /// катки). Поэтому «в катке» берём у матч-хоста — это актёры во всех комнатах, — а в
+    /// лобби считаем только тех, у кого статус не <c>InMatch</c>. Складывать статус лобби и
+    /// актёров матча напрямую нельзя: играющий человек попался бы дважды.
+    /// </para>
+    /// <para>
+    /// Строка уходит ровно один раз и только тому, кто вошёл (#51): состав лобби в чат
+    /// больше не рассылается ни при каком событии.
+    /// </para>
+    /// </remarks>
+    public string BuildOnlineSummary()
+    {
+        var (lobby, _) = _session.CountPresence();
+        var match = _match.HumanActorCount;
+        return $"онлайн {lobby + match} (в матче {match})";
+    }
+
     public int Port => _manager.LocalPort;
     public LobbySession Session => _session;
     public GameMatchHost Match => _match;
@@ -666,11 +689,14 @@ public sealed partial class GameNetHost : IDisposable
             // Свой id — только самому игроку, не в общий чат. Он же потом приходит
             // в катке (uid = MatchPublicId.ForNick), поэтому человек видит одно и то же
             // число и в лобби, и в игре, и может назвать его админу для /ban.
+            //
+            // Здесь же — онлайн одной строкой (#51): раньше вместо этого в чат уходила
+            // вся роспись лобби, и на каждое событие её получали все. Состав больше не
+            // рассылается вовсе: только цифры, только вошедшему, один раз.
             SendServerChatTo(peer,
-                $"Ты {self.Name} · ID: {MatchPublicId.ForNick(self.Name)}");
+                $"Ты {self.Name} · ID: {MatchPublicId.ForNick(self.Name)} · {BuildOnlineSummary()}");
 
             // Lobby join is quiet for match-style Подключился — that fires on JoinRoom Found.
-            BroadcastServerChat(_session.BuildPlayerListMessage());
         });
 
         // Инструкцию по командам при входе НЕ шлём: она занимала весь экран чата

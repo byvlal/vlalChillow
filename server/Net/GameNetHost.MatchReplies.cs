@@ -89,8 +89,8 @@ public sealed partial class GameNetHost
         {
             if (!_matchReplies.TryGetValue(key, out var list))
                 _matchReplies[key] = list = new List<PendingMatchReply>();
-            // Один и тот же текст дважды не копим: ростер лобби зеркалится в матч на каждое
-            // изменение, и без этого в очередь легли бы четыре одинаковых «Текущие игроки»
+            // Один и тот же текст дважды не копим: ответы лобби зеркалятся в матч на каждое
+            // изменение, и без этого в очередь легла бы груда одинаковых строк
             // (latest.log: 8 отложенных доставок при первом джойне).
             if (list.Any(p => string.Equals(p.Text, text, StringComparison.Ordinal)))
                 return;
