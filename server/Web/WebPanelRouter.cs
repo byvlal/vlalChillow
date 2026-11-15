@@ -78,6 +78,13 @@ public sealed partial class WebPanelRouter
         if (request.Method == "POST" && path == "/api/rooms")
             return CreateRoom(request);
 
+        // «Завершить игру» у своей комнаты (#51). Путь с номером — поэтому отдельная
+        // проверка, а не сравнение строкой.
+        if (TryParseRoomEndPath(path, out _))
+            return request.Method == "POST"
+                ? EndRoom(request, path)
+                : WithAllow("POST", WebResponse.Text("405", 405));
+
         if (request.Method == "GET" && path == "/healthz")
             return WebResponse.Text("ok");
 
@@ -424,6 +431,16 @@ public sealed class WebPanelRouterOptions
     /// протухший или кривой — вызывающий не обязан различать эти случаи.
     /// </summary>
     public Func<string, DateTime, SiteLoginCode?>? RedeemCode { get; init; }
+
+    /// <summary>
+    /// Завершить катку в комнате досрочно (кнопка «Завершить игру» у «Моей комнаты»).
+    /// </summary>
+    /// <remarks>
+    /// Первый аргумент — номер комнаты, второй — ID игрока, который просит. Возвращает
+    /// текст ошибки или <c>null</c>, если катка уже пошла завершаться. Права проверяет
+    /// и роутер, и сам хост: обе проверки дешёвые, а цена ошибки — чужая катка.
+    /// </remarks>
+    public Func<int, int, string?>? EndRoom { get; init; }
 
     /// <summary>
     /// Путь куки сессии. За прокси панель живёт в подпути, и кука обязана совпадать.

@@ -94,6 +94,9 @@ public sealed class WebPanelHost : IDisposable
                 CookiePath = CookiePathFor(_config.BasePath),
                 SecureCookies = _config.SecureCookies,
 
+                // «Завершить игру» — только владельцу комнаты.
+                EndRoom = EndRoomByOwner,
+
                 // Префикс подпути: со слэшем в proxy_pass прокси его срежет, но
                 // конфиг правит владелец — роутер обязан понимать оба варианта.
                 BasePath = _config.BasePath,
@@ -415,6 +418,42 @@ public sealed class WebPanelHost : IDisposable
             return null;
 
         return host.SiteCodes.TryFind(code, nowUtc, out var entry) ? entry : null;
+    }
+
+    /// <summary>
+    /// Завершить катку в комнате по просьбе владельца (кнопка «Завершить игру», #51).
+    /// </summary>
+    /// <returns>Текст ошибки или <c>null</c>, если завершение пошло.</returns>
+    private string? EndRoomByOwner(int number, int playerId)
+    {
+        var ownerId = _rooms.OwnerIdOf(number);
+        if (ownerId <= 0)
+            return $"комнаты #{number} нет — обнови страницу";
+        if (ownerId != playerId)
+            return "это не твоя комната";
+
+        RoomDescriptor? room = null;
+        foreach (var candidate in _rooms.Snapshot())
+        {
+            if (candidate.Number != number) continue;
+            room = candidate;
+            break;
+        }
+
+        if (room is null)
+            return $"комнаты #{number} нет — обнови страницу";
+
+        var host = _host;
+        if (host is null)
+            return "игровой сервер ещё не поднялся";
+
+        // Катка кончается как по-настоящему: C2=201 FinalHud по текущему счёту →
+        // выдержка → C2=255 → закрытие комнаты и освобождение номера.
+        var finished = host.Match.TryFinishRoomEarly(room.PasswordKey, $"веб: владелец ID {playerId}");
+
+        return finished
+            ? null
+            : "эту катку уже завершили — обнови страницу";
     }
 
     /// <summary>
