@@ -613,11 +613,18 @@ public sealed partial class GameMatchHost : IDisposable
         MatchRoom room, int scoreTr, int scoreCt, string logTag, int round, string? extra = null)
     {
         MatchTeam winner;
+        byte[] finalPlayers;
         lock (_roomGate)
         {
             winner = scoreTr > scoreCt ? MatchTeam.Tr
                 : scoreCt > scoreTr ? MatchTeam.Ct
                 : MatchTeam.None;
+            // Номера актёров — те, кто был в комнате. По ним клиент строит таблицу
+            // итогов: без них он падает с «Can't retrive final players, is empty».
+            finalPlayers = room.Actors
+                .Select(a => a.Nr)
+                .OrderBy(n => n)
+                .ToArray();
             room.Flow.Phase = MatchFlowPhase.MatchOver;
             room.Flow.PhaseEndsUtc = DateTime.UtcNow + MatchOverReturnToLobbyDelay;
             room.Flow.LobbyReturnPending = true;
@@ -638,6 +645,7 @@ public sealed partial class GameMatchHost : IDisposable
         BroadcastRoomProps(room,
         [
             (MatchRoomPropKeys.Time, LobbyVariant.FromDouble(nowSec)),
+            (MatchRoomPropKeys.FinalPlayers, LobbyVariant.FromBytes(finalPlayers)),
             (MatchRoomPropKeys.FinalWinTeam, LobbyVariant.FromProps(finalWinTeam)),
             (MatchRoomPropKeys.C2, LobbyVariant.FromByte(MatchC2States.FinalHud)),
         ], reason: $"MatchOver FinalHud Tr={scoreTr} Ct={scoreCt}");
@@ -646,6 +654,7 @@ public sealed partial class GameMatchHost : IDisposable
             $"[match-host] {logTag}: final C2={MatchC2States.FinalHud} (FinalHud) " +
             $"Tr={scoreTr} Ct={scoreCt} winner={winner} after round={round}" +
             (extra is null ? "" : $" {extra}") +
+            $"FinalPlayers=[{string.Join(" ", finalPlayers.Select(b => b.ToString("X2")))}] " +
             $" — teardown через {MatchOverReturnToLobbyDelay.TotalSeconds:0}s");
     }
 
