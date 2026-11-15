@@ -603,8 +603,8 @@ public sealed partial class GameMatchHost : IDisposable
     /// </para>
     /// <para>
     /// Теперь — путь, подтверждённый телефонным захватом
-    /// (<c>MATCH_ALLIES_PROBE.md</c>, <c>GameMatchHost.DeathMatch.cs</c>): финальный
-    /// <c>WinTeam</c> → <c>C2=201</c> FinalHud (то самое «WIN/LOSE») → <c>C2=255</c>
+    /// (<c>MATCH_ALLIES_PROBE.md</c>, <c>GameMatchHost.DeathMatch.cs</c>):
+    /// <c>FinalWinTeam</c> → <c>C2=201</c> FinalHud (то самое «WIN/LOSE») → <c>C2=255</c>
     /// teardown. Только после этого рвём соединение — иначе клиент не успевает показать
     /// результат и считает разрыв обрывом сети.
     /// </para>
@@ -624,20 +624,24 @@ public sealed partial class GameMatchHost : IDisposable
         }
 
         var nowSec = ServerTimeSeconds();
-        var props = new List<(string Key, LobbyVariant Value)>
+
+        // FinalHud (C2=201) читает FinalWinTeam, а НЕ раундовый WinTeam: это разные
+        // мешки с разной формой. С раундовым WinTeam экран итогов открылся бы с
+        // пустыми очками — то есть «ничего не произошло».
+        var finalWinTeam = new List<(string Key, LobbyVariant Value)>
         {
-            (MatchRoomPropKeys.Time, LobbyVariant.FromDouble(nowSec)),
+            (MatchFinalWinTeamKeys.IsDraw, LobbyVariant.FromBool(winner == MatchTeam.None)),
+            (MatchFinalWinTeamKeys.IsGiveUp, LobbyVariant.FromBool(false)),
+            (MatchFinalWinTeamKeys.Team, LobbyVariant.FromByte((byte)winner)),
         };
 
-        // Финальный WinTeam — по той же форме, что и в конце раунда (клиент читает её
-        // в FinalHud). Без него экран итогов покажет пустые очки.
-        if (winner is MatchTeam.Tr or MatchTeam.Ct)
-            props.Add((MatchRoomPropKeys.WinTeam, LobbyVariant.FromProps(
-                BuildWinTeamProps(winner, mvpNr: 0, mvpCode: 0))));
+        BroadcastRoomProps(room,
+        [
+            (MatchRoomPropKeys.Time, LobbyVariant.FromDouble(nowSec)),
+            (MatchRoomPropKeys.FinalWinTeam, LobbyVariant.FromProps(finalWinTeam)),
+            (MatchRoomPropKeys.C2, LobbyVariant.FromByte(MatchC2States.FinalHud)),
+        ], reason: $"MatchOver FinalHud Tr={scoreTr} Ct={scoreCt}");
 
-        props.Add((MatchRoomPropKeys.C2, LobbyVariant.FromByte(MatchC2States.FinalHud)));
-
-        BroadcastRoomProps(room, props, reason: $"MatchOver FinalHud Tr={scoreTr} Ct={scoreCt}");
         Console.WriteLine(
             $"[match-host] {logTag}: final C2={MatchC2States.FinalHud} (FinalHud) " +
             $"Tr={scoreTr} Ct={scoreCt} winner={winner} after round={round}" +
