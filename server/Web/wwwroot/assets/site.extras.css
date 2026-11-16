@@ -21,6 +21,16 @@
   background: rgb(20 16 26 / .92);
   backdrop-filter: blur(14px);
 }
+/* Светлая кромка под шапкой: в игре верхний край экрана подсвечен, и без неё
+   шапка выглядела наклейкой на тёмном фоне. */
+.topbar::after {
+  content: '';
+  position: absolute;
+  inset: auto 0 -1px 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, rgb(196 170 220 / .55) 25%,
+    rgb(160 150 210 / .25) 60%, transparent);
+}
 
 .brand {
   display: flex;
@@ -133,7 +143,10 @@
   position: absolute;
   inset: 0;
   z-index: -2;
-  background: linear-gradient(135deg, #241c30, #171220 55%, #2a1e2c);
+  background:
+    radial-gradient(58% 70% at 6% 12%, rgb(150 106 176 / .5), transparent 68%),
+    radial-gradient(45% 55% at 88% 18%, rgb(110 130 190 / .28), transparent 70%),
+    linear-gradient(135deg, #2a2038, #171220 58%, #2b1f2e);
 }
 .hero__video {
   width: 100%;
@@ -157,8 +170,8 @@
   inset: 0;
   z-index: -1;
   background:
-    linear-gradient(180deg, rgb(20 16 26 / .86) 0%, rgb(20 16 26 / .35) 38%, rgb(20 16 26 / .95) 100%),
-    linear-gradient(90deg, rgb(20 16 26 / .8), transparent 65%);
+    linear-gradient(180deg, rgb(20 16 26 / .82) 0%, rgb(20 16 26 / .18) 34%, rgb(20 16 26 / .96) 100%),
+    linear-gradient(90deg, rgb(20 16 26 / .86) 0%, rgb(20 16 26 / .3) 48%, transparent 72%);
 }
 
 .hero__inner { position: relative; max-width: 780px; }

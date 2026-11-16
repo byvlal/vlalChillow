@@ -25,6 +25,20 @@ const shots = [
   { name: '05-admin-gate', url: '/admin', w: 1440, h: 900, full: false, login: true },
   { name: '06-admin-open', url: '/admin', w: 1440, h: 900, full: false, login: true, admin: true },
   { name: '07-play-mobile', url: '/play', w: 390, h: 844, full: false, login: true },
+  // Список комнат: главное, что видно после входа.
+  { name: '08-rooms', url: '/#rooms', w: 1440, h: 900, full: false, login: true },
+  // Профиль: правый ящик, который открывает аватар в шапке.
+  { name: '09-sidebar', url: '/', w: 1440, h: 900, full: false, login: true, click: '#avatar-btn' },
+  // Подтверждение бана: тот самый отсчёт 3 секунды.
+  { name: '10-ban-confirm', url: '/admin', w: 1440, h: 900, full: false, login: true, admin: true,
+    run: async page => {
+      await page.fill('#ban-id', '67776161');
+      await page.click('#ban-find');
+      await page.waitForSelector('.banpreview', { timeout: 8000 });
+      await page.fill('#ban-reason', 'читы');
+      await page.click('#ban-submit');
+      await page.waitForSelector('.confirm', { timeout: 8000 });
+    } },
 ];
 
 const browser = await chromium.launch();
@@ -61,6 +75,14 @@ for (const shot of shots) {
     document.querySelectorAll('.reveal').forEach(el => el.classList.add('is-in'));
     document.querySelectorAll('video').forEach(v => v.pause());
   });
+  if (shot.click) {
+    await page.click(shot.click);
+    await page.waitForTimeout(450);
+  }
+  if (shot.run) {
+    await shot.run(page);
+    await page.waitForTimeout(350);
+  }
   await page.waitForTimeout(900);
   // JPEG, а не PNG: снимки коммитятся в ветку, и 8 PNG по 2 МБ там не нужны.
   const file = path.join(outDir, `${shot.name}.jpg`);

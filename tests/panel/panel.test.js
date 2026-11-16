@@ -219,8 +219,19 @@ function fakeFetch(url, opts) {
   if (!P) { report(); return; }
 
   /* ── без входа: данные скрыты, показан вход ── */
-  check('без сессии показан экран входа', $('view-gate').hidden === false);
-  check('главная скрыта без сессии', $('view-home').hidden === true);
+  // Гость видит главную — она открыта намеренно, чтобы было куда ввести код.
+  // Экран входа появляется только на /play и /admin (проверяется ниже).
+  check('гостю открыта главная', $('view-home').hidden === false);
+  check('экран входа не перекрывает главную', $('view-gate').hidden === true);
+  check('в шапке гость', text('me-nick') === 'гость', text('me-nick'));
+
+  // /play гостю закрыт — вот где нужен вход.
+  window.history.pushState({}, '', '/play');
+  await P.navigate();
+  check('/play гостю показывает вход', $('view-gate').hidden === false);
+  window.history.pushState({}, '', '/');
+  await P.navigate();
+  check('с главной вход убирается', $('view-gate').hidden === true);
   check('онлайн скрыт без сессии', text('live-text') === 'скрыто', text('live-text'));
   check('статус не запрашивался без сессии (нет 401-шторма)',
     !calls.some(c => c === 'GET api/status'));

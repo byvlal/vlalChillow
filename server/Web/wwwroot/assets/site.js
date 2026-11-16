@@ -62,11 +62,12 @@
       try { data = JSON.parse(text); } catch { data = { message: text }; }
     }
 
-    // 401 — сессии нет. Это не ошибка страницы: показываем экран входа.
+    // 401 — сессии нет. Это не ошибка страницы, но и не повод выкидывать
+    // человека с экрана: /play и /admin и так решают, что показать, а
+    // принудительный вход поверх открытой админки выглядел как сбой.
     if (res.status === 401) {
       S.me = null;
       renderProfile();
-      showGate();
     }
 
     return { ok: res.ok, status: res.status, data };
@@ -1044,7 +1045,9 @@
   async function navigate() {
     const target = routeForPath(location.pathname);
 
-    if (!S.me) {
+    // Гость видит главную (она открыта намеренно — иначе некуда ввести код),
+    // а /play и /admin для него — экран входа.
+    if (!S.me && target !== 'home') {
       showGate();
       return;
     }
@@ -1064,12 +1067,12 @@
   /* ── обновление данных ────────────────────────────────────────────────── */
 
   async function refreshAll() {
+    // Главная открыта и гостю: без входа на ней просто нет живых данных.
+    // Экран входа — отдельный адрес по сути, его показывает navigate().
     const authed = await loadMe();
-    if (!authed) {
-      showGate();
-      return;
-    }
-    await Promise.all([loadStatus(), loadRooms(), loadModes()]);
+    await loadModes();
+    if (!authed) return;
+    await Promise.all([loadStatus(), loadRooms()]);
   }
 
   /* ── запуск ───────────────────────────────────────────────────────────── */
@@ -1176,10 +1179,8 @@
     renderRooms();
 
     // Адрес сразу говорит, куда идти: /play и /admin — отдельные экраны.
-    refreshAll().then(async () => {
-      if (!S.me) return;
-      await navigate();
-    });
+    navigate();
+    refreshAll().then(() => navigate());
   }
 
   /* Тестовый шов: jsdom-проверка страницы дергает функции отсюда. */
