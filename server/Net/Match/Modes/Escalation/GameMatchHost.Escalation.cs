@@ -200,7 +200,7 @@ public sealed partial class GameMatchHost
             (MatchRoomPropKeys.C2, LobbyVariant.FromByte(MatchC2States.WarmupWillFinish)),
         ], reason: $"Escalation PreStart round={round} site={bombSite}");
         SetAllFightersMoney(room, MatchFlowTestParams.RoundStartMoney);
-        // death is cumulative (issue #56) — no ClearFighterDeathFlags between rounds.
+        ClearFighterDeathFlags(room);
         DestroyTrackedRoundEntities(room, reason: "Escalation PreStart");
         Console.WriteLine(
             $"[match-host] escalation: PreStart C2={MatchC2States.WarmupWillFinish} " +

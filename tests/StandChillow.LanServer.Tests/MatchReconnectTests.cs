@@ -268,9 +268,7 @@ public sealed class MatchReconnectTests
 
         Assert.True(adoption.ClearedRoundDeath);
         Assert.DoesNotContain((byte)2, room.Flow.DeadActors);
-        // death is a cumulative match counter (issue #56) — not reset on reconnect;
-        // only DeadActors (per-round alive state) is cleared here.
-        Assert.Equal(1, room.ActorProps[(2, MatchRoomPropKeys.Death)].Int);
+        Assert.Equal(0, room.ActorProps[(2, MatchRoomPropKeys.Death)].Int);
         Assert.DoesNotContain((byte)2, room.Flow.PendingCombatDestroy.Keys);
         Assert.Empty(room.LastCombatDamage);
         Assert.Contains((short)777, newState.PendingWorldCleanupIds);

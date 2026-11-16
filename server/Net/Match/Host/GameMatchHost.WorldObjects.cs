@@ -119,11 +119,18 @@ public sealed partial class GameMatchHost
                 // so the fighter counts alive for wipe / bomber picks (authority, not invent).
                 room.Flow.PendingCombatDestroy.Remove(owner);
                 clearedDead = room.Flow.DeadActors.Remove(owner);
-                // death is a CUMULATIVE match counter (kills/assists/death/score never reset
-                // mid-match). The per-round alive state is tracked exclusively via
-                // MatchFlowState.DeadActors — cleared at round start and removed on respawn
-                // above. Resetting death here would zero the death statistic after every
-                // round/respawn, which is a bug (see issue #56).
+                // Ranked/Allies: death is a per-round alive flag → reset to 0 on respawn so the
+                // fighter counts alive. DeathMatch/TDM: death is a CUMULATIVE deaths counter
+                // (phone gold increments 1,2,3… and never resets on respawn) — leave it so the
+                // next master-authored death produces a real change the client can detect.
+                // Duel-only: C2=11 FFA death is also cumulative (wipe resets before WarmUp;
+                // scored rounds clear via ClearFighterDeathFlags on C2=22) — same leave-as-is.
+                if (!IsDeathMatchRoom(room) && !IsDuelRoom(room)
+                    && room.ActorProps.TryGetValue((owner, MatchRoomPropKeys.Death), out var deadProp)
+                    && !(deadProp.Kind == LobbyVariantKind.Int && deadProp.Int == 0))
+                {
+                    room.ActorProps[(owner, MatchRoomPropKeys.Death)] = LobbyVariant.FromInt(0);
+                }
                 room.LivingPawns[parsed.ObjectId] = new MatchLivingPawn
                 {
                     ObjectId = parsed.ObjectId,

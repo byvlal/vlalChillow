@@ -87,11 +87,12 @@ public sealed partial class GameMatchHost
             if (DateTime.UtcNow < ends)
                 return;
             Console.WriteLine(
-                "[match-host] duel: round host timeout elapsed, no wipe — " +
-                $"round continues on C2=31 until eliminate (PhaseEndsUtc={ends:O} " +
-                $"dur={DuelFlowParams.RoundDuration.TotalSeconds:0}s; no WinTeam published)");
+                "[match-host] duel: round timeout → CT win " +
+                $"(PhaseEndsUtc={ends:O} dur={DuelFlowParams.RoundDuration.TotalSeconds:0}s " +
+                "C2=31 combat; no Live Time on wire)");
             PostServerDebugChat(
-                $"таймаут хоста раунда, раунд продолжается на C2=31 до wipe");
+                $"таймаут раунда {DuelFlowParams.RoundDuration.TotalSeconds:0}s → CT");
+            EnterRoundEndPause(room, MatchTeam.Ct, "timeout");
             return;
         }
 
@@ -282,8 +283,11 @@ public sealed partial class GameMatchHost
             room.Flow.DeadActors.Clear();
             room.Flow.PendingCombatDestroy.Clear();
             room.LastCombatDamage.Clear();
-            // death is a cumulative match counter (issue #56) — never reset between scored rounds.
-            // Per-round alive state is tracked via MatchFlowState.DeadActors (cleared above).
+            foreach (var a in room.Actors)
+            {
+                if (a.Nr != MatchHostActor.ActorNr)
+                    room.ActorProps[(a.Nr, MatchRoomPropKeys.Death)] = LobbyVariant.FromInt(0);
+            }
 
             // p=1/3 per round (see DuelLoadouts.ModifierChancePerRound); OnlyGrenades gated off.
             pick = DuelLoadouts.RollRound(Random.Shared);
@@ -303,7 +307,7 @@ public sealed partial class GameMatchHost
                 room.ActorProps.Remove((0, MatchRoomPropKeys.CurrentLoadout));
         }
 
-        // death is cumulative — no ClearFighterDeathFlags between scored rounds.
+        ClearFighterDeathFlags(room);
         DestroyTrackedRoundEntities(room, reason: "Duel freeze C2=22");
 
         var loadoutTag = pick.HasModifier
