@@ -680,7 +680,7 @@
   .avatarbtn__name { display: none; }
   .live { display: none; }
 
-  .hero { min-height: 78vh; padding: 84px 16px 32px; }
+  .hero { min-height: 0; align-items: start; padding: 40px 16px 34px; }
   .hero__title { font-size: clamp(38px, 11.5vw, 62px); line-height: .95; }
   .hero__title br { display: none; }
   /* Без <br> строки идут подряд: разделяем их отступом, а не переносом. */
