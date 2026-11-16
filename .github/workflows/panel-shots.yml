@@ -4,6 +4,7 @@ name: panel shots
 # закрыт), а в раннере Chromium ставится одной командой — поэтому визуальная
 # проверка живёт здесь: страница открывается по-настоящему, PNG коммитятся
 # в preview/shots, и верстку видно глазами, а не по CSS.
+# touches .github/workflows/**
 on:
   workflow_dispatch:
   push:
