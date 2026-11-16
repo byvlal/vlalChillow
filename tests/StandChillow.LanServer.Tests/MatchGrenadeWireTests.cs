@@ -66,6 +66,9 @@ public sealed class MatchGrenadeWireTests
     // и сбрасывает его сам, счётчиком бросков он не является.
     private const string ThrowPayloadGoldMolotov =
         "010000015E00000000000000906138411467BF3FFBC4BB41DDA079BD189FB73EA5D46FBF01000000BB52CC3F01";
+    // Золотой смок: реальная остановка на 3.071 с (взрыв в (−5.91, 0.41, 29.23)).
+    private const string ThrowPayloadGoldSmoke =
+        "020000015C00000000000000E5CC94C0E2F9DE3FF821F941C82B3F3FC7BD123F2022B4BE010000002AC9B04001";
 
     /// <summary>
     /// 24-байтный payload взрыва собирается побайтово как в капче, включая varint
@@ -143,10 +146,11 @@ public sealed class MatchGrenadeWireTests
     public void ExplodeTimeValue_StaysOnTheThrowersClock(byte itemId, double throwTv, double boomTv)
     {
         // Как в GameMatchHost.Grenades.cs: tv = throwTv + смоделированный фит.
-        var builtTv = throwTv + MatchGrenadeWire.FuseSecondsFor(itemId);
+        var builtTv = throwTv + MatchGrenadeWire.TimedFuseSeconds;
 
-        // Капча: flash 1.712 / HE 1.709 против нашего плоского 1.71 — расхождение ≤ 5 мс.
-        Assert.InRange(builtTv, boomTv - 0.005, boomTv + 0.005);
+        // Фит — ровно 1.70 с (правило разработчика); в капчах 1.708–1.712, потому что
+        // мастер-клиент проверяет условие раз в кадр — допуск один кадр (~15 мс).
+        Assert.InRange(builtTv, boomTv - 0.015, boomTv + 0.015);
     }
 
     /// <summary>
@@ -257,30 +261,41 @@ public sealed class MatchGrenadeWireTests
     }
 
     /// <summary>
-    /// Политика предохранителей по предметам, из 24 пар капчур: флеш и ХЕ — плоский
-    /// таймер ~1.71 с (наблюдено 1.708–1.712, взрыв в воздухе), смок — плоский ~2.5 с
-    /// (две пары: 2.009/3.071), молотов — детонация при касании земли (0.28–1.64 с) с
-    /// предохранительным потолком.
+    /// Политика детонации по предметам — правила разработчика игры, сверенные с 24 парами
+    /// капчур: «осколочная и флешка — через 1,7 с после создания гранаты в мире; дымовая —
+    /// при остановке или через 10 с по таймеру; молотов и зажигательная — при первом
+    /// контакте с полом или через 3 с». Наблюдения: 16 пар флеш/ХЕ легли в 1.708–1.712
+    /// (таймер 1.7 + кадровое квантование), два смока остановились на 2.009/3.071,
+    /// 6 молотов — первый контакт 0.28–1.64 с. Зажигательная (0x5F) в капчуры не попала —
+    /// правило только от разработчика; в live-3 её бросали (actor 3).
     /// </summary>
     [Fact]
-    public void FusePolicy_MatchesTheObservedPerItemBehavior()
+    public void DetonationPolicy_MatchesTheGameRules()
     {
-        // 16 пар флеш/ХЕ легли в 1.708–1.712 — константа внутри ±5 мс.
-        Assert.InRange(MatchGrenadeWire.TimedFuseSeconds, 1.705, 1.715);
-        Assert.False(MatchGrenadeWire.DetonatesOnImpact(MatchGrenadeWire.ItemFlash));
-        Assert.False(MatchGrenadeWire.DetonatesOnImpact(MatchGrenadeWire.ItemHe));
-        Assert.Equal(MatchGrenadeWire.TimedFuseSeconds, MatchGrenadeWire.FuseSecondsFor(MatchGrenadeWire.ItemFlash));
-        Assert.Equal(MatchGrenadeWire.TimedFuseSeconds, MatchGrenadeWire.FuseSecondsFor(MatchGrenadeWire.ItemHe));
+        Assert.Equal(1.70, MatchGrenadeWire.TimedFuseSeconds);
+        Assert.Equal(MatchGrenadeWire.GrenadeDetonationMode.Timed,
+            MatchGrenadeWire.DetonationModeFor(MatchGrenadeWire.ItemFlash));
+        Assert.Equal(MatchGrenadeWire.GrenadeDetonationMode.Timed,
+            MatchGrenadeWire.DetonationModeFor(MatchGrenadeWire.ItemHe));
+        Assert.Equal(MatchGrenadeWire.GrenadeDetonationMode.Timed,
+            MatchGrenadeWire.DetonationModeFor(0x42)); // неизвестный id — таймер по умолчанию
+        Assert.Equal(MatchGrenadeWire.TimedFuseSeconds,
+            MatchGrenadeWire.DetonationCapSeconds(MatchGrenadeWire.ItemHe));
 
-        Assert.False(MatchGrenadeWire.DetonatesOnImpact(MatchGrenadeWire.ItemSmoke));
-        Assert.InRange(MatchGrenadeWire.SmokeFuseSeconds, 2.0, 3.1);
-        Assert.Equal(MatchGrenadeWire.SmokeFuseSeconds, MatchGrenadeWire.FuseSecondsFor(MatchGrenadeWire.ItemSmoke));
+        Assert.Equal(MatchGrenadeWire.GrenadeDetonationMode.FloorStop,
+            MatchGrenadeWire.DetonationModeFor(MatchGrenadeWire.ItemSmoke));
+        Assert.Equal(10.0, MatchGrenadeWire.SmokeFuseCapSeconds);
+        Assert.Equal(MatchGrenadeWire.SmokeFuseCapSeconds,
+            MatchGrenadeWire.DetonationCapSeconds(MatchGrenadeWire.ItemSmoke));
 
-        Assert.True(MatchGrenadeWire.DetonatesOnImpact(MatchGrenadeWire.ItemMolotov));
-        Assert.InRange(
-            MatchGrenadeWire.ImpactFuseCapSeconds,
-            1.64, // самый поздний наблюденный молотов уже на земле
-            2.5);
+        Assert.Equal(MatchGrenadeWire.GrenadeDetonationMode.FloorImpact,
+            MatchGrenadeWire.DetonationModeFor(MatchGrenadeWire.ItemMolotov));
+        Assert.Equal(MatchGrenadeWire.GrenadeDetonationMode.FloorImpact,
+            MatchGrenadeWire.DetonationModeFor(MatchGrenadeWire.ItemIncendiary));
+        Assert.Equal(0x5F, MatchGrenadeWire.ItemIncendiary);
+        Assert.Equal(3.0, MatchGrenadeWire.ImpactFuseCapSeconds);
+        Assert.Equal(MatchGrenadeWire.ImpactFuseCapSeconds,
+            MatchGrenadeWire.DetonationCapSeconds(MatchGrenadeWire.ItemIncendiary));
     }
 
     /// <summary>
@@ -296,7 +311,7 @@ public sealed class MatchGrenadeWireTests
     }
 
     /// <summary>
-    /// Баллистика: флеш детонирует ровно на таймере (1.71 с), в воздухе — как в капчах
+    /// Баллистика: флеш детонирует ровно на таймере (1.70 с), в воздухе — как в капчах
     /// (там fallY от −4.8 до +1.3, т.е. приземления не ждут). Позиция — аппроксимация без
     /// карты: расхождение с капчей у этой пары ~6 м (см. замечание в
     /// <see cref="MatchGrenadeBallistics"/>), поэтому допуск щадящий, но он ловит
@@ -311,8 +326,8 @@ public sealed class MatchGrenadeWireTests
 
         MatchGrenadeBallistics.ResolveDetonation(
             px, py, pz, dx, dy, dz,
-            impactDetonation: false,
-            fuseSeconds: MatchGrenadeWire.FuseSecondsFor(MatchGrenadeWire.ItemFlash),
+            MatchGrenadeWire.DetonationModeFor(MatchGrenadeWire.ItemFlash),
+            MatchGrenadeWire.DetonationCapSeconds(MatchGrenadeWire.ItemFlash),
             out var afterSeconds, out var ex, out var ey, out var ez);
 
         Assert.Equal(MatchGrenadeWire.TimedFuseSeconds, afterSeconds, 5);
@@ -329,7 +344,7 @@ public sealed class MatchGrenadeWireTests
     }
 
     /// <summary>
-    /// Баллистика: молотов останавливается на первом касании пола (в рамках потолка 2 с),
+    /// Баллистика: молотов останавливается на первом касании пола (в рамках потолка 3 с),
     /// а не на таймере, — как вели себя все 6 молотовых пар капчур.
     /// </summary>
     [Fact]
@@ -342,8 +357,8 @@ public sealed class MatchGrenadeWireTests
 
         MatchGrenadeBallistics.ResolveDetonation(
             px, py, pz, dx, dy, dz,
-            impactDetonation: true,
-            fuseSeconds: MatchGrenadeWire.ImpactFuseCapSeconds,
+            MatchGrenadeWire.DetonationModeFor(itemId),
+            MatchGrenadeWire.DetonationCapSeconds(itemId),
             out var afterSeconds, out var ex, out var ey, out var ez);
 
         Assert.True(afterSeconds > MatchGrenadeBallistics.MinImpactSeconds, "must fly a moment before impact");
@@ -356,17 +371,57 @@ public sealed class MatchGrenadeWireTests
             (ez - -58.50f) * (ez - -58.50f)), 0, 20);
     }
 
+    /// <summary>
+    /// Баллистика смока — правило разработчика «при остановке или через 10 с»: граната
+    /// скачет и катится, и как только горизонтальная скорость падает ниже порога — взрыв.
+    /// Две капчи-пары: золотая остановилась на 3.071 с (наша модель без карты даёт ~3.3 с
+    /// для того же броска), grenades-пара — на 2.009 с (явно билась о геометрию карты,
+    /// модель даёт ~2.8 с — сверяем только порядок величины).
+    /// </summary>
+    [Fact]
+    public void Ballistics_SmokeDetonatesWhenItStopsRolling()
+    {
+        var payload = Convert.FromHexString(ThrowPayloadSmoke);
+        Assert.True(MatchGrenadeWire.TryParseThrowPayload(
+            payload, out _, out var itemId, out var px, out var py, out var pz, out var dx, out var dy, out var dz));
+        Assert.Equal(MatchGrenadeWire.ItemSmoke, itemId);
+
+        MatchGrenadeBallistics.ResolveDetonation(
+            px, py, pz, dx, dy, dz,
+            MatchGrenadeWire.DetonationModeFor(itemId),
+            MatchGrenadeWire.DetonationCapSeconds(itemId),
+            out var afterSeconds, out var ex, out var ey, out var ez);
+
+        // Остановилась сама — задолго до потолка 10 с, но после первого касания.
+        Assert.True(afterSeconds > MatchGrenadeBallistics.MinImpactSeconds, "must fly before stopping");
+        Assert.True(afterSeconds < MatchGrenadeWire.SmokeFuseCapSeconds, "must stop by itself, not at the cap");
+        // Grenades-пара: реальная остановка 2.009 с (карта), модель ~2.8 с.
+        Assert.InRange(afterSeconds, 2.5, 3.2);
+        Assert.True(ey <= py - MatchGrenadeBallistics.FloorDropMeters + 0.01f, "must be on the floor");
+
+        // Золотая пара (реальная остановка 3.071 с) — модель должна попасть близко.
+        var gold = Convert.FromHexString(ThrowPayloadGoldSmoke);
+        Assert.True(MatchGrenadeWire.TryParseThrowPayload(
+            gold, out _, out itemId, out px, out py, out pz, out dx, out dy, out dz));
+        MatchGrenadeBallistics.ResolveDetonation(
+            px, py, pz, dx, dy, dz,
+            MatchGrenadeWire.DetonationModeFor(itemId),
+            MatchGrenadeWire.DetonationCapSeconds(itemId),
+            out afterSeconds, out _, out _, out _);
+        Assert.InRange(afterSeconds, 2.9, 3.4);
+    }
+
     /// <summary>Симуляция детерминирована — одинаковый вход даёт одинаковый взрыв.</summary>
     [Fact]
     public void Ballistics_IsDeterministic()
     {
         MatchGrenadeBallistics.ResolveDetonation(
             10f, 2f, 30f, 0.3f, 0.4f, -0.866f,
-            impactDetonation: false, fuseSeconds: 1.71,
+            MatchGrenadeWire.GrenadeDetonationMode.Timed, 1.70,
             out var t1, out var x1, out var y1, out var z1);
         MatchGrenadeBallistics.ResolveDetonation(
             10f, 2f, 30f, 0.3f, 0.4f, -0.866f,
-            impactDetonation: false, fuseSeconds: 1.71,
+            MatchGrenadeWire.GrenadeDetonationMode.Timed, 1.70,
             out var t2, out var x2, out var y2, out var z2);
         Assert.Equal(t1, t2);
         Assert.Equal(x1, x2);

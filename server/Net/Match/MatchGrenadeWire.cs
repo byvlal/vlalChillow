@@ -75,6 +75,14 @@ public static class MatchGrenadeWire
     public const byte ItemMolotov = 0x5E;
 
     /// <summary>
+    /// Incendiary grenade item id (<c>0x5F</c>=95) — impact-detonated like the molotov (the
+    /// game dev: «молотов и зажигательная — при первом контакте с полом или через 3 с»).
+    /// Observed live (latest-3.log): actor 3 threw <c>0x5F</c>; with the old timed rule it
+    /// detonated mid-roll «куда-то вперёд» — exactly the misbehaviour the impact rule fixes.
+    /// </summary>
+    public const byte ItemIncendiary = 0x5F;
+
+    /// <summary>
     /// Full network id of a grenade: <c>(throwerActorNr &lt;&lt; 24) | grenadeId</c>. The client
     /// (decompiled <c>GrenadeManager</c>) keys its <c>_droppedGrenades</c> by this composite —
     /// the low byte comes from the throw payload <c>[0]</c> and resets client-side, so the
@@ -91,24 +99,29 @@ public static class MatchGrenadeWire
     public const int ThrowPayloadLength = 45;
 
     /// <summary>
-    /// Fixed fuse for flash / HE — the timed grenades. 16 matched throw→explode pairs give
-    /// 1.708–1.712 s (grenades.zip: 1.709/1.712; gold: 1.708–1.710), i.e. a flat ~1.71 s
-    /// timer that expires wherever the grenade happens to be.
+    /// Timed fuse (HE, flash, unknown ids) — the game dev's exact rule: «осколочная и
+    /// флешка — через 1,7 с после создания гранаты в мире». The 16 captured HE/flash pairs
+    /// show 1.708–1.712 s — the master checks the condition once per frame, so frame
+    /// quantization adds up to ~12 ms on top of the 1.7 s timer.
     /// </summary>
-    public const double TimedFuseSeconds = 1.71;
+    public const double TimedFuseSeconds = 1.70;
 
     /// <summary>
-    /// Smoke fuse. Only two matched samples exist (2.009 s / 3.071 s); the midpoint is used as
-    /// a flat timer — двух пар мало, чтобы выдумывать модель «ждать приземления».
+    /// Smoke cap — the game dev: «дымовая — при остановке или через 10 с по таймеру. В огне
+    /// может сработать раньше» (the fire-zone acceleration is not modelled — the host has no
+    /// zone data). The detonation fires when the modelled grenade stops rolling
+    /// (<see cref="MatchGrenadeBallistics.StopSpeedThreshold"/>); the two captured smokes
+    /// stopped at 2.009 s / 3.071 s.
     /// </summary>
-    public const double SmokeFuseSeconds = 2.5;
+    public const double SmokeFuseCapSeconds = 10.0;
 
     /// <summary>
-    /// Safety cap for impact-detonated grenades (molotov). Observed molotov fuses span
-    /// 0.28–1.64 s (first ground contact); the cap only guards a throw that never reaches
-    /// the modelled floor (e.g. thrown straight up).
+    /// Safety cap for impact-detonated grenades (molotov, incendiary) — the game dev:
+    /// «молотов и зажигательная — при первом контакте с полом или через 3 с по таймеру».
+    /// All 6 captured molotov fuses (0.28–1.64 s) are first contacts; the cap only guards a
+    /// throw that never reaches the modelled floor (e.g. thrown straight up).
     /// </summary>
-    public const double ImpactFuseCapSeconds = 2.0;
+    public const double ImpactFuseCapSeconds = 3.0;
 
     /// <summary>
     /// Parse the 45-byte throw payload. Returns false for any other length — the layout is
@@ -203,17 +216,40 @@ public static class MatchGrenadeWire
             timeValue: timeValue,
             payload: BuildExplodePayload(grenadeId, throwerActorNr, posX, posY, posZ));
 
-    /// <summary>
-    /// Fuse policy per item id. Timed items (flash, HE, unknown) detonate on the flat timer;
-    /// the molotov detonates on the first modelled ground contact (capped). Smoke keeps its
-    /// own flat timer (see <see cref="SmokeFuseSeconds"/>).
-    /// </summary>
-    public static bool DetonatesOnImpact(byte itemId) => itemId == ItemMolotov;
-
-    /// <summary>Fuse seconds for the given item. Unknown ids get the timed default.</summary>
-    public static double FuseSecondsFor(byte itemId) => itemId switch
+    /// <summary>How a grenade's detonation is resolved — per item, per the game dev's rules.</summary>
+    public enum GrenadeDetonationMode
     {
-        ItemSmoke => SmokeFuseSeconds,
+        /// <summary>Flat timer: «осколочная и флешка — через 1,7 с после создания гранаты».</summary>
+        Timed,
+
+        /// <summary>First floor contact: «молотов и зажигательная — при первом контакте с полом».</summary>
+        FloorImpact,
+
+        /// <summary>On stop: «дымовая — при остановке».</summary>
+        FloorStop,
+    }
+
+    /// <summary>
+    /// Detonation policy per item id, from the game dev's rules (cross-checked against the
+    /// 24 captured pairs): HE/flash/unknown — flat 1.7 s; molotov/incendiary — first floor
+    /// contact; smoke — when it stops rolling.
+    /// </summary>
+    public static GrenadeDetonationMode DetonationModeFor(byte itemId) => itemId switch
+    {
+        ItemMolotov or ItemIncendiary => GrenadeDetonationMode.FloorImpact,
+        ItemSmoke => GrenadeDetonationMode.FloorStop,
+        _ => GrenadeDetonationMode.Timed,
+    };
+
+    /// <summary>
+    /// Cap for the given item's detonation: the timed fuse for timed grenades, the 3 s
+    /// impact timer for molotov/incendiary, the 10 s smoke timer. The cap only guards
+    /// throws whose modelled floor is never reached.
+    /// </summary>
+    public static double DetonationCapSeconds(byte itemId) => DetonationModeFor(itemId) switch
+    {
+        GrenadeDetonationMode.FloorImpact => ImpactFuseCapSeconds,
+        GrenadeDetonationMode.FloorStop => SmokeFuseCapSeconds,
         _ => TimedFuseSeconds,
     };
 }
@@ -224,10 +260,13 @@ public static class MatchGrenadeWire
 /// no map, so this is a fitted ballistic model: fixed throw speed, Unity gravity, one ground
 /// plane estimated from the throw origin, bounces with restitution. Fitted against all 24
 /// matched throw→explode pairs from <c>captures/grenades.zip</c> + <c>captures/captures.zip</c>
-/// (grid search over speed/gravity/restitution/friction; mean position error ~8.7 m — the
-/// residue is wall/terrain bounces the model cannot see). The wire <b>format</b> is exact;
-/// only this position value is an approximation, and the client renders its own flight
-/// either way.
+/// (grid search over speed/gravity/restitution/friction; median position error ~7.5 m). The
+/// game dev's notes («направление взгляда с поправкой вверх», throw data carrying the
+/// player's movement) were tested as fit parameters and <b>rejected</b>: the payload
+/// direction already flies best as-is, and adding the payload's movement float to the speed
+/// does not reduce the residue — it is map collision (walls/slopes/bounces), which no
+/// map-less model can see. The wire <b>format</b> and the fuse rules are exact; only this
+/// position value is an approximation, and every client renders its own flight anyway.
 /// </summary>
 public static class MatchGrenadeBallistics
 {
@@ -252,17 +291,34 @@ public static class MatchGrenadeBallistics
     /// <summary>Fixed simulation step — deterministic, so tests can assert exact positions.</summary>
     public const double StepSeconds = 1.0 / 120.0;
 
+    /// <summary>Guard so a spawn already under the modelled floor still flies a moment.</summary>
+    public const double MinImpactSeconds = 0.05;
+
+    /// <summary>
+    /// Horizontal speed below which a rolling grenade counts as stopped — the smoke rule
+    /// («дымовая — при остановке»). With the bounce friction above, the captured gold smoke
+    /// (real stop 3.071 s) resolves at ~3.17 s; the second captured smoke (2.009 s) had
+    /// clearly hit map geometry our model cannot see.
+    /// </summary>
+    public const float StopSpeedThreshold = 1.5f;
+
     /// <summary>
     /// Simulate the throw and resolve where/when it detonates.
-    /// Timed grenades run to <paramref name="fuseSeconds"/>; impact grenades
-    /// (<paramref name="impactDetonation"/>) stop at the first floor contact (capped by the
-    /// caller at <see cref="MatchGrenadeWire.ImpactFuseCapSeconds"/>).
+    /// <list type="bullet">
+    /// <item><see cref="MatchGrenadeWire.GrenadeDetonationMode.Timed"/> — runs to
+    /// <paramref name="capSeconds"/> wherever the grenade is (mid-air or bouncing);</item>
+    /// <item><see cref="MatchGrenadeWire.GrenadeDetonationMode.FloorImpact"/> — stops at the
+    /// first floor contact;</item>
+    /// <item><see cref="MatchGrenadeWire.GrenadeDetonationMode.FloorStop"/> — stops once the
+    /// rolled-out horizontal speed drops below <see cref="StopSpeedThreshold"/>.</item>
+    /// </list>
+    /// The cap guards throws that never reach the modelled floor.
     /// </summary>
     public static void ResolveDetonation(
         float posX, float posY, float posZ,
         float dirX, float dirY, float dirZ,
-        bool impactDetonation,
-        double fuseSeconds,
+        MatchGrenadeWire.GrenadeDetonationMode mode,
+        double capSeconds,
         out double detonateAfterSeconds,
         out float outX, out float outY, out float outZ)
     {
@@ -275,9 +331,9 @@ public static class MatchGrenadeBallistics
         var floorY = posY - FloorDropMeters;
 
         var t = 0.0;
-        while (t < fuseSeconds)
+        while (t < capSeconds)
         {
-            var step = Math.Min(StepSeconds, fuseSeconds - t);
+            var step = Math.Min(StepSeconds, capSeconds - t);
             vy -= Gravity * (float)step;
             x += vx * (float)step;
             y += vy * (float)step;
@@ -288,7 +344,10 @@ public static class MatchGrenadeBallistics
                 continue;
 
             y = floorY;
-            if (impactDetonation && t > MinImpactSeconds)
+            if (mode == MatchGrenadeWire.GrenadeDetonationMode.FloorImpact && t > MinImpactSeconds)
+                break;
+            if (mode == MatchGrenadeWire.GrenadeDetonationMode.FloorStop
+                && MathF.Sqrt(vx * vx + vz * vz) < StopSpeedThreshold)
                 break;
             vy = -vy * FloorRestitution;
             vx *= FloorFriction;
@@ -300,7 +359,4 @@ public static class MatchGrenadeBallistics
         outY = y;
         outZ = z;
     }
-
-    /// <summary>Guard so a spawn already under the modelled floor still flies a moment.</summary>
-    public const double MinImpactSeconds = 0.05;
 }

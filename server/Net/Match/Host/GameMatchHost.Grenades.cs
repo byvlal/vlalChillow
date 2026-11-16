@@ -25,6 +25,15 @@ namespace StandChillow.LanServer.Net;
 /// <c>HasInitiator=true</c> and count-1 arrays, and the timeValue stays on the
 /// <b>thrower's</b> clock (<c>throw.tv + fuse</c>).
 /// </para>
+/// <para>
+/// Fuse rules are the game dev's own («осколочная и флешка — через 1,7 с после создания
+/// гранаты в мире; дымовая — при остановке или через 10 с; молотов и зажигательная — при
+/// первом контакте с полом или через 3 с»), cross-checked against the 24 captured pairs;
+/// see <see cref="MatchGrenadeWire.DetonationModeFor"/>. The detonation <b>position</b>
+/// remains a map-less approximation (median ~7.5 m vs captures): every client simulates the
+/// flight itself and only uses our point for sound/VFX, so the residue moves an effect,
+/// it cannot break a grenade.
+/// </para>
 /// </summary>
 public sealed partial class GameMatchHost
 {
@@ -50,15 +59,11 @@ public sealed partial class GameMatchHost
             return;
         }
 
-        var impact = MatchGrenadeWire.DetonatesOnImpact(itemId);
-        var fuse = impact
-            ? MatchGrenadeWire.ImpactFuseCapSeconds
-            : MatchGrenadeWire.FuseSecondsFor(itemId);
         MatchGrenadeBallistics.ResolveDetonation(
             posX, posY, posZ,
             dirX, dirY, dirZ,
-            impactDetonation: impact,
-            fuseSeconds: fuse,
+            MatchGrenadeWire.DetonationModeFor(itemId),
+            MatchGrenadeWire.DetonationCapSeconds(itemId),
             out var afterSeconds,
             out var ex, out var ey, out var ez);
 
