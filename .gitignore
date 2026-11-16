@@ -41,3 +41,6 @@ auth.txt
 .DS_Store
 Thumbs.db
 *~
+
+# node_modules для локального превью и снимков
+preview/node_modules/
