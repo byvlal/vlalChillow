@@ -913,8 +913,8 @@ public sealed partial class GameMatchHost : IDisposable
                     ? wins
                     : 0);
 
-            room.ActorProps[(0, MatchRoomPropKeys.C0)] = LobbyVariant.FromString(gameModeId);
-            room.ActorProps[(0, MatchRoomPropKeys.C1)] = LobbyVariant.FromString(selectedLevel);
+            // C0/C1 — the wire ids the client resolves the scene by (duel → «RankedDuel»).
+            MatchModeIds.ApplyRoomIdentity(room.ActorProps, gameModeId, selectedLevel);
 
             // Размер комнаты: сколько человек пускаем и по сколько в команду.
             // Без этого «союзники 1 на 1» вмещали бы шестнадцать и половина сидела

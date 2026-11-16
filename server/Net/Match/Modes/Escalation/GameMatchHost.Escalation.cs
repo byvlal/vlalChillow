@@ -181,11 +181,7 @@ public sealed partial class GameMatchHost
             room.LastCombatDamage.Clear();
             bombSite = PickEscalationBombSite(room, round);
             room.Flow.EscalationBombSite = bombSite;
-            foreach (var a in room.Actors)
-            {
-                if (a.Nr != MatchHostActor.ActorNr)
-                    room.ActorProps[(a.Nr, MatchRoomPropKeys.Death)] = LobbyVariant.FromInt(0);
-            }
+            // death is cumulative across the match; DeadActors is round-local.
         }
 
         ClearBombAuthority(room, $"Escalation PreStart C2=22 round={round} site={bombSite}");
@@ -200,7 +196,7 @@ public sealed partial class GameMatchHost
             (MatchRoomPropKeys.C2, LobbyVariant.FromByte(MatchC2States.WarmupWillFinish)),
         ], reason: $"Escalation PreStart round={round} site={bombSite}");
         SetAllFightersMoney(room, MatchFlowTestParams.RoundStartMoney);
-        ClearFighterDeathFlags(room);
+        // death is cumulative across the match; DeadActors was cleared above.
         DestroyTrackedRoundEntities(room, reason: "Escalation PreStart");
         Console.WriteLine(
             $"[match-host] escalation: PreStart C2={MatchC2States.WarmupWillFinish} " +

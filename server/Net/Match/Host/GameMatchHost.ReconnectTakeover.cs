@@ -146,8 +146,7 @@ public sealed partial class GameMatchHost
     {
         lock (_roomGate)
         {
-            return IsDeathMatchRoom(room)
-                || (IsDuelRoom(room) && room.Flow.Phase == MatchFlowPhase.AlliesPreWarmup);
+            return IsDeathMatchRoom(room) || IsDuelRoom(room);
         }
     }
 }

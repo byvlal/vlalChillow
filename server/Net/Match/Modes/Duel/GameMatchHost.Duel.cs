@@ -16,17 +16,15 @@ namespace StandChillow.LanServer.Net;
 /// </summary>
 public sealed partial class GameMatchHost
 {
-    private const string DuelModeId = "Duel";
-
     private bool IsDuelRoom(MatchRoom room)
     {
-        if (string.Equals(_matchGameModeId, DuelModeId, StringComparison.Ordinal))
+        if (MatchModeIds.IsDuel(_matchGameModeId))
             return true;
         lock (_roomGate)
         {
             return room.ActorProps.TryGetValue((0, MatchRoomPropKeys.C0), out var c0)
                 && c0.Kind == LobbyVariantKind.String
-                && string.Equals(c0.String, DuelModeId, StringComparison.Ordinal);
+                && MatchModeIds.IsDuel(c0.String);
         }
     }
 
@@ -87,12 +85,11 @@ public sealed partial class GameMatchHost
             if (DateTime.UtcNow < ends)
                 return;
             Console.WriteLine(
-                "[match-host] duel: round timeout → CT win " +
-                $"(PhaseEndsUtc={ends:O} dur={DuelFlowParams.RoundDuration.TotalSeconds:0}s " +
-                "C2=31 combat; no Live Time on wire)");
+                "[match-host] duel: round host timeout elapsed, no wipe — " +
+                $"round continues on C2=31 until eliminate (PhaseEndsUtc={ends:O} " +
+                $"dur={DuelFlowParams.RoundDuration.TotalSeconds:0}s; no WinTeam published)");
             PostServerDebugChat(
-                $"таймаут раунда {DuelFlowParams.RoundDuration.TotalSeconds:0}s → CT");
-            EnterRoundEndPause(room, MatchTeam.Ct, "timeout");
+                "таймаут хоста раунда, раунд продолжается на C2=31 до wipe");
             return;
         }
 
@@ -283,11 +280,7 @@ public sealed partial class GameMatchHost
             room.Flow.DeadActors.Clear();
             room.Flow.PendingCombatDestroy.Clear();
             room.LastCombatDamage.Clear();
-            foreach (var a in room.Actors)
-            {
-                if (a.Nr != MatchHostActor.ActorNr)
-                    room.ActorProps[(a.Nr, MatchRoomPropKeys.Death)] = LobbyVariant.FromInt(0);
-            }
+            // death is cumulative across scored rounds; DeadActors is the round-local state.
 
             // p=1/3 per round (see DuelLoadouts.ModifierChancePerRound); OnlyGrenades gated off.
             pick = DuelLoadouts.RollRound(Random.Shared);
@@ -307,7 +300,7 @@ public sealed partial class GameMatchHost
                 room.ActorProps.Remove((0, MatchRoomPropKeys.CurrentLoadout));
         }
 
-        ClearFighterDeathFlags(room);
+        // Do not reset the cumulative death statistic between scored rounds.
         DestroyTrackedRoundEntities(room, reason: "Duel freeze C2=22");
 
         var loadoutTag = pick.HasModifier
