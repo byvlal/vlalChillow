@@ -62,6 +62,9 @@ public sealed partial class WebPanelRouter
         var seen = options.LookupPlayer?.Invoke(playerId);
         var isBanned = options.IsBanned?.Invoke(playerId) == true;
 
+        // Важно: writer не сбрасывает буфер до Dispose, поэтому ответ собирается
+        // ПОСЛЕ выхода из using — иначе тело уедет пустым (это и был баг «known
+        // не найден»: сервер отвечал 200 с пустой строкой).
         using var stream = new MemoryStream();
         using (var writer = new Utf8JsonWriter(stream, JsonText.WriterOptions))
         {
@@ -73,22 +76,22 @@ public sealed partial class WebPanelRouter
             {
                 // Важно не врать: «не знаю такого» — это не «чистый игрок».
                 writer.WriteBoolean("known", false);
-                writer.WriteEndObject();
-                return WebResponse.Json(Encoding.UTF8.GetString(stream.ToArray()));
             }
+            else
+            {
+                writer.WriteBoolean("known", true);
+                writer.WriteString("nick", seen.Nick);
+                writer.WriteBoolean("banned", isBanned);
+                writer.WriteBoolean("online", options.LobbyAddressOf?.Invoke(playerId) is not null);
+                writer.WriteString("lastSeen", seen.LastSeenUtcMs <= 0
+                    ? null
+                    : DateTimeOffset.FromUnixTimeMilliseconds(seen.LastSeenUtcMs).UtcDateTime.ToString("O"));
 
-            writer.WriteBoolean("known", true);
-            writer.WriteString("nick", seen.Nick);
-            writer.WriteBoolean("banned", isBanned);
-            writer.WriteBoolean("online", options.LobbyAddressOf?.Invoke(playerId) is not null);
-            writer.WriteString("lastSeen", seen.LastSeenUtcMs <= 0
-                ? null
-                : DateTimeOffset.FromUnixTimeMilliseconds(seen.LastSeenUtcMs).UtcDateTime.ToString("O"));
-
-            writer.WriteStartArray("ips");
-            foreach (var ip in seen.Ips)
-                writer.WriteStringValue(ip);
-            writer.WriteEndArray();
+                writer.WriteStartArray("ips");
+                foreach (var ip in seen.Ips)
+                    writer.WriteStringValue(ip);
+                writer.WriteEndArray();
+            }
 
             writer.WriteEndObject();
         }
