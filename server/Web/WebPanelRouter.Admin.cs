@@ -30,7 +30,17 @@ public sealed partial class WebPanelRouter
     /// Ищется по номеру, который человек видит в игре и в <c>/ids</c>. Ответ отдаёт
     /// <b>ник и аватар</b> — админ обязан видеть, кого банит, а не только цифры.
     /// </remarks>
-    private WebResponse AdminPlayer(WebRequestContext request) => AdminPlayerWith(request, SessionOf(request));
+    /// <summary>
+    /// Раскладка запроса: путь и query приходят раздельно, а страница присылает
+    /// <c>?id=…</c>. Склеиваем здесь, чтобы разбор не зависел от того, кто вызвал.
+    /// </summary>
+    private WebResponse AdminPlayer(WebRequestContext request) =>
+        AdminPlayerWith(WithQuery(request), SessionOf(request));
+
+    private static WebRequestContext WithQuery(WebRequestContext request) =>
+        string.IsNullOrEmpty(request.Query)
+            ? request
+            : request with { Path = request.Path + "?" + request.Query };
 
     private WebResponse AdminPlayerWith(WebRequestContext request, SiteSession? session)
     {

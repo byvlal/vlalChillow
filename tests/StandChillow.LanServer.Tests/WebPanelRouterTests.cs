@@ -384,7 +384,7 @@ public sealed class WebPanelRouterTests
         var router = NewRouter(out _);
         var response = router.Route(new WebRequestContext(
             "DELETE", "/api/rooms", "", Array.Empty<byte>(), null,
-            new Dictionary<string, string>()));
+            new Dictionary<string, string> { ["X-Requested-With"] = "vlalchillow" }));
 
         Assert.Equal(405, response.Status);
         Assert.Contains(response.ExtraHeaders, h => h.Item1 == "Allow" && h.Item2 == "GET, POST");
