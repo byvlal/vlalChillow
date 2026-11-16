@@ -29,6 +29,44 @@ public sealed class WebAdminTests
     private readonly List<(int Id, string? Duration, string? Reason, string? By)> _bans = new();
     private readonly List<string> _log = new();
 
+    /// <summary>Бан в тесте: запоминает аргументы, ничего не кикает.</summary>
+    private BanRecord? TestBan(
+        int id, string? duration, string? reason, string? bannedBy, out string? error)
+    {
+        if (id != 67776161)
+        {
+            error = "сервер не знает такого id";
+            return null;
+        }
+
+        error = null;
+        _bans.Add((id, duration, reason, bannedBy));
+        return new BanRecord
+        {
+            Nick = "Ktulxy",
+            Reason = reason ?? "",
+            BannedBy = bannedBy ?? "",
+            DurationSeconds = 259200,
+            ExpiresUtcMs = BanRecord.ToUnixMs(DateTime.UtcNow.AddDays(3)),
+            MatchIds = { id },
+        };
+    }
+
+    /// <summary>Разбан в тесте: один известный id.</summary>
+    private bool TestUnban(int id, out int removed, out string? error)
+    {
+        if (id != 67776161)
+        {
+            removed = 0;
+            error = "под id нет банов";
+            return false;
+        }
+
+        removed = 1;
+        error = null;
+        return true;
+    }
+
     private WebPanelRouter NewRouter()
     {
         var rooms = new RoomRegistry();
@@ -56,41 +94,10 @@ public sealed class WebAdminTests
                 AdminIdList = () => new[] { AdminPlayer },
                 Log = _log.Add,
 
-                // Тестовый бан: только запоминаем, что попросили.
-                BanPlayer = (id, duration, reason, by, out string? error) =>
-                {
-                    if (id != 67776161)
-                    {
-                        error = "сервер не знает такого id";
-                        return null;
-                    }
-
-                    error = null;
-                    _bans.Add((id, duration, reason, by));
-                    return new BanRecord
-                    {
-                        Nick = "Ktulxy",
-                        Reason = reason ?? "",
-                        BannedBy = by ?? "",
-                        DurationSeconds = 259200,
-                        ExpiresUtcMs = BanRecord.ToUnixMs(DateTime.UtcNow.AddDays(3)),
-                        MatchIds = { id },
-                    };
-                },
-
-                UnbanPlayer = (id, out int removed, out string? error) =>
-                {
-                    if (id != 67776161)
-                    {
-                        removed = 0;
-                        error = "под id нет банов";
-                        return false;
-                    }
-
-                    removed = 1;
-                    error = null;
-                    return true;
-                },
+                // Тестовый бан: только запоминаем, что попросили. Локальные функции,
+                // а не лямбды: лямбда не может объявить out-параметры.
+                BanPlayer = TestBan,
+                UnbanPlayer = TestUnban,
             });
     }
 

@@ -717,6 +717,9 @@ public sealed class WebPanelRouterOptions
     /// <summary>Адрес игрока, если он сейчас в лобби (для признака «онлайн»).</summary>
     public Func<int, System.Net.IPAddress?>? LobbyAddressOf { get; init; }
 
+    /// <summary>Ник игрока по числовому id — для профиля на странице.</summary>
+    public Func<int, string?>? NickById { get; init; }
+
     /// <summary>Список админских id — для сводки в админке.</summary>
     public Func<IReadOnlyList<int>>? AdminIdList { get; init; }
 

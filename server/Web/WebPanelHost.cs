@@ -150,6 +150,7 @@ public sealed class WebPanelHost : IDisposable
                 BanPlayer = BanByWeb,
                 UnbanPlayer = UnbanByWeb,
                 LobbyAddressOf = id => _host?.LobbyAddressOf(id),
+                NickById = NickOfPlayer,
                 AdminIdList = () => _server.Admin.Ids.ToList(),
                 Log = msg => Console.WriteLine(msg),
 
@@ -549,6 +550,22 @@ public sealed class WebPanelHost : IDisposable
         string.IsNullOrWhiteSpace(basePath) ? "/" : "/" + basePath.Trim().Trim('/');
 
     // ── админка ──────────────────────────────────────────────────────────────
+
+    /// <summary>Ник игрока по id: сначала лобби, потом справочник «кто заходил».</summary>
+    private string? NickOfPlayer(int playerId)
+    {
+        var host = _host;
+        if (host is null || playerId <= 0)
+            return null;
+
+        foreach (var player in host.Session.JoinedPlayers())
+        {
+            if (MatchPublicId.ForNick(player.Name) == playerId)
+                return player.Name;
+        }
+
+        return host.LookupPlayerById(playerId)?.Nick;
+    }
 
     /// <summary>Подмены публичного id — их читает и матч-хост, когда рисует uid.</summary>
     public PublicIdOverrides PublicIds => _publicIds;

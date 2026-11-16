@@ -72,7 +72,7 @@ public sealed class PublicIdOverrides
 
         // Целиком из цифр — это чужой числовой id: «занять» его нельзя, иначе два человека
         // в игре выглядели бы одинаково.
-        if (value.All(char.IsAsciiDigit))
+        if (value.All(c => c is >= '0' and <= '9'))
         {
             error = "публичный id не может состоять только из цифр — это чужие числовые id";
             return false;

@@ -196,7 +196,7 @@ public sealed partial class WebPanelRouter
     }
 
     /// <summary>Числовой id, подменённый публичный id и ник — для страницы и чата.</summary>
-    private static string BuildAdminProfileJson(
+    private string BuildAdminProfileJson(
         SiteAdminSession? admin, int playerId = 0, bool isAdminId = false, string? displayId = null)
     {
         using var stream = new MemoryStream();
@@ -205,14 +205,14 @@ public sealed partial class WebPanelRouter
             writer.WriteStartObject();
             writer.WriteBoolean("admin", admin is not null);
             writer.WriteBoolean("adminId", isAdminId);
+            // Ник и id нужны всегда: страница подписывает ими шапку, даже когда
+            // админского ключа нет. Иначе «вошёл, но не админ» давал бы гость.
+            writer.WriteString("nick", admin?.Nick ?? _options.NickById?.Invoke(playerId) ?? "");
             writer.WriteNumber("id", admin?.PlayerId ?? playerId);
             writer.WriteString("displayId",
                 displayId ?? (admin?.PlayerId ?? playerId).ToString());
             if (admin is not null)
-            {
-                writer.WriteString("nick", admin.Nick);
                 writer.WriteString("since", admin.IssuedUtc.ToString("O"));
-            }
 
             writer.WriteEndObject();
         }
