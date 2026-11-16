@@ -410,15 +410,21 @@ public sealed class WebPanelRouterTests
         var cache = new StatusSnapshotCache();
         cache.Set("""{"online":0}""");
         var sessions = new SiteSessions();
-        var token = sessions.Create(1000, "влал", DateTime.UtcNow)!.Token;
+        var session = sessions.Create(1000, "влал", DateTime.UtcNow)!;
         var router = new WebPanelRouter(rooms, () => IndexHtml, cache,
             new WebPanelRouterOptions { Sessions = sessions });
 
         // Сводка под гейтом: без сессии её больше не отдают, поэтому проверяем кеш
-        // от имени вошедшего игрока.
-        Assert.Equal("""{"online":0}""", Body(router.Route(Get("/api/status", 1000))));
+        // от имени вошедшего игрока — кука своя, у роутера свой набор сессий.
+        var authed = new WebRequestContext(
+            "GET", "/api/status", "", Array.Empty<byte>(), IPAddress.Parse("203.0.113.1"),
+            new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+            {
+                ["Cookie"] = $"sc_session={session.Token}",
+            });
+
+        Assert.Equal("""{"online":0}""", Body(router.Route(authed)));
         Assert.Equal(401, router.Route(Get("/api/status")).Status);
-        _ = token;
     }
 
     [Theory]
