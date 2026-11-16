@@ -157,13 +157,12 @@ internal static class MatchReconnect
         // the returning fighter can respawn before the round starts. Once the roster is
         // frozen, he leaves this round exactly like a disconnect; the caller re-checks wipe
         // so an empty side cannot hang the round. Cumulative death counters are preserved.
-        // death is now a cumulative match counter (issue #56) — never reset here; only
-        // DeadActors is managed (added on death, removed on respawn, cleared at round start).
         var roundFrozen = room.Flow.RoundRoster.Count > 0;
         var clearedRoundDeath = false;
         if (!cumulativeDeathCounters && !roundFrozen)
         {
             room.Flow.DeadActors.Remove(actorNr);
+            room.ActorProps[(actorNr, MatchRoomPropKeys.Death)] = LobbyVariant.FromInt(0);
             clearedRoundDeath = true;
         }
         MatchFlowRules.RemoveFromRoundRoster(room.Flow, actorNr);
