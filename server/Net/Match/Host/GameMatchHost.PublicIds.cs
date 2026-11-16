@@ -66,6 +66,15 @@ public sealed partial class GameMatchHost
     }
 
     /// <summary>
+    /// Подмены публичного id из админки сайта. <c>null</c> — показывать числовой id.
+    /// </summary>
+    /// <remarks>
+    /// Ставится из <c>WebPanelHost.AttachHost</c>: подмена — это оформление, а не права,
+    /// поэтому матч читает её здесь и ничего не пересчитывает.
+    /// </remarks>
+    public Bans.PublicIdOverrides? PublicIdOverrides { get; set; }
+
+    /// <summary>
     /// Подменять ли клиентский <c>uid</c> («Offline») на серверный id игрока. По умолчанию да:
     /// тогда в игре вместо заглушки виден номер, который принимает <c>/ban</c>.
     /// </summary>
@@ -113,6 +122,17 @@ public sealed partial class GameMatchHost
 
         if (!MatchPublicId.TryWireUid(nick, out var text))
             return false;
+
+        // Админ мог назначить себе буквенно-цифровой публичный id (админка сайта).
+        // Проверки от этого не меняются: баны и admin.ids по-прежнему считаются от
+        // числового id ника, а здесь подменяется только то, что видит игрок.
+        if (PublicIdOverrides is { } overrides
+            && MatchPublicId.ForNick(nick) is var numeric && numeric > 0
+            && overrides.CustomOf(numeric) is { Length: > 0 } custom)
+        {
+            uid = LobbyVariant.FromString(custom);
+            return true;
+        }
 
         uid = LobbyVariant.FromString(text);
         return true;

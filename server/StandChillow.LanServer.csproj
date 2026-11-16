@@ -25,6 +25,16 @@
     <EmbeddedResource Include="Web\wwwroot\index.html">
       <LogicalName>StandChillow.LanServer.Web.wwwroot.index.html</LogicalName>
     </EmbeddedResource>
+
+    <!-- Оформление страницы: шрифт (Oswald, OFL — лицензия лежит рядом) и видео-фон.
+         Имена логических ресурсов совпадают с WebPanelHost.AssetFiles; сами файлы
+         отдаёт WebAssets с поддержкой Range (видео без него не играет). -->
+    <EmbeddedResource Include="Web\wwwroot\assets\fonts\*">
+      <LogicalName>StandChillow.LanServer.Web.wwwroot.assets.fonts.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
+    <EmbeddedResource Include="Web\wwwroot\assets\media\*" Exclude="Web\wwwroot\assets\media\*.md">
+      <LogicalName>StandChillow.LanServer.Web.wwwroot.assets.media.%(Filename)%(Extension)</LogicalName>
+    </EmbeddedResource>
   </ItemGroup>
 
   <ItemGroup>

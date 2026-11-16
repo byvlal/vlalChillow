@@ -175,13 +175,20 @@ public sealed partial class WebPanelRouter
         return store.Find(SiteCookie.ReadToken(request.Headers), DateTime.UtcNow);
     }
 
-    private static string BuildProfileJson(SiteSession session)
+    private string BuildProfileJson(SiteSession session)
     {
         using var stream = new MemoryStream();
         using (var writer = new Utf8JsonWriter(stream, JsonText.WriterOptions))
         {
             writer.WriteStartObject();
             writer.WriteNumber("id", session.PlayerId);
+            // Публичный id: админ мог заменить числовой на свой (админка сайта).
+            // Страница показывает displayId, а команды (/ban и др.) по-прежнему
+            // принимают числовой — он же в /ids.
+            writer.WriteString("displayId",
+                session.DisplayId
+                ?? _options.PublicIdOf?.Invoke(session.PlayerId)
+                ?? session.PlayerId.ToString());
             writer.WriteString("nick", session.Nick);
             writer.WriteString("since", session.IssuedUtc.ToString("O"));
             writer.WriteEndObject();

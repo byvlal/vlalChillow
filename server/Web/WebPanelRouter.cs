@@ -49,20 +49,54 @@ public sealed partial class WebPanelRouter
     {
         var path = NormalizePath(request.Path, _options.BasePath);
 
-        // Страница и её данные — только чтение, доступны всем.
+        // Кука уходит с запросом автоматически, поэтому POST без проверки источника
+        // позволял бы чужой странице в той же сети банить людей «руками админа».
+        // Origin браузер подставить не даёт; если заголовка нет (не браузер, curl),
+        // требуем пользовательский X-Requested-With, который тоже не поставить
+        // cross-origin без CORS. Отказ — до всякой авторизации.
+        if (request.Method != "GET" && !SameOriginOrApiClient(request))
+            return ApiError(403, "cross_origin", "запрос пришёл не со страницы панели");
+
+        // Страница открыта всем: без неё некуда ввести код из лобби. Данные — нет:
+        // владелец просил, чтобы без входа сервер не отдавал ни онлайна, ни комнат.
         if (request.Method == "GET" && (path == "/" || path == "/index.html"))
             return WebResponse.Html(_indexHtml());
 
+        // /play и /admin — те же страницы-экраны, а не отдельные файлы: адрес нужен
+        // для «Начать игру» и для закладки, а разметку держим в одном месте.
+        if (request.Method == "GET" && (path == "/play" || path == "/admin"))
+            return WebResponse.Html(_indexHtml());
+
+        // Данные панели закрыты сессией. Отказ — 401 с кодом, по которому страница
+        // понимает, что пора показать форму входа, а не пустой список.
         if (request.Method == "GET" && path == "/api/status")
+        {
+            if (SessionOf(request) is not { } statusSession)
+                return ApiError(401, "no_auth", NeedAuthMessage);
+            if (BannedRefusal(statusSession) is { } statusBanned)
+                return statusBanned;
             return WebResponse.Json(_status.Current);
+        }
 
         if (request.Method == "GET" && path == "/api/rooms")
-            return WebResponse.Json(BuildRoomsJson(SessionOf(request)));
+        {
+            var roomsSession = SessionOf(request);
+            if (roomsSession is null)
+                return ApiError(401, "no_auth", NeedAuthMessage);
+            if (BannedRefusal(roomsSession) is { } roomsBanned)
+                return roomsBanned;
+            return WebResponse.Json(BuildRoomsJson(roomsSession));
+        }
 
         // Каталог режимов и карт отдаёт сервер, а не страница: иначе копия в JS
         // разъедется с GameModeCatalog, и панель начнёт предлагать несуществующие карты.
+        // Под гейтом, потому что нужен только форме создания комнаты — а она после входа.
         if (request.Method == "GET" && path == "/api/modes")
+        {
+            if (SessionOf(request) is null)
+                return ApiError(401, "no_auth", NeedAuthMessage);
             return WebResponse.Json(BuildModesJson());
+        }
 
         // Авторизация: обменять код из лобби на сессию (#51). Чтение доступно всем,
         // всё, что меняет состояние, — только по сессии (см. CreateRoom и RoomEnd).
@@ -89,13 +123,58 @@ public sealed partial class WebPanelRouter
                 ? EndRoom(request, path)
                 : WithAllow("POST", WebResponse.Text("405", 405));
 
+        // ── админка ──────────────────────────────────────────────────────────
+        // Вход в админку: обычная сессия обязательна, код проверяется вторым шагом.
+        if (request.Method == "POST" && path == "/api/admin/auth")
+            return AdminAuthenticate(request);
+
+        if (request.Method == "POST" && path == "/api/admin/logout")
+            return AdminLogout(request);
+
+        if (request.Method == "GET" && path == "/api/admin/me")
+            return AdminWhoAmI(request);
+
+        // Данные админки: только с ключом. Любой отказ — 403, включая чтение.
+        if (request.Method == "GET" && path == "/api/admin/status")
+            return AdminStatus(request);
+
+        if (request.Method == "GET" && path == "/api/admin/players")
+            return AdminPlayer(request);
+
+        if (request.Method == "GET" && path == "/api/admin/bans")
+            return AdminBans(request);
+
+        if (request.Method == "GET" && path == "/api/admin/ids")
+            return AdminIds(request);
+
+        if (request.Method == "POST" && path == "/api/admin/bans")
+            return AdminBan(request);
+
+        if (request.Method == "POST" && path == "/api/admin/unban")
+            return AdminUnban(request);
+
+        if (request.Method == "POST" && path == "/api/admin/public-id")
+            return AdminPublicId(request);
+
+        // Шрифт и видео-фон. Это часть оформления страницы, а не данные: без них
+        // сайт открывается, но выглядит не так, поэтому авторизация здесь не нужна —
+        // ровно как не нужна для самого index.html.
+        if (request.Method == "GET" && _options.Asset is not null && path.StartsWith("/assets/", StringComparison.Ordinal))
+            return _options.Asset(path, HeaderValue(request.Headers, "Range"));
+
         if (request.Method == "GET" && path == "/healthz")
             return WebResponse.Text("ok");
 
         // Метод не тот — это не «нет маршрута», и панель должна сказать честно.
-        if (path is "/" or "/index.html" or "/api/status" or "/api/modes"
-            or "/api/me" or "/api/avatar" or "/healthz")
+        if (path is "/" or "/index.html" or "/play" or "/admin" or "/api/status" or "/api/modes"
+            or "/api/me" or "/api/avatar" or "/healthz"
+            or "/api/admin/status" or "/api/admin/players" or "/api/admin/bans"
+            or "/api/admin/ids" or "/api/admin/me")
             return WithAllow("GET", WebResponse.Text("405", 405));
+
+        if (path is "/api/admin/auth" or "/api/admin/logout" or "/api/admin/unban"
+            or "/api/admin/public-id")
+            return WithAllow("POST", WebResponse.Text("405", 405));
 
         if (path is "/api/auth" or "/api/logout")
             return WithAllow("POST", WebResponse.Text("405", 405));
@@ -389,6 +468,80 @@ public sealed partial class WebPanelRouter
         return WebResponse.Json(Encoding.UTF8.GetString(stream.ToArray()), status);
     }
 
+    /// <summary>Значение заголовка без учёта регистра имени; пусто, если его нет.</summary>
+    private static string HeaderValue(IReadOnlyDictionary<string, string> headers, string name)
+    {
+        foreach (var (key, value) in headers)
+        {
+            if (key.Equals(name, StringComparison.OrdinalIgnoreCase))
+                return value;
+        }
+
+        return string.Empty;
+    }
+
+    /// <summary>
+    /// Запрос пришёл со страницы панели (или от не-браузерного клиента с явным маркером)?
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <c>Origin</c> сравнивается с <c>Host</c> того же запроса: домен панели в коде не
+    /// известен (LAN-адрес, прокси, localhost), а пара «Origin == Host» верна во всех
+    /// этих случаях. Схему не сверяем: за https-прокси панель видит http.
+    /// </para>
+    /// <para>
+    /// Заголовка <c>Origin</c> может не быть у не-браузерных клиентов (curl, скрипт) —
+    /// их пускаем по <c>X-Requested-With</c>. Обычная HTML-форма ни того, ни другого
+    /// поставить не может, а межсайтовый fetch без CORS не может добавить
+    /// нестандартный заголовок.
+    /// </para>
+    /// </remarks>
+    private static bool SameOriginOrApiClient(WebRequestContext request)
+    {
+        foreach (var (name, value) in request.Headers)
+        {
+            if (name.Equals("X-Requested-With", StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+
+        if (!request.Headers.TryGetValue("Origin", out var origin)
+            || string.IsNullOrWhiteSpace(origin)
+            || origin == "null")
+        {
+            return false;
+        }
+
+        if (!request.Headers.TryGetValue("Host", out var host) || string.IsNullOrWhiteSpace(host))
+            return false;
+
+        var hostPart = origin.Trim();
+        var schemeEnd = hostPart.IndexOf("://", StringComparison.Ordinal);
+        if (schemeEnd >= 0)
+            hostPart = hostPart[(schemeEnd + 3)..];
+        hostPart = hostPart.TrimEnd('/');
+
+        return hostPart.Equals(host.Trim(), StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Выполнить админский маршрут под уже проверенной сессией сайта.
+    /// </summary>
+    /// <remarks>
+    /// Сессию ищем здесь один раз: каждый админский маршрут начинается с «кто это»,
+    /// и повторять одно и то же в шести местах — верный способ разойтись в поведении.
+    /// </remarks>
+    private WebResponse WithSession(WebRequestContext request, Func<WebRequestContext, WebResponse> handler)
+    {
+        var session = SessionOf(request);
+        if (session is null)
+            return ApiError(401, "no_auth", NeedAuthMessage);
+
+        if (BannedRefusal(session) is { } banned)
+            return banned;
+
+        return handler(request);
+    }
+
     private static WebResponse WithAllow(string allow, WebResponse response) => new(
         response.Status,
         response.ContentType,
@@ -423,6 +576,28 @@ public sealed partial class WebPanelRouter
         int OwnerId = 0,
         string? Owner = null);
 }
+
+/// <summary>
+/// Бан по серверному id с сайта.
+/// </summary>
+/// <param name="playerId">Числовой id цели.</param>
+/// <param name="duration">Срок теми же формами, что у <c>/ban</c> (<c>30m</c>, <c>6h</c>, <c>3d</c>).</param>
+/// <param name="reason">Причина.</param>
+/// <param name="bannedBy">Ник того, кто банит (из админской сессии, не из тела запроса).</param>
+/// <param name="error">Причина отказа или <c>null</c>.</param>
+/// <returns>Запись реестра или <c>null</c>, если бан не выдан.</returns>
+/// <remarks>
+/// Отдельный делегат, а не <c>Func</c>: причина отказа нужна странице текстом, а
+/// <c>out</c>-параметр в <c>Func</c> не выразить. Тот же приём — у разбана ниже.
+/// </remarks>
+public delegate Bans.BanRecord? BanPlayerHandler(
+    int playerId, string? duration, string? reason, string? bannedBy, out string? error);
+
+/// <summary>Снять баны под серверным id.</summary>
+/// <param name="playerId">Числовой id.</param>
+/// <param name="removed">Сколько записей снято.</param>
+/// <param name="error">Причина отказа или <c>null</c>.</param>
+public delegate bool UnbanPlayerHandler(int playerId, out int removed, out string? error);
 
 /// <summary>Что роутеру нужно от хоста и конфига.</summary>
 public sealed class WebPanelRouterOptions
@@ -491,6 +666,72 @@ public sealed class WebPanelRouterOptions
     /// флагом браузер куку просто не сохранит.
     /// </summary>
     public bool SecureCookies { get; init; }
+
+    /// <summary>
+    /// Админские сессии сайта. <c>null</c> — админка выключена (все её маршруты 503).
+    /// </summary>
+    /// <remarks>
+    /// Отдельно от <see cref="Sessions"/>: обычная сессия говорит «человек вошёл»,
+    /// админская — «и предъявил код этого запуска». Выход с сайта не должен оставлять
+    /// админские права, поэтому и хранилища разные.
+    /// </remarks>
+    public SiteAdminSessions? AdminSessions { get; init; }
+
+    /// <summary>
+    /// Числовой id в <c>admin.ids</c> — те же права, что у команд в чате.
+    /// </summary>
+    public Func<int, bool>? IsAdminId { get; init; }
+
+    /// <summary>
+    /// Код текущего запуска принят? Сравнение делает <c>AdminAuth</c> (постоянное время,
+    /// без учёта регистра); сюда приходит только ответ.
+    /// </summary>
+    public Func<string, bool>? VerifyAdminCode { get; init; }
+
+    /// <summary>
+    /// Авторизовать адрес, который предъявил код на сайте: так же, как это делает
+    /// ввод кода в чат лобби.
+    /// </summary>
+    public Func<System.Net.IPAddress?, bool>? AuthorizeAddress { get; init; }
+
+    /// <summary>Что показать вместо числового id: подмена из админки или сам id.</summary>
+    public Func<int, string>? PublicIdOf { get; init; }
+
+    /// <summary>
+    /// Подмены публичного id. Нужны админке, чтобы менять их напрямую, а не через id.
+    /// </summary>
+    public Bans.PublicIdOverrides? PublicIds { get; init; }
+
+    /// <summary>Кто это по серверному id (ник, адреса, когда видели).</summary>
+    public Func<int, Bans.SeenPlayer?>? LookupPlayer { get; init; }
+
+    /// <summary>Активные баны.</summary>
+    public Func<IReadOnlyList<Bans.BanRecord>>? ActiveBans { get; init; }
+
+    /// <summary>Забанить по id с сайта. Возвращает запись или <c>null</c> с причиной.</summary>
+    public BanPlayerHandler? BanPlayer { get; init; }
+
+    /// <summary>Снять баны под id.</summary>
+    public UnbanPlayerHandler? UnbanPlayer { get; init; }
+
+    /// <summary>Адрес игрока, если он сейчас в лобби (для признака «онлайн»).</summary>
+    public Func<int, System.Net.IPAddress?>? LobbyAddressOf { get; init; }
+
+    /// <summary>Список админских id — для сводки в админке.</summary>
+    public Func<IReadOnlyList<int>>? AdminIdList { get; init; }
+
+    /// <summary>
+    /// Статический файл оформления (шрифт, видео-фон) по пути <c>/assets/…</c>.
+    /// </summary>
+    /// <remarks>
+    /// Первый аргумент — путь, второй — заголовок <c>Range</c> (нужен видео, иначе
+    /// браузер не даёт перематывать и иногда не начинает воспроизведение).
+    /// Возвращает <c>404</c>, если такого файла нет.
+    /// </remarks>
+    public Func<string, string, WebResponse>? Asset { get; init; }
+
+    /// <summary>Куда писать строки о действиях админов (консоль сервера).</summary>
+    public Action<string>? Log { get; init; }
 
     /// <summary>
     /// Кто сейчас в лобби: (серверный id, ник).

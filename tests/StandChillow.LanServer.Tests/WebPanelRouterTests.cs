@@ -121,7 +121,7 @@ public sealed class WebPanelRouterTests
     public void RoomsStartsEmptyWithNextNumberOne()
     {
         var router = NewRouter(out _);
-        var json = Body(router.Route(Get("/api/rooms")));
+        var json = Body(router.Route(Get("/api/rooms", 1000)));
 
         Assert.Contains("\"nextNumber\":1", json);
         Assert.Contains("\"count\":0", json);
@@ -173,7 +173,7 @@ public sealed class WebPanelRouterTests
         var router = NewRouter(out _);
         router.Route(Post("/api/rooms", """{"mode":"2v2","name":"моя","ownerId":1001,"owner":"подмена"}""", asPlayer: 1001));
 
-        var json = Body(router.Route(Get("/api/rooms")));
+        var json = Body(router.Route(Get("/api/rooms", 1000)));
 
         Assert.Contains("\"owner\":\"a\"", json);
         Assert.DoesNotContain("подмена", json);
@@ -242,7 +242,7 @@ public sealed class WebPanelRouterTests
         var router = NewRouter(out _);
         router.Route(Post("/api/rooms", """{"mode":"duel","ownerId":1002,"perTeam":2}""", asPlayer: 1002));
 
-        var json = Body(router.Route(Get("/api/rooms")));
+        var json = Body(router.Route(Get("/api/rooms", 1000)));
 
         Assert.Contains("\"ownerId\":1002", json);
         Assert.Contains("\"maxPlayers\":4", json);
@@ -256,7 +256,7 @@ public sealed class WebPanelRouterTests
         router.Route(Post("/api/rooms", """{"mode":"2v2","ownerId":1000}""", asPlayer: 1000));
         Assert.True(rooms.TryUpdate(1, RoomState.Live, 4, 5, 3));
 
-        var json = Body(router.Route(Get("/api/rooms")));
+        var json = Body(router.Route(Get("/api/rooms", 1000)));
 
         // Порядок CT * T задан сервером: панель не переставляет команды местами.
         Assert.Contains("\"scoreCt\":5", json);
@@ -362,7 +362,7 @@ public sealed class WebPanelRouterTests
         var router = NewRouter(out _);
         router.Route(Post("/api/rooms", """{"mode":"tdm","name":"тестовая","ownerId":1000}""", asPlayer: 1000));
 
-        var json = Body(router.Route(Get("/api/rooms")));
+        var json = Body(router.Route(Get("/api/rooms", 1000)));
 
         Assert.Contains("\"count\":1", json);
         Assert.Contains("\"owner\":\"влал\"", json);
@@ -422,7 +422,7 @@ public sealed class WebPanelRouterTests
     {
         var router = NewRouter(out _, basePath: "/vlalchillow");
         Assert.Equal(200, router.Route(Get("/vlalchillow/")).Status);
-        Assert.Equal(200, router.Route(Get("/vlalchillow/api/rooms")).Status);
+        Assert.Equal(200, router.Route(Get("/vlalchillow/api/rooms", 1000)).Status);
     }
 
     [Fact]
@@ -432,6 +432,6 @@ public sealed class WebPanelRouterTests
         router.Route(Post("/api/rooms", """{"mode":"2v2","ownerId":1000}""", asPlayer: 1000));
 
         // Читаемая кириллица в JSON — иначе в отладке сети всё превращается в \uXXXX.
-        Assert.Contains("влал", Body(router.Route(Get("/api/rooms"))));
+        Assert.Contains("влал", Body(router.Route(Get("/api/rooms", 1000))));
     }
 }

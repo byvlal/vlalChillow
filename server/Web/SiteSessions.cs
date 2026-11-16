@@ -10,12 +10,17 @@ namespace StandChillow.LanServer.Web;
 /// <param name="Nick">Ник на момент входа.</param>
 /// <param name="IssuedUtc">Когда обменяли код.</param>
 /// <param name="LastSeenUtc">Последний запрос с этой сессией.</param>
+/// <param name="DisplayId">
+/// Публичный id, если админ заменил числовой (см. <c>PublicIdOverrides</c>).
+/// <c>null</c> — показывать числовой.
+/// </param>
 public sealed record SiteSession(
     string Token,
     int PlayerId,
     string Nick,
     DateTime IssuedUtc,
-    DateTime LastSeenUtc);
+    DateTime LastSeenUtc,
+    string? DisplayId = null);
 
 /// <summary>
 /// Сессии сайта: обменял код → получил токен → работаешь.

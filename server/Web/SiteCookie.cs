@@ -17,14 +17,27 @@ namespace StandChillow.LanServer.Web;
 /// </remarks>
 public static class SiteCookie
 {
-    /// <summary>Имя куки.</summary>
+    /// <summary>Имя куки сессии.</summary>
     public const string Name = "sc_session";
+
+    /// <summary>
+    /// Имя куки админского ключа. Отдельная кука, а не поле в сессии: ключ от
+    /// <c>auth.txt</c> — это вторая створка прав, и она должна сниматься отдельно.
+    /// </summary>
+    public const string AdminName = "sc_admin";
 
     /// <summary>
     /// Достать токен сессии из заголовка <c>Cookie</c>. Нет куки — <c>null</c>.
     /// </summary>
     /// <param name="headers">Заголовки запроса (регистр имени не важен).</param>
-    public static string? ReadToken(IReadOnlyDictionary<string, string> headers)
+    public static string? ReadToken(IReadOnlyDictionary<string, string> headers) =>
+        Read(headers, Name);
+
+    /// <summary>Достать токен админского ключа из заголовка <c>Cookie</c>.</summary>
+    public static string? ReadAdminToken(IReadOnlyDictionary<string, string> headers) =>
+        Read(headers, AdminName);
+
+    private static string? Read(IReadOnlyDictionary<string, string>? headers, string cookieName)
     {
         if (headers is null)
             return null;
@@ -41,7 +54,7 @@ public static class SiteCookie
                 continue;
 
             var name = part[..eq].Trim();
-            if (!name.Equals(Name, StringComparison.OrdinalIgnoreCase))
+            if (!name.Equals(cookieName, StringComparison.OrdinalIgnoreCase))
                 continue;
 
             var value = part[(eq + 1)..].Trim();
@@ -57,10 +70,18 @@ public static class SiteCookie
     /// <param name="token">Токен сессии.</param>
     /// <param name="path">Префикс панели (<c>/vlalchillow</c> за прокси) или <c>/</c>.</param>
     /// <param name="secure">Ставить ли <c>Secure</c> (только https).</param>
-    public static (string Name, string Value) Build(string token, string path, bool secure)
+    public static (string Name, string Value) Build(string token, string path, bool secure) =>
+        Build(Name, token, path, secure);
+
+    /// <summary>Заголовок <c>Set-Cookie</c> с живым админским ключом.</summary>
+    public static (string Name, string Value) BuildAdmin(string token, string path, bool secure) =>
+        Build(AdminName, token, path, secure);
+
+    private static (string Name, string Value) Build(
+        string cookieName, string token, string path, bool secure)
     {
         var scope = NormalizePath(path);
-        var value = $"{Name}={token}; Path={scope}; HttpOnly; SameSite=Lax";
+        var value = $"{cookieName}={token}; Path={scope}; HttpOnly; SameSite=Lax";
         if (secure)
             value += "; Secure";
 
@@ -70,10 +91,18 @@ public static class SiteCookie
     /// <summary>
     /// Заголовок <c>Set-Cookie</c>, который гасит куку (пустое значение, истёкший срок).
     /// </summary>
-    public static (string Name, string Value) BuildExpired(string path, bool secure)
+    public static (string Name, string Value) BuildExpired(string path, bool secure) =>
+        BuildExpired(Name, path, secure);
+
+    /// <summary>Заголовок <c>Set-Cookie</c>, который гасит админский ключ.</summary>
+    public static (string Name, string Value) BuildAdminExpired(string path, bool secure) =>
+        BuildExpired(AdminName, path, secure);
+
+    private static (string Name, string Value) BuildExpired(
+        string cookieName, string path, bool secure)
     {
         var scope = NormalizePath(path);
-        var value = $"{Name}=; Path={scope}; HttpOnly; SameSite=Lax; Max-Age=0";
+        var value = $"{cookieName}=; Path={scope}; HttpOnly; SameSite=Lax; Max-Age=0";
         if (secure)
             value += "; Secure";
 

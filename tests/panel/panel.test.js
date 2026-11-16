@@ -3,26 +3,31 @@
  *
  * Сеть не нужна: fetch замокан ответами, которые отдаёт WebPanelRouter, поэтому тест
  * проверяет ровно то, что сломается в браузере, — до того, как это увидит игрок:
- *   • каталог режимов берётся с сервера, а не из копии в JS;
- *   • фильтры режима и карты работают, «Все режимы» выбран явно;
+ *   • без входа сервер не отдаёт данные, страница показывает экран входа;
+ *   • каталог режимов и карт берётся с сервера, а не из копии в JS;
+ *   • фильтры режима и карты работают;
  *   • создание комнаты уходит одним POST, номер выдаёт сервер;
  *   • ошибки API показываются понятным текстом, а не кодом;
- *   • имя комнаты экранируется (XSS из чужого ввода);
- *   • закрытая комната не приглашает войти;
- *   • список показывает счёт CT * T, а не число игроков;
- *   • «Войти» открывает окно с точной командой, не переключая вкладку;
- *   • баннер появляется, когда игровой порт не слушается.
+ *   • чужой ввод экранируется (XSS из ника/названия комнаты);
+ *   • /play и /admin — отдельные экраны, доступные по адресу;
+ *   • админка без ключа не показывает ни банов, ни id (сервер отвечает 403);
+ *   • бан спрашивает подтверждение, и «да» недоступно три секунды;
+ *   • публичный id: только латиница и цифры, пустое значение снимает подмену;
+ *   • видео-фон не ломает страницу, если файла нет.
+ *
+ * jsdom ставится отдельно (страница — единственный JS в проекте):
+ *     npm install --prefix /tmp/paneltest jsdom
+ *     NODE_PATH=/tmp/paneltest/node_modules node tests/panel/panel.test.js
  */
 const fs = require('fs');
 const path = require('path');
-/* jsdom ставится отдельно (страница — единственный JS в проекте):
-     npm install --prefix /tmp/paneltest jsdom
-     NODE_PATH=/tmp/paneltest/node_modules node tests/panel/panel.test.js
-   Путь к jsdom не зашит: бери тот, что видит Node. */
 const { JSDOM } = require('jsdom');
 
-const html = fs.readFileSync(
-  path.join(__dirname, '..', '..', 'server', 'Web', 'wwwroot', 'index.html'), 'utf8');
+const root = path.join(__dirname, '..', '..');
+const html = fs.readFileSync(path.join(root, 'server', 'Web', 'wwwroot', 'index.html'), 'utf8');
+const js = fs.readFileSync(path.join(root, 'server', 'Web', 'wwwroot', 'assets', 'site.js'), 'utf8');
+const css = fs.readFileSync(path.join(root, 'server', 'Web', 'wwwroot', 'assets', 'site.css'), 'utf8');
+const css2 = fs.readFileSync(path.join(root, 'server', 'Web', 'wwwroot', 'assets', 'site.extras.css'), 'utf8');
 
 let pass = 0, fail = 0;
 const failures = [];
@@ -45,11 +50,12 @@ const MODES = {
 };
 
 let roomsState = [
-  { number: 1, mode: 'Ranked2v2', level: 'Sandstone 2x2', name: 'рялна',
+  { number: 1, mode: 'Ranked2v2', modeName: 'Союзники', level: 'Sandstone 2x2', name: 'рялна',
     owner: 'vlal', ownerId: 111, state: 'live', players: 4, joinCommand: '/join 2v2 #1',
-    scoreCt: 5, scoreTr: 3, perTeam: 2, maxPlayers: 4, teamLabel: '2 на 2' },
-  { number: 2, mode: 'Duel', level: 'Yard', name: '', owner: 'botx', ownerId: 222,
-    state: 'waiting', players: 1, joinCommand: '/join duel #2', scoreCt: 1, scoreTr: 0 },
+    scoreCt: 5, scoreTr: 3, perTeam: 2, maxPlayers: 4, teamLabel: '2 на 2', isMine: false },
+  { number: 2, mode: 'Duel', modeName: 'Дуэль', level: 'Yard', name: '', owner: 'botx',
+    ownerId: 222, state: 'waiting', players: 1, joinCommand: '/join duel #2',
+    scoreCt: 1, scoreTr: 0, isMine: false },
 ];
 
 let statusState = {
@@ -57,50 +63,99 @@ let statusState = {
   roomsCount: 2, roomsMax: 64, nextNumber: 3, gameListening: true,
 };
 
-let posted = null;
-let postResponse = null;
-let copied = null;
+const ME = { id: 333, displayId: 'vlal', nick: 'новичок', since: '2026-11-16T00:00:00Z' };
+const ADMIN_ME = { admin: true, adminId: true, id: 333, nick: 'новичок' };
 
-/* Авторизация (#51): кто я по мнению сервера. null — сайт не авторизован.
-   Комната создаётся только авторизованным, «Моя комната» видна только ему. */
-let meState = null;          /* null → /api/me отвечает 401 */
-let authResponse = null;     /* подмена ответа POST /api/auth */
-let ended = null;            /* куда ушёл POST /api/rooms/{n}/end */
-let endResponse = null;      /* подмена ответа завершения */
+let authOn = false;
+let adminOn = false;
+let posted = null;
+let ended = null;
+let authResponse = null;
+let adminAuthResponse = null;
+let banPost = null;
+let unbanPost = null;
+let publicIdPost = null;
+let playerResponse = null;
+const calls = [];
 
 function fakeFetch(url, opts) {
   const method = (opts && opts.method) || 'GET';
   const u = String(url);
+  calls.push(method + ' ' + u);
   let body = null, status = 200;
+
+  const needAuth = () => {
+    if (authOn) return false;
+    status = 401;
+    body = { code: 'no_auth', message: 'нужно ввести код из лобби' };
+    return true;
+  };
 
   /* Порядок важен: «…/api/rooms/1/end» тоже начинается с api/rooms. */
   if (/\/end$/.test(u) && method === 'POST') {
     ended = u;
-    if (endResponse) { body = endResponse.body; status = endResponse.status; }
-    else { body = { ok: true, number: 1 }; status = 200; }
-  } else if (u.indexOf('api/auth') >= 0 && method === 'POST') {
-    if (authResponse) { body = authResponse.body; status = authResponse.status; }
-    else { body = { id: 333, nick: 'новичок' }; status = 200; }
-  } else if (u.indexOf('api/me') >= 0 && method === 'GET') {
-    if (meState) { body = meState; status = 200; }
-    else { body = { code: 'no_auth', message: 'нужно ввести код из лобби' }; status = 401; }
-  } else if (u.indexOf('api/logout') >= 0) { body = { ok: true }; status = 200; }
-  else if (u.indexOf('api/avatar') >= 0) { body = null; status = 404; }
-  else if (u.indexOf('api/modes') >= 0) body = MODES;
-  else if (u.indexOf('api/rooms') >= 0 && method === 'GET') {
-    body = { nextNumber: 3, count: roomsState.length, maxRooms: 64, rooms: roomsState };
-  } else if (u.indexOf('api/rooms') >= 0 && method === 'POST') {
-    posted = JSON.parse(opts.body);
-    if (postResponse) { body = postResponse.body; status = postResponse.status; }
+    body = { ok: true, number: 1 };
+  } else if (u.indexOf('api/admin/auth') >= 0 && method === 'POST') {
+    if (adminAuthResponse) { body = adminAuthResponse.body; status = adminAuthResponse.status; }
+    else if (!authOn) { status = 401; body = { code: 'no_auth', message: 'нужно ввести код из лобби' }; }
+    else { adminOn = true; body = ADMIN_ME; }
+  } else if (u.indexOf('api/admin/me') >= 0) {
+    if (!authOn) { status = 401; body = { code: 'no_auth', message: 'нужно ввести код из лобби' }; }
+    else body = { admin: adminOn, adminId: true, id: 333, nick: 'новичок' };
+  } else if (u.indexOf('api/admin/players') >= 0) {
+    if (!adminOn) { status = 403; body = { code: 'admin_required', message: 'это админский раздел' }; }
+    else if (playerResponse) body = playerResponse;
+    else body = { known: true, id: 67776161, displayId: 'Ktulxy', nick: 'Ktulxy',
+      banned: false, online: true, ips: ['192.168.1.50'], lastSeen: '2026-11-16T00:00:00Z' };
+  } else if (u.indexOf('api/admin/bans') >= 0 && method === 'POST') {
+    if (!adminOn) { status = 403; body = { code: 'admin_required', message: 'это админский раздел' }; }
     else {
-      body = { number: 3, mode: 'Ranked2v2', modeName: 'Союзники', level: 'Sandstone 2x2',
-               name: 'новая', owner: 'новичок', ownerId: 333,
-               joinCommand: '/join 2v2 #3', state: 'waiting',
-               perTeam: 2, maxPlayers: 4, teamLabel: '2 на 2' };
+      banPost = JSON.parse(opts.body);
+      body = { nick: 'Ktulxy', reason: banPost.reason, bannedBy: 'новичок',
+        expires: '2026-11-19T00:00:00Z', duration: '3д', remainingSec: 259200 };
       status = 201;
     }
-  } else if (u.indexOf('api/status') >= 0) body = statusState;
-  else { body = null; status = 404; }
+  } else if (u.indexOf('api/admin/bans') >= 0) {
+    if (!adminOn) { status = 403; body = { code: 'admin_required', message: 'это админский раздел' }; }
+    else body = { bans: [{ id: 67776161, displayId: 'Ktulxy', nick: 'Ktulxy', reason: 'читы',
+      bannedBy: 'новичок', expires: '2026-11-19T00:00:00Z', remainingSec: 90000, duration: '3д' }] };
+  } else if (u.indexOf('api/admin/unban') >= 0) {
+    if (!adminOn) { status = 403; body = { code: 'admin_required', message: 'это админский раздел' }; }
+    else { unbanPost = JSON.parse(opts.body); body = { ok: true, removed: 1 }; }
+  } else if (u.indexOf('api/admin/public-id') >= 0) {
+    if (!adminOn) { status = 403; body = { code: 'admin_required', message: 'это админский раздел' }; }
+    else { publicIdPost = JSON.parse(opts.body); body = { ok: true, id: 333, displayId: publicIdPost.value || '333' }; }
+  } else if (u.indexOf('api/admin/logout') >= 0) {
+    adminOn = false;
+    body = { ok: true };
+  } else if (u.indexOf('api/auth') >= 0 && method === 'POST') {
+    if (authResponse) { body = authResponse.body; status = authResponse.status; }
+    else { authOn = true; body = ME; }
+  } else if (u.indexOf('api/me') >= 0) {
+    if (!authOn) { status = 401; body = { code: 'no_auth', message: 'нужно ввести код из лобби' }; }
+    else body = ME;
+  } else if (u.indexOf('api/logout') >= 0) {
+    authOn = false; adminOn = false;
+    body = { ok: true };
+  } else if (u.indexOf('api/avatar') >= 0) { body = null; status = 404; }
+  else if (u.indexOf('api/modes') >= 0) {
+    if (needAuth()) { /* 401 */ } else body = MODES;
+  } else if (u.indexOf('api/rooms') >= 0 && method === 'GET') {
+    if (needAuth()) { /* 401 */ }
+    else body = { nextNumber: 3, count: roomsState.length, maxRooms: 64, rooms: roomsState };
+  } else if (u.indexOf('api/rooms') >= 0 && method === 'POST') {
+    if (needAuth()) { /* 401 */ }
+    else {
+      posted = JSON.parse(opts.body);
+      body = { number: 3, mode: 'Ranked2v2', modeName: 'Союзники', level: 'Sandstone 2x2',
+        name: 'новая', owner: 'новичок', ownerId: 333,
+        joinCommand: '/join 2v2 #3', state: 'waiting',
+        perTeam: 2, maxPlayers: 4, teamLabel: '2 на 2' };
+      status = 201;
+    }
+  } else if (u.indexOf('api/status') >= 0) {
+    if (needAuth()) { /* 401 */ } else body = statusState;
+  } else { body = null; status = 404; }
 
   return Promise.resolve({
     ok: status >= 200 && status < 300,
@@ -111,329 +166,250 @@ function fakeFetch(url, opts) {
 }
 
 (async () => {
+  /* ── разметка и стили ── */
+  check('нет надписи «демо/макет»', !/демо|макет/i.test(html), 'нашлось «демо» или «макет»');
+  check('есть видео-фон', html.indexOf('hero__video') >= 0);
+  const videoTag = (html.match(/<video[\s\S]*?>/) || [''])[0];
+  check('видео без звука и с автоплеем',
+    /autoplay/.test(videoTag) && /muted/.test(videoTag) && /playsinline/.test(videoTag),
+    videoTag.slice(0, 120));
+  check('нет слова controls у фонового видео', !/controls/.test(videoTag));
+  check('фон обрезается по краям (object-fit: cover)',
+    /object-fit:\s*cover/.test(css2), 'нет object-fit: cover для .hero__video');
+  check('фон центрирован (object-position)',
+    /object-position:\s*center/.test(css2));
+  check('видео — только на самом верху (в hero, не фон body)',
+    css.indexOf('hero__video') < 0);
+  check('шрифт вшит локально, без внешнего CDN',
+    /@font-face/.test(css) && /oswald-cyr-lat\.woff2/.test(css) && !/fonts\.googleapis/.test(html + css));
+  check('стили в стиле игры: Bebas/Eurostile в комментарии',
+    /Bebas Neue/.test(css) && /Eurostile/.test(css));
+  check('есть боковая панель профиля', html.indexOf('class="sidebar"') >= 0);
+  check('кнопки «Начать игру» и «Создать комнату»',
+    html.indexOf('Начать игру') >= 0 && html.indexOf('Создать комнату') >= 0);
+
   const dom = new JSDOM(html, {
-    runScripts: 'dangerously',
+    runScripts: 'outside-only',
     pretendToBeVisual: true,
-    url: 'https://example.com/vlalchillow/',
+    url: 'https://example.com/',
     beforeParse(window) {
       window.fetch = fakeFetch;
       Object.defineProperty(window, 'isSecureContext', { value: true, configurable: true });
       Object.defineProperty(window.navigator, 'clipboard', {
         configurable: true,
-        value: { writeText: text => { copied = text; return Promise.resolve(); } },
+        value: { writeText: text => { window.__copied = text; return Promise.resolve(); } },
       });
       window.matchMedia = () => ({ matches: false, addListener() {}, removeListener() {} });
       window.scrollTo = () => {};
+      window.HTMLElement.prototype.scrollIntoView = () => {};
+      window.IntersectionObserver = class { observe() {} unobserve() {} disconnect() {} };
     },
   });
 
   const { window } = dom;
-  await new Promise(r => setTimeout(r, 120));
+  window.eval(js);
+
+  await new Promise(r => setTimeout(r, 150));
 
   const P = window.__panel;
   const $ = id => window.document.getElementById(id);
+  const text = id => ($(id) ? $(id).textContent : '');
 
   check('window.__panel есть', !!P);
   if (!P) { report(); return; }
 
-  /* ── каталог пришёл с сервера ── */
-  check('каталог загружен с /api/modes', P.MODES.length === 3, 'MODES=' + P.MODES.length);
-  check('селект режимов заполнен', $('mode').options.length === 3, 'options=' + $('mode').options.length);
+  /* ── без входа: данные скрыты, показан вход ── */
+  check('без сессии показан экран входа', $('view-gate').hidden === false);
+  check('главная скрыта без сессии', $('view-home').hidden === true);
+  check('онлайн скрыт без сессии', text('live-text') === 'скрыто', text('live-text'));
+  check('статус не запрашивался без сессии (нет 401-шторма)',
+    !calls.some(c => c === 'GET api/status'));
+
+  /* ── вход по коду ── */
+  $('auth-code').value = '123456';
+  $('auth-form').dispatchEvent(new window.Event('submit'));
+  await new Promise(r => setTimeout(r, 200));
+
+  check('после входа главная показана', $('view-home').hidden === false);
+  check('экран входа скрыт', $('view-gate').hidden === true);
+  check('ник с сервера в шапке', text('me-nick') === 'новичок', text('me-nick'));
+  check('публичный id (displayId) в шапке', text('me-id') === 'vlal', text('me-id'));
+
+  /* ── каталог и комнаты ── */
+  check('каталог загружен с /api/modes', P.state.modes.length === 3, 'modes=' + P.state.modes.length);
+  check('селект режимов заполнен', $('c-mode').options.length === 3);
   check('фильтр режимов начинается с «Все режимы»',
     $('f-mode').options[0].value === '' && $('f-mode').selectedIndex === 0);
+  check('карты пришли из режима', $('c-map').options.length === 2);
 
-  /* ── комнаты с сервера ── */
-  check('комнаты загружены', P.rooms.length === 2, 'rooms=' + P.rooms.length);
-  P.switchTab('list');
-  check('строк в списке столько же, сколько комнат',
-    $('rooms').children.length === 2, 'rows=' + $('rooms').children.length);
-  check('номер комнаты на месте', $('rooms').textContent.indexOf('#1') >= 0);
-  check('состояние live отрисовано', $('rooms').textContent.indexOf('идёт') >= 0);
-  check('состояние waiting отрисовано', $('rooms').textContent.indexOf('ожидание') >= 0);
-  check('счёт CT * T показан в списке', $('rooms').textContent.indexOf('5 * 3') >= 0,
-    $('rooms').textContent);
-  check('число игроков в строке не публикуется',
-    $('rooms').textContent.indexOf('4/4') < 0, $('rooms').textContent);
+  check('комнаты загружены', P.state.rooms.length === 2, 'rooms=' + P.state.rooms.length);
+  check('комнат в списке столько же, сколько пришло',
+    $('rooms-list').children.length === 2);
+  check('номер комнаты на месте', text('rooms-list').indexOf('#1') >= 0);
+  check('состояние live отрисовано', text('rooms-list').indexOf('идёт') >= 0);
+  check('счёт CT * T показан', text('rooms-list').indexOf('5') >= 0 && text('rooms-list').indexOf('3') >= 0);
+  check('онлайн в шапке с сервера', text('live-text') === '7 онлайн', text('live-text'));
+  check('герой-счётчик онлайна с сервера', text('hero-online') === '7');
 
-  /* ── «Войти»: окно, точная команда, автокопирование, вкладка не меняется ── */
-  const joinButton = Array.from($('rooms').children)[1]
-    .querySelector('.md-button--outlined');
-  copied = null;
-  joinButton.dispatchEvent(new window.Event('click'));
-  check('кнопка «Войти» открыла окно', $('join-dialog').hidden === false);
-  check('в окне точная команда из /api/rooms', $('join-cmd').value === '/join duel #2',
-    $('join-cmd').value);
-  check('команда скопирована автоматически', copied === '/join duel #2', String(copied));
-  check('сказано про вставку в чат лобби',
-    $('join-copy-state').textContent.indexOf('чат лобби') >= 0,
-    $('join-copy-state').textContent);
-  check('команда доступна для ручного выделения',
-    $('join-cmd').readOnly === true && $('join-cmd').value.length > 0);
-  check('список комнат остался активен',
-    $('panel-list').hidden === false && $('tab-list').getAttribute('aria-selected') === 'true');
-  $('join-close-btn').dispatchEvent(new window.Event('click'));
-  check('окно закрывается кнопкой', $('join-dialog').hidden === true);
+  /* ── XSS: чужой ник не должен стать разметкой ── */
+  roomsState = roomsState.concat([{
+    number: 9, mode: 'Duel', modeName: '<img src=x onerror=alert(1)>',
+    level: 'Yard', name: '<script>alert(2)</script>', owner: '<b>злой</b>',
+    ownerId: 999, state: 'waiting', joinCommand: '/join duel #9',
+    scoreCt: 0, scoreTr: 0, isMine: false,
+  }]);
+  await P.loadRooms();
+  check('XSS из названия комнаты не стал тегом',
+    $('rooms-list').querySelectorAll('script').length === 0 &&
+    $('rooms-list').querySelectorAll('img').length === 0);
+  roomsState = roomsState.slice(0, 2);
+  await P.loadRooms();
 
   /* ── фильтры ── */
   $('f-mode').value = 'Duel';
   $('f-mode').dispatchEvent(new window.Event('change'));
-  check('фильтр по режиму сужает список', $('rooms').children.length === 1,
-    'rows=' + $('rooms').children.length);
+  check('фильтр по режиму сужает список', $('rooms-list').children.length === 1,
+    'rows=' + $('rooms-list').children.length);
 
   $('f-mode').value = '';
   $('f-mode').dispatchEvent(new window.Event('change'));
-  check('сброс фильтра возвращает всё', $('rooms').children.length === 2);
+  check('сброс режима возвращает всё', $('rooms-list').children.length === 2);
 
   $('f-map').value = 'Yard';
   $('f-map').dispatchEvent(new window.Event('change'));
-  check('фильтр по карте работает', $('rooms').children.length === 1);
+  check('фильтр по карте работает', $('rooms-list').children.length === 1);
   $('f-map').value = '';
   $('f-map').dispatchEvent(new window.Event('change'));
 
-  /* ── статистика ── */
-  check('онлайн всего с сервера', $('s-total').textContent === '7', $('s-total').textContent);
-  check('в лобби с сервера', $('s-lobby').textContent === '2', $('s-lobby').textContent);
-  check('в матчах с сервера', $('s-match').textContent === '5', $('s-match').textContent);
-  check('комнат из сервера', $('s-rooms').textContent.indexOf('/ 64') >= 0, $('s-rooms').textContent);
-
-  /* ── предупреждение о порте ── */
-  check('порт слушается — баннера нет', $('s-warn').hidden === true);
-  statusState = Object.assign({}, statusState, { gameListening: false });
-  await P && window.eval('');
-  await new Promise(r => setTimeout(r, 2200));  // тик живого обновления
-  check('порт не слушается — баннер показан', $('s-warn').hidden === false,
-    'hidden=' + $('s-warn').hidden);
-  statusState = Object.assign({}, statusState, { gameListening: true });
+  /* ── «Войти» в комнату ── */
+  const joinBtn = $('rooms-list').children[1].querySelector('button');
+  window.__copied = null;
+  joinBtn.dispatchEvent(new window.Event('click'));
+  await new Promise(r => setTimeout(r, 30));
+  check('окно входа открылось', $('modal-join').classList.contains('is-open'));
+  check('команда из сервера в окне', $('join-cmd').value === '/join duel #2',
+    $('join-cmd').value);
+  check('команда скопирована автоматически', window.__copied === '/join duel #2',
+    String(window.__copied));
 
   /* ── создание комнаты ── */
-  P.switchTab('create');
-
-  /* Без авторизации запрос вообще не уходит (#51). */
-  posted = null;
-  $('room-name').value = 'новая';
-  P.createRoom();
-  await new Promise(r => setTimeout(r, 60));
-  check('без входа создание не уходит на сервер', posted === null, JSON.stringify(posted));
-  check('без входа сказано, что нужен код',
-    $('create-err').textContent.indexOf('код') >= 0, $('create-err').textContent);
-
-  /* Входим: сервер отвечает профилем. */
-  meState = { id: 333, nick: 'новичок' };
-  await P.loadMe();
-  check('после входа профиль показан', $('profile').hidden === false);
-  check('профиль: «Привет, <ник>»', $('profile-name').textContent === 'Привет, новичок',
-    $('profile-name').textContent);
-  check('профиль: ID под ником', $('profile-id').textContent === 'ID 333', $('profile-id').textContent);
-  check('после входа форма кода скрыта', $('auth-form').hidden === true);
-
-  $('mode').selectedIndex = 0;
-  $('mode').dispatchEvent(new window.Event('change'));
-  $('room-name').value = 'новая';
-  P.createRoom();
+  $('c-name').value = 'новая';
+  $('create-form').dispatchEvent(new window.Event('submit'));
   await new Promise(r => setTimeout(r, 120));
-
-  check('POST ушёл с режимом и картой, владельца в теле нет',
-    posted && posted.mode === 'Ranked2v2' && posted.level === 'Sandstone 2x2' &&
-    posted.ownerId === undefined && posted.owner === undefined,
+  check('создание ушло одним POST', posted !== null && posted.mode === 'Ranked2v2',
     JSON.stringify(posted));
-  check('команда /join показана', $('result-cmd').textContent === '/join 2v2 #3',
-    $('result-cmd').textContent);
-  check('результат виден', $('result').hidden === false);
-  check('комната добавлена в список', P.rooms.length === 3, 'rooms=' + P.rooms.length);
-  check('поле имени очищено', $('room-name').value === '');
+  check('название ушло как есть', posted && posted.name === 'новая');
 
-  /* ── ошибки сервера ──
-     Список комнат чистим: со своей комнатой страница остановит запрос ещё до сервера
-     («у тебя уже есть комната»), и ответы сервера проверить не удастся. */
-  P.setRooms([]);
+  /* ── /play по адресу ── */
+  check('routeForPath /play', P.routeForPath('/play') === 'play');
+  check('routeForPath /admin', P.routeForPath('/admin') === 'admin');
+  check('routeForPath /', P.routeForPath('/') === 'home');
 
-  postResponse = { status: 409, body: { code: 'one_room_per_player', message: 'x' } };
-  P.createRoom();
-  await new Promise(r => setTimeout(r, 120));
-  check('409 показан понятным текстом',
-    $('create-err').textContent.indexOf('уже есть комната') >= 0, $('create-err').textContent);
-  check('после ошибки новых комнат не появилось', P.rooms.length === 0);
+  /* ── админка: без ключа не показывает данные ── */
+  adminOn = false;
+  window.history.pushState({}, '', '/admin');
+  await P.navigate();
+  await new Promise(r => setTimeout(r, 80));
+  check('/admin открывает экран админки', $('view-admin').hidden === false);
+  check('без ключа просится код', $('modal-admin').hidden === false ||
+    $('modal-admin').classList.contains('is-open'));
 
-  postResponse = { status: 409, body: { code: 'player_offline', message: 'x' } };
-  P.createRoom();
-  await new Promise(r => setTimeout(r, 120));
-  check('«не в сети» объяснён по-русски',
-    $('create-err').textContent.indexOf('не в сети') >= 0, $('create-err').textContent);
+  /* ── админка: неверный код ── */
+  const authLog = [];
+  const realFetch = window.fetch;
+  window.fetch = (u, o) => { authLog.push((o && o.method || 'GET') + ' ' + u); return realFetch(u, o); };
 
-  postResponse = { status: 401, body: { code: 'no_auth', message: 'x' } };
-  P.createRoom();
-  await new Promise(r => setTimeout(r, 120));
-  check('401 откатывает страницу к форме входа', $('auth-form').hidden === false);
-  check('401 объяснён по-русски',
-    $('create-err').textContent.indexOf('код') >= 0, $('create-err').textContent);
+  adminAuthResponse = { body: { code: 'bad_admin_code', message: 'код не подошёл' }, status: 403 };
+  $('admin-code').value = 'wrong';
+  $('admin-auth-form').dispatchEvent(new window.Event('submit'));
+  await new Promise(r => setTimeout(r, 80));
+  check('неверный код показан текстом', text('admin-auth-note').indexOf('не подошёл') >= 0,
+    text('admin-auth-note'));
+  adminAuthResponse = null;
 
-  /* 401 сбросил авторизацию на странице — входим снова, иначе следующие
-     проверки упрутся в «сначала введи код» ещё до запроса. */
-  await P.loadMe();
+  /* ── админка: верный код ── */
+  $('admin-code').value = 'ABCDEFGHJKLMNPQRSTUVWXYZ';
+  $('admin-auth-form').dispatchEvent(new window.Event('submit'));
+  await new Promise(r => setTimeout(r, 150));
+  check('верный код открывает админку', $('modal-admin').classList.contains('is-open') === false);
+  check('состояние админа получено', P.state.admin && P.state.admin.admin === true);
 
-  postResponse = { status: 429, body: { code: 'rate' } };
-  P.createRoom();
-  await new Promise(r => setTimeout(r, 120));
-  check('429 объяснён', $('create-err').textContent.indexOf('слишком часто') >= 0,
-    $('create-err').textContent);
+  /* баны: поиск цели */
+  $('ban-id').value = '67776161';
+  $('ban-find').dispatchEvent(new window.Event('click'));
+  await new Promise(r => setTimeout(r, 80));
+  check('цель бана найдена: ник виден', text('ban-preview').indexOf('Ktulxy') >= 0,
+    text('ban-preview'));
+  check('кнопка «Забанить» доступна после поиска', $('ban-submit').disabled === false);
 
-  postResponse = null;
+  /* подтверждение: три секунды */
+  $('ban-reason').value = 'читы';
+  $('ban-submit').dispatchEvent(new window.Event('click'));
+  await new Promise(r => setTimeout(r, 30));
+  check('спросили «точно баним?»', text('ban-confirm').indexOf('Точно баним') >= 0,
+    text('ban-confirm'));
+  const yesBtn = $('ban-confirm').querySelector('.btn--danger');
+  check('«да» заблокировано сразу', !!yesBtn && yesBtn.disabled === true);
+  check('видно, кто забанил, а не «сервер»', text('ban-confirm').indexOf('новичок') >= 0);
 
-  /* ── бан: авторизация слетает ── */
-  meState = { id: 333, nick: 'новичок' };
-  await P.loadMe();
-  meState = null;
-  authResponse = { status: 403, body: { code: 'banned', message: 'аккаунт забанен' } };
-  $('auth-code').value = '123456';
-  P.login();
-  await new Promise(r => setTimeout(r, 120));
-  check('бан при входе показан', $('auth-err').textContent === 'аккаунт забанен',
-    $('auth-err').textContent);
-  check('после бана профиль скрыт', $('profile').hidden === true);
-  authResponse = null;
+  /* ждать три секунды в тесте нельзя — проверяем, что таймер вообще заведён */
+  check('на кнопке идёт обратный отсчёт', /\(\d\)/.test(yesBtn.textContent), yesBtn.textContent);
 
-  /* ── вход по коду ── */
-  $('auth-code').value = '123456';
-  P.login();
-  await new Promise(r => setTimeout(r, 120));
-  check('вход по коду показал профиль', $('profile').hidden === false);
-  check('вход по коду: ник из лобби', $('profile-name').textContent === 'Привет, новичок',
-    $('profile-name').textContent);
+  /* баним напрямую через функцию страницы (как будто отсчёт прошёл) */
+  await P.submitBan(67776161, '3d', 'читы');
+  await new Promise(r => setTimeout(r, 80));
+  check('бан ушёл на сервер', banPost && banPost.id === 67776161 && banPost.duration === '3d',
+    JSON.stringify(banPost));
+  check('причина ушла на сервер', banPost && banPost.reason === 'читы');
 
-  /* ── «Моя комната» ── */
-  P.setRooms([
-    { n: 1, name: 'чужая', mode: 'Duel', map: 'Yard', players: 1, state: 'waiting',
-      owner: 'x', ownerId: 111, isMine: false },
-    { n: 2, name: 'моя', mode: 'Duel', map: 'Yard', players: 1, state: 'waiting',
-      owner: 'новичок', ownerId: 333, isMine: true },
-  ]);
-  P.switchTab('list');
-  const rows = Array.from($('rooms').children);
-  check('своя комната поднята наверх', rows[0].textContent.indexOf('#2') >= 0,
-    rows[0].textContent);
-  check('своя комната подписана «Моя комната»',
-    rows[0].textContent.indexOf('Моя комната') >= 0);
-  check('у чужой комнаты такой подписи нет',
-    rows[1].textContent.indexOf('Моя комната') < 0);
-  check('у чужой комнаты нет кнопки завершения',
-    rows[1].querySelector('.md-end-btn') === null);
-  check('у своей комнаты есть «Завершить игру»',
-    !!rows[0].querySelector('.md-end-btn'));
+  /* список банов */
+  P.selectAdminTab('bans');
+  await new Promise(r => setTimeout(r, 100));
+  check('баны загружены', text('bans-list').indexOf('Ktulxy') >= 0, text('bans-list'));
+  check('срок бана по-человечески', /д|ч|м/.test(text('bans-list')));
 
-  /* ── завершение своей катки ── */
-  window.confirm = () => true;
-  ended = null;
-  rows[0].querySelector('.md-end-btn').dispatchEvent(new window.Event('click'));
-  await new Promise(r => setTimeout(r, 120));
-  check('завершение уходит на /api/rooms/{n}/end',
-    ended && ended.indexOf('api/rooms/2/end') >= 0, String(ended));
+  /* разбан */
+  const unbanBtn = $('bans-list').querySelector('button');
+  unbanBtn.dispatchEvent(new window.Event('click'));
+  await new Promise(r => setTimeout(r, 100));
+  check('разбан ушёл с id', unbanPost && unbanPost.id === 67776161, JSON.stringify(unbanPost));
 
-  /* ── чужой отказ по завершению объяснён ── */
-  endResponse = { status: 403, body: { code: 'not_owner', message: 'это не твоя комната' } };
-  P.setRooms([
-    { n: 4, name: 'моя', mode: 'Duel', map: 'Yard', players: 1, state: 'waiting',
-      owner: 'новичок', ownerId: 333, isMine: true },
-  ]);
-  P.switchTab('list');
-  $('rooms').querySelector('.md-end-btn').dispatchEvent(new window.Event('click'));
-  await new Promise(r => setTimeout(r, 120));
-  check('отказ «не твоя комната» показан',
-    $('create-err').textContent.indexOf('не твоя') >= 0, $('create-err').textContent);
-  endResponse = null;
+  /* публичный id */
+  P.selectAdminTab('id');
+  $('id-value').value = 'vlal';
+  $('id-save').dispatchEvent(new window.Event('click'));
+  await new Promise(r => setTimeout(r, 100));
+  check('публичный id сохранён', publicIdPost && publicIdPost.value === 'vlal',
+    JSON.stringify(publicIdPost));
 
-  /* ── XSS: имя комнаты экранируется ── */
-  P.setRooms([{ n: 9, name: '<img src=x onerror=alert(1)>', mode: 'Duel',
-                map: 'Yard', players: 0, state: 'waiting', owner: 'x' }]);
-  P.switchTab('list');
-  check('имя комнаты экранировано',
-    $('rooms').querySelector('img') === null && $('rooms').textContent.indexOf('<img') >= 0);
+  $('id-clear').dispatchEvent(new window.Event('click'));
+  await new Promise(r => setTimeout(r, 100));
+  check('пустое значение снимает подмену', publicIdPost && publicIdPost.value === '');
 
-  /* ── мёртвая комната не приглашает ── */
-  P.setRooms([{ n: 5, name: '', mode: 'Duel', map: 'Yard', players: 0,
-                state: 'finished', owner: 'x' }]);
-  P.switchTab('list');
-  const deadBtn = $('rooms').querySelector('button');
-  check('закрытая комната: кнопка неактивна', deadBtn && deadBtn.disabled === true);
-  check('закрытая комната подписана', $('rooms').textContent.indexOf('закрыта') >= 0);
+  /* ── выход гасит и админку ── */
+  await P.api('POST', 'api/logout', {});
+  await P.api('POST', 'api/admin/logout', {});
+  check('после выхода админ-ключ снят', adminOn === false);
 
-  /* ── выбор размера команды ── */
-  // Союзники: размер выбирается, по умолчанию — наибольший (2 на 2).
-  P.setMode(MODES.modes);
-  $('mode').value = 'Ranked2v2';
-  $('mode').dispatchEvent(new window.Event('change'));
+  /* ── подписи на кнопках: без undefined/NaN ── */
+  check('на странице нет undefined', html.indexOf('undefined') < 0);
+  check('нет английского «demo»', !/demo/i.test(html));
 
-  check('союзники: выбор размера виден', $('team-section').hidden === false);
-  check('союзники: два варианта (1 и 2)',
-    $('teams').children.length === 2);
-  check('союзники: подписи «1 на 1» и «2 на 2»',
-    $('teams').textContent.indexOf('1 на 1') >= 0 &&
-    $('teams').textContent.indexOf('2 на 2') >= 0);
-
-  const chosen = Array.from($('teams').children)
-    .filter(b => b.getAttribute('aria-checked') === 'true');
-  check('союзники: выбран ровно один вариант', chosen.length === 1);
-  check('союзники: по умолчанию 2 на 2',
-    chosen[0] && chosen[0].textContent === '2 на 2');
-  check('союзники: подпись про 4 человека',
-    $('team-note').textContent.indexOf('4') >= 0);
-
-  // Переключение на 1 на 1 — выбор запоминается и уходит на сервер.
-  const oneOnOne = Array.from($('teams').children)
-    .find(b => b.textContent === '1 на 1');
-  oneOnOne.dispatchEvent(new window.Event('click'));
-  check('1 на 1: стало выбрано',
-    oneOnOne.getAttribute('aria-checked') === 'true' &&
-    $('teams').querySelectorAll('[aria-checked="true"]').length === 1);
-  check('1 на 1: подпись про 2 человека',
-    $('team-note').textContent.indexOf('2') >= 0);
-
-  // Режим, где размер не выбирается: секция обязана исчезнуть, а не показать пустоту.
-  $('mode').value = 'DeathMatch';
-  $('mode').dispatchEvent(new window.Event('change'));
-  check('tdm: выбор размера скрыт', $('team-section').hidden === true);
-
-  // Возврат на союзников — прежний выбор на месте, а не сброшен на дефолт.
-  $('mode').value = 'Ranked2v2';
-  $('mode').dispatchEvent(new window.Event('change'));
-  const again = Array.from($('teams').children)
-    .find(b => b.getAttribute('aria-checked') === 'true');
-  check('возврат на союзников: выбор помнится',
-    again && again.textContent === '1 на 1');
-
-  // Создание комнаты отправляет perTeam (и только авторизованным).
-  meState = { id: 333, nick: 'новичок' };
-  await P.loadMe();
-  P.setRooms([]);
-  posted = null;
-  $('create-btn').dispatchEvent(new window.Event('click'));
-  return new Promise(resolve => setTimeout(resolve, 30)).then(() => {
-    check('perTeam уходит на сервер', posted && posted.perTeam === 1);
-
-    /* ── потолок комнаты берётся из самой комнаты ── */
-    P.setRooms([{ n: 7, name: 'малая', mode: 'Ranked2v2', map: 'Sandstone 2x2',
-                  players: 2, state: 'waiting', owner: 'x', ownerId: 999,
-                  scoreCt: 4, scoreTr: 2, cmd: '/join 2v2 #7',
-                  perTeam: 1, maxPlayers: 2, teamLabel: '1 на 1' }]);
-    P.switchTab('list');
-    const row = $('rooms').textContent;
-    check('вместо счётчика игроков показан счёт 4 * 2', row.indexOf('4 * 2') >= 0);
-    check('число мест 2/2 не публикуется', row.indexOf('2/2') < 0, row);
-    check('заполненность всё ещё считается по игрокам',
-      row.indexOf('заполнена') >= 0, row);
-    check('подпись размера в списке', row.indexOf('1 на 1') >= 0);
-
-    report();
-  });
+  report();
 
   function report() {
-    console.log('\n──────────────────────────────────────────');
-    if (fail === 0) console.log('ВСЁ ЗЕЛЁНО: ' + pass + ' проверок');
-    else {
-      console.log('ПРОВАЛОВ: ' + fail + ' из ' + (pass + fail));
-      failures.forEach(f => console.log('  ✗ ' + f));
+    console.log('\n' + '─'.repeat(50));
+    if (fail === 0) {
+      console.log('ВСЁ ЗЕЛЕНО: ' + pass + ' проверок');
+    } else {
+      console.log('ПРОВАЛЕНО: ' + fail + ' из ' + (pass + fail));
+      for (const f of failures) console.log('  ✗ ' + f);
+      process.exitCode = 1;
     }
-    console.log('──────────────────────────────────────────');
-    window.close();
+    console.log('─'.repeat(50) + '\n');
+
+    // Страница держит setInterval автообновления, поэтому без явного выхода
+    // процесс не завершится никогда.
     process.exit(fail === 0 ? 0 : 1);
   }
 })();

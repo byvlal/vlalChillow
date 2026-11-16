@@ -41,6 +41,34 @@ public sealed partial class GameNetHost
     internal AdminAuth Auth => _adminAuth;
 
     /// <summary>
+    /// Код этого запуска принят? Для админки сайта: сравнение то же, что у игры
+    /// (<c>AdminAuth.Matches</c> — постоянное время, без учёта регистра), поэтому
+    /// человек вводит один и тот же код и в чат лобби, и на сайте.
+    /// </summary>
+    public bool AdminCodeMatches(string? code) => _adminAuth.Matches(code);
+
+    /// <summary>
+    /// Авторизовать адрес, предъявивший код с сайта: тогда веб-админ не упирается в
+    /// теневой лобби, а играет как обычный админ. Возвращает <c>true</c>, если адрес
+    /// был новым.
+    /// </summary>
+    public bool AuthorizeAdminAddress(System.Net.IPAddress? address)
+    {
+        if (address is null)
+            return false;
+
+        var added = _adminAuth.Authorize(address);
+        if (added)
+        {
+            Console.WriteLine(
+                $"[auth] адрес {address} авторизован из админки сайта " +
+                "(код тот же, что вводится в чат лобби)");
+        }
+
+        return added;
+    }
+
+    /// <summary>
     /// Id в <c>admin.ids</c> И адрес уже авторизован — только тогда есть права.
     /// </summary>
     internal bool IsAdminAuthorized(int id, IPAddress? ip) =>

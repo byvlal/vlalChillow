@@ -86,8 +86,9 @@ public sealed class WebRoomOwnerTests
         Assert.Contains("\"isMine\":true", Body(router.Route(Get("/api/rooms", 1000))));
         Assert.Contains("\"isMine\":false", Body(router.Route(Get("/api/rooms", 1001))));
 
-        // Анонимный зритель не должен узнать, чья это комната.
-        Assert.Contains("\"isMine\":false", Body(router.Route(Get("/api/rooms"))));
+        // Анонимный зритель теперь вообще не получает список: без входа сервер
+        // не отдаёт ни комнат, ни онлайна (владелец просил именно так).
+        Assert.Equal(401, router.Route(Get("/api/rooms")).Status);
     }
 
     [Fact]

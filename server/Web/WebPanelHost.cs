@@ -34,6 +34,29 @@ public sealed class WebPanelHost : IDisposable
     /// <summary>Имя ресурса со страницей.</summary>
     public const string IndexResourceName = "StandChillow.LanServer.Web.wwwroot.index.html";
 
+    /// <summary>
+    /// Префикс встроенных ресурсов панели: шрифт и видео-фон лежат так же, как
+    /// <c>wwwroot/assets/…</c>, и отдаются по тем же путям. Рядом с бинарником файлов нет.
+    /// </summary>
+    private const string AssetsPrefix = "StandChillow.LanServer.Web.wwwroot.assets.";
+
+    /// <summary>
+    /// Что можно попросить из <c>assets/</c>: только эти файлы. Список явный, а не
+    /// «любой ресурс с таким префиксом» — иначе новое имя в сборке стало бы новым
+    /// маршрутом без чьего-либо решения.
+    /// </summary>
+    private static readonly Dictionary<string, (string Resource, string ContentType)> AssetFiles =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            ["/assets/fonts/oswald-cyr-lat.woff2"] = (
+                AssetsPrefix + "fonts.oswald-cyr-lat.woff2", "font/woff2"),
+            ["/assets/fonts/OFL.txt"] = (AssetsPrefix + "fonts.OFL.txt", "text/plain; charset=utf-8"),
+            ["/assets/media/hero.mp4"] = (AssetsPrefix + "media.hero.mp4", "video/mp4"),
+            ["/assets/media/hero.webm"] = (AssetsPrefix + "media.hero.webm", "video/webm"),
+            ["/assets/media/hero.jpg"] = (AssetsPrefix + "media.hero.jpg", "image/jpeg"),
+            ["/assets/media/hero.png"] = (AssetsPrefix + "media.hero.png", "image/png"),
+        };
+
     private readonly WebConfig _config;
     private readonly ServerConfig _server;
     private readonly RoomRegistry _rooms;
@@ -43,6 +66,14 @@ public sealed class WebPanelHost : IDisposable
     /// Сессии сайта. Одни на запуск сервера: перезапуск гасит все сессии и коды (#51).
     /// </summary>
     private readonly SiteSessions _sessions = new();
+
+    /// <summary>
+    /// Админские ключи сайта: вторая створка прав, отдельно от сессии.
+    /// </summary>
+    private readonly SiteAdminSessions _adminSessions = new();
+
+    /// <summary>Подмены публичного id: что человек видит вместо числового id.</summary>
+    private readonly PublicIdOverrides _publicIds = new();
     private readonly SiteAddressResolver _addresses;
     private readonly WebPanelServer _server_;
     private readonly WebPanelRouter _router;
@@ -102,6 +133,25 @@ public sealed class WebPanelHost : IDisposable
 
                 // Аватар — те же байты, что клиент прислал в лобби.
                 AvatarById = AvatarOfPlayer,
+
+                // Оформление страницы: шрифт и видео-фон вшиты в сборку, отдаются
+                // с поддержкой Range (иначе видео не играет на части телефонов).
+                Asset = ServeAsset,
+
+                // Админка (#58): отдельный ключ по коду текущего запуска.
+                AdminSessions = _adminSessions,
+                IsAdminId = IsAdminId,
+                VerifyAdminCode = VerifyAdminCode,
+                AuthorizeAddress = ip => _host?.AuthorizeAdminAddress(ip) ?? false,
+                PublicIds = _publicIds,
+                PublicIdOf = id => _publicIds.DisplayOf(id),
+                LookupPlayer = id => _host?.LookupPlayerById(id),
+                ActiveBans = () => _host?.ActiveBans() ?? Array.Empty<BanRecord>(),
+                BanPlayer = BanByWeb,
+                UnbanPlayer = UnbanByWeb,
+                LobbyAddressOf = id => _host?.LobbyAddressOf(id),
+                AdminIdList = () => _server.Admin.Ids.ToList(),
+                Log = msg => Console.WriteLine(msg),
 
                 // Префикс подпути: со слэшем в proxy_pass прокси его срежет, но
                 // конфиг правит владелец — роутер обязан понимать оба варианта.
@@ -211,6 +261,10 @@ public sealed class WebPanelHost : IDisposable
         _host = host;
         host.SiteAddress = _addresses;
         host.Match.Rooms = _rooms;
+
+        // Подменённый публичный id (админка сайта) виден и в игре: клиент рисует uid,
+        // который пишет хост, так что «мой новый id» появляется в списке игроков сразу.
+        host.Match.PublicIdOverrides = _publicIds;
 
         // «Комнат не больше, чем игроков онлайн»: квота реестра спрашивает у хоста,
         // сколько людей сейчас в лобби и в катке. Пока хост не подключён, считаем 0.
@@ -493,6 +547,61 @@ public sealed class WebPanelHost : IDisposable
     /// </summary>
     internal static string CookiePathFor(string? basePath) =>
         string.IsNullOrWhiteSpace(basePath) ? "/" : "/" + basePath.Trim().Trim('/');
+
+    // ── админка ──────────────────────────────────────────────────────────────
+
+    /// <summary>Подмены публичного id — их читает и матч-хост, когда рисует uid.</summary>
+    public PublicIdOverrides PublicIds => _publicIds;
+
+    /// <summary>id в <c>admin.ids</c>: тот же список, что у команд в чате.</summary>
+    private bool IsAdminId(int playerId) => _server.IsAdmin(playerId);
+
+    /// <summary>
+    /// Код текущего запуска принят? Сравнение — то же, что у игры
+    /// (<c>AdminAuth.Matches</c>: постоянное время, без учёта регистра).
+    /// </summary>
+    /// <remarks>
+    /// Пока игровой хост не подключён, код сравнивать не с чем: отвечаем «не принят»,
+    /// а не «принят». Иначе админ-сессия открылась бы без второй створки.
+    /// </remarks>
+    private bool VerifyAdminCode(string code) => _host?.AdminCodeMatches(code) == true;
+
+    /// <summary>Бан с сайта: те же правила и тот же реестр, что у <c>/ban</c>.</summary>
+    private BanRecord? BanByWeb(
+        int playerId, string? duration, string? reason, string? bannedBy, out string? error)
+    {
+        var host = _host;
+        if (host is null)
+        {
+            error = "игровой сервер ещё не поднялся";
+            return null;
+        }
+
+        return host.BanPlayerById(playerId, duration, reason, bannedBy, out error);
+    }
+
+    /// <summary>Разбан с сайта: тот же путь, что у <c>/unban &lt;id&gt;</c>.</summary>
+    private bool UnbanByWeb(int playerId, out int removed, out string? error)
+    {
+        var host = _host;
+        if (host is null)
+        {
+            removed = 0;
+            error = "игровой сервер ещё не поднялся";
+            return false;
+        }
+
+        return host.UnbanPlayerById(playerId, out removed, out error);
+    }
+
+    /// <summary>Встроенный файл оформления: шрифт, видео-фон.</summary>
+    private WebResponse ServeAsset(string path, string range)
+    {
+        var assets = _assets ??= new WebAssets(Assembly.GetExecutingAssembly(), AssetFiles);
+        return assets.Serve(path, range);
+    }
+
+    private WebAssets? _assets;
 
     /// <summary>Подпись комнаты для лога и страницы: имя или «Комната #N».</summary>
     public static string BuildRoomLabel(RoomDescriptor room) =>
