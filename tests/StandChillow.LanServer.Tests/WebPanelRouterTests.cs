@@ -394,9 +394,11 @@ public sealed class WebPanelRouterTests
     public void WrongMethodOnRootIs405()
     {
         var router = NewRouter(out _);
+        // Маркер «это со страницы панели» обязателен для любого не-GET: иначе
+        // запрос отсекается раньше и до «метод не тот» дело не доходит.
         var response = router.Route(new WebRequestContext(
             "POST", "/", "", Array.Empty<byte>(), null,
-            new Dictionary<string, string>()));
+            new Dictionary<string, string> { ["X-Requested-With"] = "vlalchillow" }));
 
         Assert.Equal(405, response.Status);
     }

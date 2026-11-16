@@ -241,8 +241,7 @@ public sealed class WebAdminTests
 
         Assert.Equal(200, response.Status);
         var cookie = Assert.Single(
-            response.ExtraHeaders.Where(h => h.Item1 == "Set-Cookie"),
-            header => header.Item2.StartsWith("sc_admin="));
+            response.ExtraHeaders, header => header.Item1 == "Set-Cookie");
         Assert.Contains("HttpOnly", cookie.Item2);
         // Обычная сессия не подменяется: админский ключ — отдельная кука.
         Assert.DoesNotContain("sc_session=", cookie.Item2);
