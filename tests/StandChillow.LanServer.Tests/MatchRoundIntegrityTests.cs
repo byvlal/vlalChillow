@@ -75,6 +75,8 @@ public sealed class MatchRoundIntegrityTests
         var props = Props((2, MatchTeam.Tr, 1), (3, MatchTeam.Ct, null));
         var flow = new MatchFlowState { Phase = MatchFlowPhase.PurchasePhase };
         MatchFlowRules.FreezeRoundRoster(flow, props);
+        // death is a cumulative match counter (issue #56); per-round alive state is in DeadActors.
+        flow.DeadActors.Add(2);
 
         var resolved = MatchFlowRules.TryResolveWipe(
             flow, props, bombPlanted: false, out var winner, out var reason);
