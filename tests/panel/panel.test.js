@@ -181,7 +181,7 @@ function fakeFetch(url, opts) {
   check('видео — только на самом верху (в hero, не фон body)',
     css.indexOf('hero__video') < 0);
   check('шрифт вшит локально, без внешнего CDN',
-    /@font-face/.test(css) && /oswald-cyr-lat\.woff2/.test(css) && !/fonts\.googleapis/.test(html + css));
+    /@font-face/.test(css) && /bebasbolt\.woff2/.test(css) && !/fonts\.googleapis/.test(html + css));
   check('стили в стиле игры: Bebas/Eurostile в комментарии',
     /Bebas Neue/.test(css) && /Eurostile/.test(css));
   check('есть боковая панель профиля', html.indexOf('class="sidebar"') >= 0);

@@ -48,9 +48,32 @@ public sealed class WebPanelHost : IDisposable
     private static readonly Dictionary<string, (string Resource, string ContentType)> AssetFiles =
         new(StringComparer.OrdinalIgnoreCase)
         {
-            ["/assets/fonts/oswald-cyr-lat.woff2"] = (
-                AssetsPrefix + "fonts.oswald-cyr-lat.woff2", "font/woff2"),
-            ["/assets/fonts/OFL.txt"] = (AssetsPrefix + "fonts.OFL.txt", "text/plain; charset=utf-8"),
+            // Шрифты: Bebasbolt (заголовки; CC BY 4.0 — текст лицензии рядом) и
+            // Inter/Jost. Каждое начертание — отдельный файл, поэтому список длинный:
+            // маршрут появляется только здесь, а не от имени файла в сборке.
+            ["/assets/fonts/bebasbolt.woff2"] = (AssetsPrefix + "fonts.bebasbolt.woff2", "font/woff2"),
+            ["/assets/fonts/bebasbolt-LICENSE.txt"] =
+                (AssetsPrefix + "fonts.bebasbolt-LICENSE.txt", "text/plain; charset=utf-8"),
+            ["/assets/fonts/jost-cyrillic-300-normal.woff2"] =
+                (AssetsPrefix + "fonts.jost-cyrillic-300-normal.woff2", "font/woff2"),
+            ["/assets/fonts/jost-latin-300-normal.woff2"] =
+                (AssetsPrefix + "fonts.jost-latin-300-normal.woff2", "font/woff2"),
+            ["/assets/fonts/jost-cyrillic-400-normal.woff2"] =
+                (AssetsPrefix + "fonts.jost-cyrillic-400-normal.woff2", "font/woff2"),
+            ["/assets/fonts/jost-latin-400-normal.woff2"] =
+                (AssetsPrefix + "fonts.jost-latin-400-normal.woff2", "font/woff2"),
+            ["/assets/fonts/jost-cyrillic-500-normal.woff2"] =
+                (AssetsPrefix + "fonts.jost-cyrillic-500-normal.woff2", "font/woff2"),
+            ["/assets/fonts/jost-latin-500-normal.woff2"] =
+                (AssetsPrefix + "fonts.jost-latin-500-normal.woff2", "font/woff2"),
+            ["/assets/fonts/inter-cyrillic-400-normal.woff2"] =
+                (AssetsPrefix + "fonts.inter-cyrillic-400-normal.woff2", "font/woff2"),
+            ["/assets/fonts/inter-latin-400-normal.woff2"] =
+                (AssetsPrefix + "fonts.inter-latin-400-normal.woff2", "font/woff2"),
+            ["/assets/fonts/inter-cyrillic-600-normal.woff2"] =
+                (AssetsPrefix + "fonts.inter-cyrillic-600-normal.woff2", "font/woff2"),
+            ["/assets/fonts/inter-latin-600-normal.woff2"] =
+                (AssetsPrefix + "fonts.inter-latin-600-normal.woff2", "font/woff2"),
             ["/assets/media/hero.mp4"] = (AssetsPrefix + "media.hero.mp4", "video/mp4"),
             ["/assets/media/hero.webm"] = (AssetsPrefix + "media.hero.webm", "video/webm"),
             ["/assets/media/hero.jpg"] = (AssetsPrefix + "media.hero.jpg", "image/jpeg"),

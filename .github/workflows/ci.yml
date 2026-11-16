@@ -15,6 +15,46 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # ── снимки страницы ───────────────────────────────────────────────────────
+  # В песочнице агента браузера нет (нет libnss, apt закрыт), поэтому «как это
+  # выглядит» проверяется здесь: страница открывается в настоящем Chromium,
+  # PNG кладутся в артефакт, а сломанные шрифты/ассеты валят job.
+  shots:
+    name: panel shots
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install playwright
+        run: |
+          npm install --no-audit --no-fund playwright
+          npx playwright install --with-deps chromium
+
+      - name: Start the stand-in server
+        run: |
+          node preview/preview-server.js &
+          for i in $(seq 1 60); do
+            curl -fsS http://127.0.0.1:8080/ > /dev/null && exit 0
+            sleep 0.5
+          done
+          echo "server did not start" >&2
+          exit 1
+
+      - name: Take shots
+        run: node preview/shots.mjs http://127.0.0.1:8080 preview/shots
+
+      - name: Upload shots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: panel-shots
+          path: preview/shots
+          if-no-files-found: warn
+
   build:
     name: build (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
