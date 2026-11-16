@@ -148,6 +148,11 @@
 
 *, *::before, *::after { box-sizing: border-box; }
 
+/* КРИТИЧНО: любой наш display перебивает браузерное правило [hidden] { display:
+   none }. Из-за этого экран входа с display:grid висел поверх админки, хотя в
+   разметке стоял hidden. Правило ниже возвращает hidden его смысл. */
+[hidden] { display: none !important; }
+
 html, body { margin: 0; padding: 0; min-height: 100%; }
 
 body {

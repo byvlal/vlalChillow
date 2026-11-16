@@ -184,6 +184,10 @@ function fakeFetch(url, opts) {
     /@font-face/.test(css) && /bebasbolt\.woff2/.test(css) && !/fonts\.googleapis/.test(html + css));
   check('стили в стиле игры: Bebas/Eurostile в комментарии',
     /Bebas Neue/.test(css) && /Eurostile/.test(css));
+  // [hidden] в браузере слабее любого нашего display: без явного правила
+  // экран входа висел поверх админки — это ловилось только глазами.
+  check('CSS уважает hidden (иначе скрытые экраны висят поверх)',
+    /\[hidden\]\s*\{[^}]*display:\s*none\s*!important/.test(css));
   check('есть боковая панель профиля', html.indexOf('class="sidebar"') >= 0);
   check('кнопки «Начать игру» и «Создать комнату»',
     html.indexOf('Начать игру') >= 0 && html.indexOf('Создать комнату') >= 0);
