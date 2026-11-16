@@ -30,6 +30,9 @@ public sealed partial class GameMatchHost
                 && c0v.Kind == LobbyVariantKind.String && c0v.String is not null
                     ? c0v.String
                     : _matchGameModeId;
+            // The room prop holds the wire id (duel → «RankedDuel»); the dashboard shows
+            // our catalog id, so the mode badge keeps reading «Duel».
+            modeId = MatchModeIds.ToCatalog(modeId);
             var map = room.ActorProps.TryGetValue((0, MatchRoomPropKeys.C1), out var c1v)
                 && c1v.Kind == LobbyVariantKind.String && c1v.String is not null
                     ? c1v.String

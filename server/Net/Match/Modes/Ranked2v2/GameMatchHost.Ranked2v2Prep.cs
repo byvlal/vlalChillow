@@ -116,13 +116,7 @@ public sealed partial class GameMatchHost
                 .Where(nr => nr != MatchHostActor.ActorNr)
                 .ToList();
             foreach (var nr in actors)
-                room.ActorProps[(nr, MatchRoomPropKeys.Death)] = LobbyVariant.FromInt(0);
-        }
-        foreach (var nr in actors)
-        {
-            var pkt = MatchCodec.BuildSetProperty(
-                NextServerTime(), nr, MatchRoomPropKeys.Death, LobbyVariant.FromInt(0));
-            BroadcastRoom(room, pkt, tag: "match_tx_SetProperty");
+                room.Flow.DeadActors.Remove(nr);
         }
     }
 

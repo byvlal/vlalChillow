@@ -74,6 +74,7 @@ public sealed class MatchRoundIntegrityTests
     {
         var props = Props((2, MatchTeam.Tr, 1), (3, MatchTeam.Ct, null));
         var flow = new MatchFlowState { Phase = MatchFlowPhase.PurchasePhase };
+        flow.DeadActors.Add(2);
         MatchFlowRules.FreezeRoundRoster(flow, props);
 
         var resolved = MatchFlowRules.TryResolveWipe(
@@ -110,6 +111,18 @@ public sealed class MatchRoundIntegrityTests
         MatchFlowRules.FreezeRoundRoster(flow, Props((2, MatchTeam.Tr, null), (3, MatchTeam.Ct, null)));
         Assert.True(MatchFlowRules.IsRoundParticipant(flow, actorNr: 2));
         Assert.False(MatchFlowRules.IsRoundParticipant(flow, actorNr: 9));
+    }
+
+    [Fact]
+    public void CumulativeDeathProp_DoesNotMakeRespawnedActorDead()
+    {
+        var flow = new MatchFlowState();
+        var props = Props((2, MatchTeam.Tr, 4));
+        flow.DeadActors.Add(2);
+
+        Assert.True(MatchFlowRules.IsActorDead(flow, props, 2));
+        flow.DeadActors.Remove(2);
+        Assert.False(MatchFlowRules.IsActorDead(flow, props, 2));
     }
 
     [Theory]

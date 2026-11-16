@@ -1,5 +1,6 @@
 using LiteNetLib;
 using StandChillow.LanServer.Bans;
+using StandChillow.LanServer.Net.Match;
 
 namespace StandChillow.LanServer.Net.Lobby;
 
@@ -151,7 +152,9 @@ public sealed class LobbySession
             return new List<(string, LobbyVariant)>
             {
                 (LobbyPropKeys.LobbyId, LobbyVariant.FromString(_lobbyId)),
-                (LobbyPropKeys.GameModeId, LobbyVariant.FromString(_gameModeId)),
+                // The client resolves the mode by its wire id (duel → «RankedDuel»),
+                // so the catalog id never goes out as-is.
+                (LobbyPropKeys.GameModeId, LobbyVariant.FromString(MatchModeIds.ToWire(_gameModeId))),
                 (LobbyPropKeys.SelectedLevels, LobbyVariant.FromStrings(_selectedLevels)),
             };
         }
@@ -164,7 +167,7 @@ public sealed class LobbySession
         {
             return new List<(string, LobbyVariant)>
             {
-                (LobbyPropKeys.GameModeId, LobbyVariant.FromString(_gameModeId)),
+                (LobbyPropKeys.GameModeId, LobbyVariant.FromString(MatchModeIds.ToWire(_gameModeId))),
                 (LobbyPropKeys.SelectedLevels, LobbyVariant.FromStrings(_selectedLevels)),
             };
         }

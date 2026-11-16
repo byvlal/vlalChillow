@@ -162,7 +162,6 @@ internal static class MatchReconnect
         if (!cumulativeDeathCounters && !roundFrozen)
         {
             room.Flow.DeadActors.Remove(actorNr);
-            room.ActorProps[(actorNr, MatchRoomPropKeys.Death)] = LobbyVariant.FromInt(0);
             clearedRoundDeath = true;
         }
         MatchFlowRules.RemoveFromRoundRoster(room.Flow, actorNr);

@@ -170,6 +170,24 @@ public sealed partial class GameMatchHost
         return key;
     }
 
+    /// <summary>
+    /// Actual value of a gap room prop — for the log. The old log printed the global lobby
+    /// selection instead, so a duel room looked like <c>C0=Ranked2v2</c> and the wrong mode
+    /// id on the wire went unnoticed (issue #56).
+    /// </summary>
+    private static string GapProp(MatchGapRoom? gap, string key)
+    {
+        if (gap is null)
+            return "-";
+        foreach (var (k, v) in gap.Value.RoomProps)
+        {
+            if (k != key)
+                continue;
+            return v.Kind == LobbyVariantKind.String ? v.String ?? "" : v.Kind.ToString();
+        }
+        return "-";
+    }
+
     private void HandleJoinRoom(NetPeer peer, LobbyReader body, byte[] raw)
     {
         if (Diag.LogVerbose)
@@ -375,9 +393,10 @@ public sealed partial class GameMatchHost
                 // Так две комнаты на одном 7777 не перетирают режим друг друга.
                 modeId = ReadRoomModeId(room) ?? _matchGameModeId;
                 levelId = ReadRoomLevelId(room) ?? _matchSelectedLevel;
-                // Keep actor=0 room props in sync for late-join snapshots.
-                room.ActorProps[(0, MatchRoomPropKeys.C0)] = LobbyVariant.FromString(modeId);
-                room.ActorProps[(0, MatchRoomPropKeys.C1)] = LobbyVariant.FromString(levelId);
+                // The client resolves the match by its wire id (duel → «RankedDuel»);
+                // an unknown id kills the 2.07 client right after this response.
+                MatchModeIds.ApplyRoomIdentity(room.ActorProps, modeId, levelId);
+                modeId = MatchModeIds.ToWire(modeId);
             }
 
             // Phone-host probe (20260722_003523_* / run-20260722_073504): thin Found ~148B —
@@ -417,7 +436,7 @@ public sealed partial class GameMatchHost
             DumpCapture("match_tx_JoinRoomResponse", resp);
         Console.WriteLine(
             $"[match-host] TX JoinRoomResponse result={MatchCodec.JoinRoomResultName(result)} " +
-            $"actor={(actor?.ToString() ?? "-")} gap={(gap is null ? "none" : $"props={gap.Value.RoomProps.Count} actors={gap.Value.Actors.Count} C2={room?.RoomC2} C0={_matchGameModeId} C1={_matchSelectedLevel}")} " +
+            $"actor={(actor?.ToString() ?? "-")} gap={(gap is null ? "none" : $"props={gap.Value.RoomProps.Count} actors={gap.Value.Actors.Count} C2={room?.RoomC2} C0={GapProp(gap, MatchRoomPropKeys.C0)} C1={GapProp(gap, MatchRoomPropKeys.C1)}")} " +
             $"len={resp.Length}");
 
         if (result == JoinRoomResult.Found && room is not null && actor is { } joinerNr)

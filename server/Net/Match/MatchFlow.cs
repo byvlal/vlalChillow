@@ -225,17 +225,7 @@ public static class MatchFlowRules
         IReadOnlyDictionary<(byte Actor, string Key), LobbyVariant> actorProps,
         byte actorNr)
     {
-        if (flow.DeadActors.Contains(actorNr))
-            return true;
-        if (!actorProps.TryGetValue((actorNr, MatchRoomPropKeys.Death), out var death))
-            return false;
-        return death.Kind switch
-        {
-            LobbyVariantKind.Int => death.Int != 0,
-            LobbyVariantKind.Byte => death.Byte != 0,
-            LobbyVariantKind.Bool => death.Bool,
-            _ => false,
-        };
+        return flow.DeadActors.Contains(actorNr);
     }
 
     /// <summary>

@@ -248,11 +248,9 @@ public sealed class MatchReconnectTests
     }
 
     [Fact]
-    public void Buy_reconnect_clears_round_death_and_stale_combat_bookkeeping()
+    public void Buy_reconnect_clears_round_state_but_preserves_death_counter()
     {
-        // Issue #40: reconnect during buy (roster not frozen) must not leave death=1 behind
-        // while DeadActors is cleared — that split-brain kept the player "dead" until the next
-        // C2=22. The round-local flag is reset, and old-session grace/attribution is dropped.
+        // Reconnect during buy clears round-local state, while the cumulative death counter stays.
         var room = NewRoom();
         room.Actors.Add((2, "влал", "LBHASH_old"));
         room.ActorProps[(2, MatchRoomPropKeys.Team)] = LobbyVariant.FromByte((byte)MatchTeam.Tr);
@@ -268,7 +266,7 @@ public sealed class MatchReconnectTests
 
         Assert.True(adoption.ClearedRoundDeath);
         Assert.DoesNotContain((byte)2, room.Flow.DeadActors);
-        Assert.Equal(0, room.ActorProps[(2, MatchRoomPropKeys.Death)].Int);
+        Assert.Equal(1, room.ActorProps[(2, MatchRoomPropKeys.Death)].Int);
         Assert.DoesNotContain((byte)2, room.Flow.PendingCombatDestroy.Keys);
         Assert.Empty(room.LastCombatDamage);
         Assert.Contains((short)777, newState.PendingWorldCleanupIds);
