@@ -393,7 +393,8 @@ public sealed partial class GameMatchHost
         ]);
 
     /// <summary>
-    /// WaitingPlayers C2=10 bag extras — gold: random preset loadout + null modifier.
+    /// WaitingPlayers C2=10 bag — gold carries only null modifier + C2 (no current_loadout;
+    /// loadout arrives on C2=22 freeze, not at lobby join — see captures/duel.zip).
     /// Called from world bootstrap for Duel rooms.
     /// </summary>
     private List<(string Key, LobbyVariant Value)> BuildDuelWaitingPlayersRoomProps(MatchRoom room)
@@ -414,7 +415,6 @@ public sealed partial class GameMatchHost
 
         return
         [
-            (MatchRoomPropKeys.CurrentLoadout, BuildDuelCurrentLoadoutVariant(loadout)),
             (MatchRoomPropKeys.CurrentRoundModifierId, LobbyVariant.Null()),
             (MatchRoomPropKeys.C2, LobbyVariant.FromByte(MatchC2States.WaitingPlayers)),
         ];

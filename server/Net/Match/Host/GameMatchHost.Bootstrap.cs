@@ -231,7 +231,8 @@ public sealed partial class GameMatchHost
         // 3) C2=FF0A — InitWaiting unlock (phone *_SetProperties_len14.bin).
         // Peer-local only: do NOT clobber room.RoomC2 if match-flow already advanced
         // (late / GIP join must keep live C2 for snapshots + other peers).
-        // Duel gold C2=10 bag also carries current_loadout + null modifier (len≈114).
+        // Duel gold C2=10 bag carries null modifier + C2 only (no current_loadout —
+        // loadout arrives on C2=22 freeze, per captures/duel.zip).
         if (duelBootstrap)
         {
             var duelWaitProps = BuildDuelWaitingPlayersRoomProps(room);
