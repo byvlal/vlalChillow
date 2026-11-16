@@ -68,6 +68,14 @@ internal sealed class MatchRoom
     public byte RoomC2 { get; set; }
     public MatchFlowState Flow { get; } = new();
 
+    /// <summary>
+    /// Issue #53: grenade throws observed but not yet detonated (host-authored
+    /// <c>GrenadeManager field=2</c> pending). Clients never send the explode Rpc — the
+    /// phone host authored it — so the dedicated host must schedule the detonation itself
+    /// when it relays a <c>field=1</c> throw. See <c>GameMatchHost.Grenades.cs</c>.
+    /// </summary>
+    public readonly List<PendingGrenade> PendingGrenades = new();
+
     // ── per-room state (несколько комнат на одном 7777) ─────────────────────────
 
     /// <summary>
@@ -120,6 +128,22 @@ internal sealed class MatchRoom
     /// </remarks>
     public int MaxPlayers { get; set; }
 }
+
+/// <summary>
+/// Issue #53 — a thrown grenade waiting for its host-authored explode
+/// (<c>GameMatchHost.Grenades.cs</c>). The detonation point and the frame's timeValue are
+/// resolved once at schedule time (the ballistics step is deterministic, and the tv must be
+/// pre-stamped on the thrower's clock), so the tick-path sweep never re-runs physics.
+/// </summary>
+internal readonly record struct PendingGrenade(
+    byte ItemId,
+    byte ThrowerActorNr,
+    byte GrenadeId,
+    DateTime DetonateAtUtc,
+    double DetonateTimeValue,
+    float ExplodeX,
+    float ExplodeY,
+    float ExplodeZ);
 
 /// <summary>
 /// Issue #28 — a non-pawn world object this host relayed during the round, stored as decoded

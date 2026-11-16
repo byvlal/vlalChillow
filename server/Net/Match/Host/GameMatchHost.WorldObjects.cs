@@ -441,6 +441,14 @@ public sealed partial class GameMatchHost
                         damagePayload: parsed.Payload);
                 }
             }
+            else if (parsed.ObjectId == MatchGrenadeWire.GrenadeManagerObjectId
+                     && parsed.Field == MatchGrenadeWire.ThrowField)
+            {
+                // Issue #53: the throw itself is relayed below unchanged (flight is already
+                // visible to everyone); the host additionally arms the detonation it must
+                // author itself — phone clients never send field=2, the phone host did.
+                ScheduleGrenadeExplode(st.Room, parsed, st.ActorNr);
+            }
 
             if (dropRelay)
                 return;

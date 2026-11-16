@@ -221,6 +221,10 @@ public sealed partial class GameMatchHost
         foreach (var room in rooms)
         {
             ProcessPendingCombatDestroys(room);
+            // Issue #53: grenade fuses are round-relevant like combat destroys — same tick,
+            // every mode (grenades exist in every mode, and the phone host authored these
+            // frames without any mode logic).
+            TickGrenadeFusesRoom(room);
             TickMatchFlowRoom(room);
         }
     }
