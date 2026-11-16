@@ -78,6 +78,11 @@ for (const shot of shots) {
     };
   });
   console.log(`${shot.name}: ${file}`, JSON.stringify(fonts));
+  // Аннотация прогона: лог из закрытой сети не читается, а это — читается.
+  // Здесь именно то, что нельзя проверить тестом: применился ли шрифт.
+  const mark = fonts.oswald ? 'ok' : 'FAIL';
+  console.log(`::notice title=font ${shot.name}::Bebasbolt=${fonts.oswald} ` +
+    `heading=${fonts.heading} body=${fonts.body} loaded=${fonts.loaded.length}`);
   await context.close();
 }
 
