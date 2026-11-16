@@ -46,8 +46,16 @@ jobs:
           echo "server did not start" >&2
           exit 1
 
+      # Ошибка снимается аннотацией (::error::) — лог прогона из закрытой сети
+      # не скачать, а аннотации отдаёт api.github.com.
       - name: Take shots
-        run: node preview/shots.mjs http://127.0.0.1:8080 preview/shots
+        shell: bash
+        run: |
+          if node preview/shots.mjs http://127.0.0.1:8080 preview/shots 2>&1 | tee shots.log; then
+            exit 0
+          fi
+          tail -40 shots.log | while IFS= read -r line; do echo "::error::${line}"; done
+          exit 1
 
       - name: Upload shots
         if: always()
