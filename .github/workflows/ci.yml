@@ -74,7 +74,7 @@ jobs:
         run: |
           git config user.name "panel shots"
           git config user.email "shots@users.noreply.github.com"
-          git add preview/shots
+          git add -f preview/shots
           if git diff --cached --quiet; then echo "no changes"; exit 0; fi
           git commit -m "chore(preview): panel shots [skip ci]"
           # set -o pipefail: без него tee съедает код возврата git push и шаг
