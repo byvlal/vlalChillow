@@ -79,7 +79,16 @@ jobs:
           git commit -m "chore(preview): panel shots [skip ci]"
           # set -o pipefail: без него tee съедает код возврата git push и шаг
           # «падает» уже после успешной отправки.
-          if set -o pipefail && git push origin "HEAD:${{ github.event.pull_request.head.ref }}" 2>&1 | tee push.log; then
+          # Ветку мог успеть обновить кто-то ещё (агент пушит параллельно):
+          # тогда подтягиваем её и повторяем один раз, прежде чем сдаваться.
+          push_once() {
+            set -o pipefail
+            git push origin "HEAD:${{ github.event.pull_request.head.ref }}" 2>&1 | tee push.log
+          }
+          if push_once; then exit 0; fi
+          if git fetch -q origin "${{ github.event.pull_request.head.ref }}" \
+             && git rebase -q FETCH_HEAD \
+             && push_once; then
             exit 0
           fi
           # Токену могло не хватить прав на запись: это не поломка страницы,
