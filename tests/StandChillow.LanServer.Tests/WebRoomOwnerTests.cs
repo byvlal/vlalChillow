@@ -65,9 +65,18 @@ public sealed class WebRoomOwnerTests
     private WebRequestContext Get(string path, int asPlayer = 0) => new(
         "GET", path, "", Array.Empty<byte>(), IPAddress.Parse("203.0.113.1"), HeadersFor(asPlayer));
 
-    private WebRequestContext Post(string path, string json, int asPlayer = 0) => new(
-        "POST", path, "", Encoding.UTF8.GetBytes(json), IPAddress.Parse("203.0.113.1"),
-        HeadersFor(asPlayer));
+    /// <summary>
+    /// POST как будто со страницы панели: X-Requested-With — тот маркер, по которому
+    /// сервер отличает свой запрос от чужого (кука уезжает автоматически, и без
+    /// проверки источника чужая страница могла бы действовать руками игрока).
+    /// </summary>
+    private WebRequestContext Post(string path, string json, int asPlayer = 0)
+    {
+        var headers = HeadersFor(asPlayer);
+        headers["X-Requested-With"] = "vlalchillow";
+        return new WebRequestContext(
+            "POST", path, "", Encoding.UTF8.GetBytes(json), IPAddress.Parse("203.0.113.1"), headers);
+    }
 
     private static string Body(WebResponse response) => Encoding.UTF8.GetString(response.Body);
 
