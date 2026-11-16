@@ -108,9 +108,13 @@ public sealed class SiteSessionTests
     private static WebRequestContext Get(string path, params (string, string)[] headers) =>
         new("GET", path, "", Array.Empty<byte>(), IPAddress.Parse("203.0.113.1"), Headers(headers));
 
+    /// <summary>
+    /// POST как будто со страницы панели: маркер X-Requested-With обязателен для
+    /// любого не-GET, иначе запрос отсекается как чужой (CSRF).
+    /// </summary>
     private static WebRequestContext Post(string path, string json, params (string, string)[] headers) =>
         new("POST", path, "", Encoding.UTF8.GetBytes(json), IPAddress.Parse("203.0.113.1"),
-            Headers(headers));
+            Headers(headers.Append(("X-Requested-With", "vlalchillow")).ToArray()));
 
     private static string Body(WebResponse response) => Encoding.UTF8.GetString(response.Body);
 

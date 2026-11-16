@@ -87,6 +87,8 @@ public sealed class WebAdminTests
                 AuthorizeAddress = _ => true,
                 PublicIds = _overrides,
                 PublicIdOf = id => _overrides.DisplayOf(id),
+                // Только один известный игрок: всё остальное сервер не знает.
+                IsBanned = _ => false,
                 LookupPlayer = id => id == 67776161
                     ? new SeenPlayer { Id = id, Nick = "Ktulxy", Ips = { "192.168.1.50" } }
                     : null,
