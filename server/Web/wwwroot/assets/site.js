@@ -1042,8 +1042,23 @@
     return 'home';
   }
 
-  async function navigate() {
+  /* Очередь переходов: два параллельных navigate() (клик и ответ /api/me)
+     заканчивались тем, что поздний ответ отрисовывал гейт поверх уже
+     открытого экрана. Здесь переходы идут строго друг за другом, а результат
+     устаревшего перехода отбрасывается — экран остаётся у последнего. */
+  let navSeq = 0;
+  let navChain = Promise.resolve();
+
+  function navigate() {
+    const seq = ++navSeq;
+    navChain = navChain.then(() => runNavigate(seq)).catch(() => {});
+    return navChain;
+  }
+
+  async function runNavigate(seq) {
     const target = routeForPath(location.pathname);
+
+    if (seq !== navSeq) return;
 
     // Гость видит главную (она открыта намеренно — иначе некуда ввести код),
     // а /play и /admin для него — экран входа.
@@ -1179,7 +1194,7 @@
     renderRooms();
 
     // Адрес сразу говорит, куда идти: /play и /admin — отдельные экраны.
-    navigate();
+    // Сначала узнаём сессию, потом рисуем экран: переход один, без гонки.
     refreshAll().then(() => navigate());
   }
 
