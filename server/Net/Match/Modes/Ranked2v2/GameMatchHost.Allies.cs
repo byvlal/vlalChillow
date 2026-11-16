@@ -273,11 +273,8 @@ public sealed partial class GameMatchHost
             room.Flow.DeadActors.Clear();
             room.Flow.PendingCombatDestroy.Clear();
             room.LastCombatDamage.Clear();
-            foreach (var a in room.Actors)
-            {
-                if (a.Nr != MatchHostActor.ActorNr)
-                    room.ActorProps[(a.Nr, MatchRoomPropKeys.Death)] = LobbyVariant.FromInt(0);
-            }
+            // death is a cumulative match counter (issue #56) — never reset between rounds.
+            // Per-round alive state is tracked via MatchFlowState.DeadActors (cleared above).
             bomberId = PickBomberActorNr(room);
             room.Flow.BomberActorNr = bomberId;
         }
@@ -301,7 +298,7 @@ public sealed partial class GameMatchHost
 
         if (round <= 1)
             SetAllFightersMoney(room, MatchFlowTestParams.RoundStartMoney);
-        ClearFighterDeathFlags(room);
+        // death is cumulative (issue #56) — no ClearFighterDeathFlags between rounds.
         DestroyTrackedRoundEntities(room, reason: "Allies buy C2=22");
 
         if (bomberId <= 0)

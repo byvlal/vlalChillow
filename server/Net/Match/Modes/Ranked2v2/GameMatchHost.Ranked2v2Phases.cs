@@ -501,12 +501,8 @@ public sealed partial class GameMatchHost
             room.Flow.DeadActors.Clear();
             room.Flow.PendingCombatDestroy.Clear();
             room.LastCombatDamage.Clear();
-            // Clear last round's death locally before bomber pick (same smoking gun as Prep).
-            foreach (var a in room.Actors)
-            {
-                if (a.Nr != MatchHostActor.ActorNr)
-                    room.ActorProps[(a.Nr, MatchRoomPropKeys.Death)] = LobbyVariant.FromInt(0);
-            }
+            // death is a cumulative match counter (issue #56) — never reset between rounds.
+            // Per-round alive state is tracked via MatchFlowState.DeadActors (cleared above).
             bomberId = PickBomberActorNr(room);
             room.Flow.BomberActorNr = bomberId;
         }
@@ -526,7 +522,7 @@ public sealed partial class GameMatchHost
             (MatchRoomPropKeys.BomberId, LobbyVariant.FromInt(bomberId)),
             (MatchRoomPropKeys.C2, LobbyVariant.FromByte(MatchC2States.WarmupWillFinish)),
         ], reason: $"PreStart round={round}", phaseDeadlineSec: deadline);
-        ClearFighterDeathFlags(room);
+        // death is cumulative (issue #56) — no ClearFighterDeathFlags between rounds.
         DestroyTrackedRoundEntities(room, reason: "PreStart");
         Console.WriteLine(
             $"[match-host] match-flow: PreStart C2={MatchC2States.WarmupWillFinish} " +
@@ -718,7 +714,7 @@ public sealed partial class GameMatchHost
         // Round 1 only — later rounds keep balances from round-end / kill / plant payouts.
         if (round <= 1)
             SetAllFightersMoney(room, MatchFlowTestParams.RoundStartMoney);
-        ClearFighterDeathFlags(room);
+        // death is cumulative (issue #56) — no ClearFighterDeathFlags between rounds.
         Console.WriteLine(
             $"[match-host] match-flow: RoundLive C2={MatchC2States.MatchStarted} " +
             $"round={round}/{MatchFlowTestParams.TotalRounds} " +
