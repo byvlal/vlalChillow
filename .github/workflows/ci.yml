@@ -193,6 +193,10 @@ jobs:
       # phone, GrenadeManager CreateWorldObject + 145 CustomEvent) uploaded as the
       # grenade evidence set; it is allow-listed here so the guard keeps failing on
       # every *other* stray dump instead of on this one.
+      # captures/duel.zip is the Duel session (one phone vs dedicated host) — the
+      # evidence for the Duel C2=101 round-end bag, the GameRpcHelper field=1
+      # signal and the C2=22 freeze bag (issue #56). Allow-listed for the same
+      # reason as grenades.zip.
       # Everything else under captures/ and any run log still stays out — see
       # .gitignore; a new probe drop needs its own entry here on purpose, so an
       # accidental large dump still fails the build.
@@ -208,7 +212,7 @@ jobs:
             found=1
           fi
 
-          stray=$(git ls-files 'captures/*' | grep -vE '^captures/(README\.md|captures\.zip|chat\.zip|grenades\.zip)$' || true)
+          stray=$(git ls-files 'captures/*' | grep -vE '^captures/(README\.md|captures\.zip|chat\.zip|grenades\.zip|duel\.zip)$' || true)
           if [ -n "$stray" ]; then
             echo "::error::Only the capture sets listed above may be committed (see ARCHITECTURE.md):"
             echo "$stray"
