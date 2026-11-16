@@ -22,6 +22,8 @@ jobs:
   shots:
     name: panel shots
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - uses: actions/checkout@v4
 
@@ -54,6 +56,19 @@ jobs:
           name: panel-shots
           path: preview/shots
           if-no-files-found: warn
+
+      # Скачать артефакт можно не всегда (хранилище артефактов бывает закрыто),
+      # поэтому снимки ещё и коммитятся обратно — тогда страницу видно прямо
+      # в ветке. [skip ci] не даёт снимкам запускать новый прогон.
+      - name: Commit shots back
+        if: success() && github.event_name == 'pull_request'
+        run: |
+          git config user.name "panel shots"
+          git config user.email "shots@users.noreply.github.com"
+          git add preview/shots
+          git diff --cached --quiet && echo "no changes" && exit 0
+          git commit -m "chore(preview): panel shots [skip ci]"
+          git push origin "HEAD:${{ github.event.pull_request.head.ref }}"
 
   build:
     name: build (${{ matrix.os }})

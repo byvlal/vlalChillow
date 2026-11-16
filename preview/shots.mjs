@@ -34,7 +34,7 @@ const problems = [];
 for (const shot of shots) {
   const context = await browser.newContext({
     viewport: { width: shot.w, height: shot.h },
-    deviceScaleFactor: 2,
+    deviceScaleFactor: 1,
     locale: 'ru-RU',
   });
   const page = await context.newPage();
@@ -62,8 +62,9 @@ for (const shot of shots) {
     document.querySelectorAll('video').forEach(v => v.pause());
   });
   await page.waitForTimeout(900);
-  const file = path.join(outDir, `${shot.name}.png`);
-  await page.screenshot({ path: file, fullPage: shot.full });
+  // JPEG, а не PNG: снимки коммитятся в ветку, и 8 PNG по 2 МБ там не нужны.
+  const file = path.join(outDir, `${shot.name}.jpg`);
+  await page.screenshot({ path: file, fullPage: shot.full, type: 'jpeg', quality: 82 });
   // Что реально применилось: севший шрифт видно по замеренной ширине строки.
   const fonts = await page.evaluate(async () => {
     await document.fonts.ready;

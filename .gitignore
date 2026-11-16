@@ -44,3 +44,4 @@ Thumbs.db
 
 # node_modules для локального превью и снимков
 preview/node_modules/
+preview/shots/
