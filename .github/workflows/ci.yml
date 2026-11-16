@@ -77,7 +77,9 @@ jobs:
           git add preview/shots
           if git diff --cached --quiet; then echo "no changes"; exit 0; fi
           git commit -m "chore(preview): panel shots [skip ci]"
-          if git push origin "HEAD:${{ github.event.pull_request.head.ref }}" 2>&1 | tee push.log; then
+          # set -o pipefail: без него tee съедает код возврата git push и шаг
+          # «падает» уже после успешной отправки.
+          if set -o pipefail && git push origin "HEAD:${{ github.event.pull_request.head.ref }}" 2>&1 | tee push.log; then
             exit 0
           fi
           # Токену могло не хватить прав на запись: это не поломка страницы,
