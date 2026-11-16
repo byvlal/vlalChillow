@@ -37,10 +37,11 @@ public sealed partial class WebPanelRouter
         if (session is null)
             return ApiError(401, "no_auth", NeedAuthMessage);
 
-        if (BannedRefusal(session) is { } banned)
-            return banned;
+        if (BannedRefusal(session) is { } banRefusal)
+            return banRefusal;
 
-        if (AdminSessionOf(request, session, out var refusal) is null)
+        var who = session!;
+        if (AdminSessionOf(request, who, out var refusal) is null)
             return refusal!;
 
         var query = QueryValue(request.Query, "id");
@@ -49,7 +50,7 @@ public sealed partial class WebPanelRouter
 
         var options = _options;
         var seen = options.LookupPlayer?.Invoke(playerId);
-        var banned = options.IsBanned?.Invoke(playerId) == true;
+        var isBanned = options.IsBanned?.Invoke(playerId) == true;
 
         using var stream = new MemoryStream();
         using (var writer = new Utf8JsonWriter(stream, JsonText.WriterOptions))
@@ -68,7 +69,7 @@ public sealed partial class WebPanelRouter
 
             writer.WriteBoolean("known", true);
             writer.WriteString("nick", seen.Nick);
-            writer.WriteBoolean("banned", banned);
+            writer.WriteBoolean("banned", isBanned);
             writer.WriteBoolean("online", options.LobbyAddressOf?.Invoke(playerId) is not null);
             writer.WriteString("lastSeen", seen.LastSeenUtcMs <= 0
                 ? null
@@ -95,10 +96,11 @@ public sealed partial class WebPanelRouter
         if (session is null)
             return ApiError(401, "no_auth", NeedAuthMessage);
 
-        if (BannedRefusal(session) is { } banned)
-            return banned;
+        if (BannedRefusal(session) is { } banRefusal)
+            return banRefusal;
 
-        if (AdminSessionOf(request, session, out var refusal) is null)
+        var who = session!;
+        if (AdminSessionOf(request, who, out var refusal) is null)
             return refusal!;
 
         var now = DateTime.UtcNow;
@@ -147,7 +149,8 @@ public sealed partial class WebPanelRouter
 
     private WebResponse AdminBanWith(WebRequestContext request, SiteSession? session)
     {
-        var admin = AdminSessionOf(request, session, out var refusal);
+        var who = session!;
+        var admin = AdminSessionOf(request, who, out var refusal);
         if (admin is null)
             return refusal!;
 
@@ -187,7 +190,8 @@ public sealed partial class WebPanelRouter
 
     private WebResponse AdminUnbanWith(WebRequestContext request, SiteSession? session)
     {
-        var admin = AdminSessionOf(request, session, out var refusal);
+        var who = session!;
+        var admin = AdminSessionOf(request, who, out var refusal);
         if (admin is null)
             return refusal!;
 
@@ -236,7 +240,8 @@ public sealed partial class WebPanelRouter
 
     private WebResponse AdminPublicIdWith(WebRequestContext request, SiteSession? session)
     {
-        var admin = AdminSessionOf(request, session, out var refusal);
+        var who = session!;
+        var admin = AdminSessionOf(request, who, out var refusal);
         if (admin is null)
             return refusal!;
 
@@ -292,10 +297,11 @@ public sealed partial class WebPanelRouter
         if (session is null)
             return ApiError(401, "no_auth", NeedAuthMessage);
 
-        if (BannedRefusal(session) is { } banned)
-            return banned;
+        if (BannedRefusal(session) is { } banRefusal)
+            return banRefusal;
 
-        if (AdminSessionOf(request, session, out var refusal) is null)
+        var who = session!;
+        if (AdminSessionOf(request, who, out var refusal) is null)
             return refusal!;
 
         var ids = _options.AdminIdList?.Invoke() ?? Array.Empty<int>();
@@ -311,10 +317,11 @@ public sealed partial class WebPanelRouter
         if (session is null)
             return ApiError(401, "no_auth", NeedAuthMessage);
 
-        if (BannedRefusal(session) is { } banned)
-            return banned;
+        if (BannedRefusal(session) is { } banRefusal)
+            return banRefusal;
 
-        if (AdminSessionOf(request, session, out var refusal) is null)
+        var who = session!;
+        if (AdminSessionOf(request, who, out var refusal) is null)
             return refusal!;
 
         var bans = _options.ActiveBans?.Invoke() ?? Array.Empty<BanRecord>();
