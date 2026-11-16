@@ -105,6 +105,7 @@ const STATUS = {
   serverUtc: () => new Date().toISOString(),
 };
 
+// В live-ответе комнаты считает роутер, здесь — по фактическому списку.
 const statusJson = () => JSON.stringify({
   onlineLobby: 3, onlineMatch: 5, onlineTotal: 8,
   roomsCount: rooms.length, roomsMax: 64, nextNumber,
