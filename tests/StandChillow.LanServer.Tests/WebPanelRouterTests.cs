@@ -92,10 +92,8 @@ public sealed class WebPanelRouterTests
 
         Assert.Equal(200, response.Status);
         Assert.Contains("text/html", response.ContentType);
-        // страница всегда с явным <base> — см. PageInRootStillDeclaresItsBase.
-        var html = Body(response);
-        Assert.Contains("<base href=\"/\">", html);
-        Assert.Contains("<title>тест</title>", html);
+        // в корне <base> не ставится — см. PageInRootHasNoBaseTag.
+        Assert.Equal(IndexHtml, Body(response));
     }
 
     [Fact]
@@ -445,16 +443,17 @@ public sealed class WebPanelRouterTests
     }
 
     /// <summary>
-    /// В корне базовый адрес — <c>/</c>: страница должна объявлять его явно, иначе
-    /// открытая по адресу без слеша на конце отдаст медиа мимо своего каталога.
+    /// В корне <c>basePath</c> пуст, и <c>&lt;base&gt;</c> ставить нельзя: панель не знает,
+    /// открыта ли она по подпути без настройки <c>basePath</c>, а ошибившись, увела бы
+    /// медиа в корень домена. Относительные ссылки разрешит сам документ.
     /// </summary>
     [Fact]
-    public void PageInRootStillDeclaresItsBase()
+    public void PageInRootHasNoBaseTag()
     {
         var router = NewRouter(out _);
         var html = Body(router.Route(Get("/")));
 
-        Assert.Contains("<base href=\"/\">", html);
+        Assert.DoesNotContain("<base", html);
     }
 
     [Fact]

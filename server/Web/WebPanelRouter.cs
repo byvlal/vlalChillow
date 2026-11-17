@@ -157,26 +157,25 @@ public sealed partial class WebPanelRouter
     }
 
     /// <summary>
-    /// HTML страницы, всегда с явным <c>&lt;base&gt;</c>.
+    /// HTML страницы. Панель под подпутём (<c>example.com/vlalchillow/</c>) отдаёт её с
+    /// <c>&lt;base href="/vlalchillow/"&gt;</c>.
     /// </summary>
     /// <remarks>
-    /// Панель под подпутём (<c>example.com/vlalchillow/</c>) отдаёт <c>/vlalchillow/</c>,
-    /// в корне — <c>/</c>. Без этого относительные ссылки на медиа (<c>media/hero.mp4</c>,
-    /// шрифты, скриншоты) разрешались бы от адреса страницы, и при открытии
-    /// <c>example.com/vlalchillow</c> без слеша уехали бы в корень домена — мимо прокси.
-    /// Явный базовый адрес делает поведение одинаковым во всех конфигурациях.
+    /// Ссылки на медиа относительные (<c>media/hero.mp4</c>, шрифты, скриншоты), и без
+    /// <c>&lt;base&gt;</c> они разрешаются от адреса страницы — этого достаточно, когда
+    /// панель открыта по адресу со слешем на конце. <c>&lt;base&gt;</c> нужен для случая
+    /// <c>example.com/vlalchillow</c> без слеша: тогда относительный путь уехал бы в
+    /// корень домена, мимо прокси. В корне (<c>basePath</c> пуст) <c>&lt;base&gt;</c> не
+    /// ставим: документ и так разрешает ссылки правильно, а подпути без <c>basePath</c>
+    /// панель не видит и угадывать его не должна.
     /// </remarks>
     private string IndexHtml()
     {
+        var html = _indexHtml();
+        var basePath = _options.BasePath;
+        if (string.IsNullOrEmpty(basePath)) return html;
         if (_indexWithBase is null)
-        {
-            var basePath = _options.BasePath;
-            var href = string.IsNullOrEmpty(basePath)
-                ? "/"
-                : "/" + basePath.Trim().Trim('/') + "/";
-            _indexWithBase = InjectBase(_indexHtml(), href);
-        }
-
+            _indexWithBase = InjectBase(html, "/" + basePath.Trim().Trim('/') + "/");
         return _indexWithBase;
     }
 
