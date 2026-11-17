@@ -213,6 +213,59 @@ public sealed class WebRateLimiterTests
     }
 
     [Fact]
+    public void SharedBucketNeverGetsTheLongPause()
+    {
+        // Панель открыта наружу мимо прокси: адрес у всех один, посетителей не различить.
+        // Пусть его долбят непрерывно — остальные всё равно проходят: долгой паузы нет,
+        // есть только посекундный лимит, который снимается через секунду.
+        var clock = new Clock();
+        var limiter = NewLimiter(clock);
+
+        for (var second = 0; second < 10; second++)
+        {
+            for (var i = 0; i < 40; i++)
+                limiter.Check(A, sharedBucket: true);
+            clock.Advance(1);
+        }
+
+        var decision = limiter.Check(A, sharedBucket: true);
+        Assert.True(decision.Allowed);
+        Assert.NotEqual("blocked", decision.Reason);
+    }
+
+    [Fact]
+    public void SharedBucketStillGetsThePerSecondLimit()
+    {
+        // Гарантия «сайт не залипнет» не значит «флуд бесплатен»: в пределах секунды
+        // лишние запросы с общего адреса всё равно получают 429 и Retry-After 1.
+        var clock = new Clock();
+        var limiter = NewLimiter(clock);
+        for (var i = 0; i < 10; i++)
+            limiter.Check(A, sharedBucket: true);
+
+        var decision = limiter.Check(A, sharedBucket: true);
+        Assert.False(decision.Allowed);
+        Assert.Equal("rate", decision.Reason);
+        Assert.Equal(1, decision.RetryAfterSec);
+    }
+
+    [Fact]
+    public void KnownVisitorStillGetsTheFullProtection()
+    {
+        // А вот когда посетитель известен (заголовок от своего прокси), долбящий адрес
+        // получает обычную паузу — защита не ослабла.
+        var clock = new Clock();
+        var limiter = NewLimiter(clock);
+        for (var i = 0; i < 5; i++)
+        {
+            limiter.NoteRefusal(A);
+            clock.Advance(1);
+        }
+
+        Assert.Equal("blocked", limiter.Check(A).Reason);
+    }
+
+    [Fact]
     public void NullAddressIsAlwaysAllowed()
     {
         var clock = new Clock();

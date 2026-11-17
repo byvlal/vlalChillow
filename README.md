@@ -190,11 +190,13 @@ room can be closed).
 The page can also be published on the internet behind a reverse proxy. Limits are then
 counted **per real visitor**, not per proxy: the panel takes the client address from
 `X-Forwarded-For`, and only for a request that came from loopback or a private network, so
-a stranger on the internet cannot name himself somebody else. The proxy must **overwrite**
-that header (`$remote_addr`), and the panel must not be exposed directly — without the
-header every visitor shares one bucket, which is exactly how a crowd used to get `429`
-all at once. Behind a CDN, configure real-IP on the proxy first. Details and numbers:
-[`docs/WEB_PANEL.md`](docs/WEB_PANEL.md).
+a stranger on the internet cannot name himself somebody else. Without the header (panel
+exposed directly, or a proxy that does not send it) every visitor shares one bucket, so the
+limits count the proxy instead of the person; such a shared bucket is deliberately **never**
+put on the long pause, only on the one-second rate limit, so no single flood can take the
+site down for everyone. The proxy should **overwrite** the header (`$remote_addr`); behind a
+CDN, configure real-IP on the proxy so `$remote_addr` is the person, not the edge. Details
+and numbers: [`docs/WEB_PANEL.md`](docs/WEB_PANEL.md).
 
 ### Starting a match
 

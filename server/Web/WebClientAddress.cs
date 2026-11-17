@@ -48,6 +48,31 @@ public static class WebClientAddress
     }
 
     /// <summary>
+    /// Различает ли восстановленный адрес отдельных посетителей.
+    /// </summary>
+    /// <remarks>
+    /// <c>true</c> только когда запрос пришёл от доверенного прокси и он назвал адрес
+    /// клиента заголовком. Во всех остальных случаях адрес — общий: либо это адрес прокси,
+    /// за которым стоит весь интернет, либо прямой гость мимо прокси. Общему адресу нельзя
+    /// включать долгую паузу (см. <see cref="WebRateLimiter.Check"/>), иначе один поток
+    /// запросов погасит сайт для всех за тем же адресом.
+    /// </remarks>
+    public static bool IdentifiesVisitor(
+        IPAddress? directPeer,
+        IReadOnlyDictionary<string, string>? headers)
+    {
+        if (directPeer is null || headers is null || !IsTrustedProxyPeer(directPeer))
+            return false;
+
+        if (headers.TryGetValue("X-Forwarded-For", out var forwarded)
+            && TryParseClientIp(forwarded, out _))
+            return true;
+
+        return headers.TryGetValue("X-Real-IP", out var real)
+            && IPAddress.TryParse(real.Trim(), out _);
+    }
+
+    /// <summary>
     /// Один адрес — одно написание. Dual-mode сокет отдаёт IPv4-клиента как
     /// <c>::ffff:a.b.c.d</c>: без схлопывания тот же человек получил бы два разных бакета
     /// в лимитах и две разные записи в банах.

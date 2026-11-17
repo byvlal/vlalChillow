@@ -38,6 +38,7 @@ public sealed class WebRateLimiter
     private readonly Func<DateTime> _clock;
     private DateTime _lastSweepUtc;
 
+
     public WebRateLimiter(Func<DateTime>? clock = null)
     {
         _clock = clock ?? (() => DateTime.UtcNow);
@@ -76,8 +77,18 @@ public sealed class WebRateLimiter
         public static Decision Deny(int retry, string reason) => new(false, retry, reason);
     }
 
-    /// <summary>Учесть запрос и решить, пропускать ли его.</summary>
-    public Decision Check(IPAddress? address)
+    /// <summary>
+    /// Учесть запрос и решить, пропускать ли его.
+    /// </summary>
+    /// <param name="address">Адрес, по которому считается лимит (см. <see cref="WebClientAddress"/>).</param>
+    /// <param name="sharedBucket">
+    /// <c>true</c> — за этим адресом стоят разные люди, которых мы не различаем (прокси без
+    /// заголовка, прямой заход из интернета мимо прокси). Такому адресу даём только
+    /// посекундный лимит частоты, но <b>никогда</b> не включаем долгую паузу: иначе один
+    /// поток запросов погасил бы сайт для всех, кто идёт через тот же адрес. Это и есть
+    /// обещание «никто извне не сломает сайт остальным».
+    /// </param>
+    public Decision Check(IPAddress? address, bool sharedBucket = false)
     {
         if (address is null)
             return Decision.Allow();
@@ -115,7 +126,8 @@ public sealed class WebRateLimiter
             bucket.RequestsInWindow++;
             if (bucket.RequestsInWindow > Math.Max(1, RequestsPerSecond))
             {
-                RegisterRefusalLocked(bucket, now);
+                if (!sharedBucket)
+                    RegisterRefusalLocked(bucket, now);
                 return Decision.Deny(1, "rate");
             }
 

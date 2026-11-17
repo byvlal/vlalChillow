@@ -198,6 +198,23 @@ public sealed class WebClientAddressTests
     }
 
     [Fact]
+    public void Only_a_trusted_proxy_naming_a_client_identifies_visitors()
+    {
+        // Заголовок от своего прокси — посетителей различаем.
+        Assert.True(WebClientAddress.IdentifiesVisitor(
+            ProxyOnLan, With("X-Forwarded-For", "198.51.100.7")));
+        Assert.True(WebClientAddress.IdentifiesVisitor(
+            ProxyOnHost, With("X-Real-IP", "198.51.100.7")));
+
+        // Нет заголовка / пришёл напрямую из интернета / мусор — адрес общий.
+        Assert.False(WebClientAddress.IdentifiesVisitor(ProxyOnLan, null));
+        Assert.False(WebClientAddress.IdentifiesVisitor(
+            DirectFromInternet, With("X-Forwarded-For", "198.51.100.7")));
+        Assert.False(WebClientAddress.IdentifiesVisitor(
+            ProxyOnLan, With("X-Forwarded-For", "не-адрес")));
+    }
+
+    [Fact]
     public void Null_peer_stays_null()
     {
         // Тесты роутера вызывают контекст без сокета — «улучшать» нечего.

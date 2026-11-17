@@ -178,6 +178,14 @@ public sealed class WebPanelServer : IDisposable
                 // X-Forwarded-For; WebClientAddress решает, когда ему можно верить.
                 var remote = WebClientAddress.Resolve(peer, head.Headers);
 
+                // Различаем ли мы посетителей вообще? Заголовок от доверенного прокси даёт
+                // каждому гостю свой адрес; без него (панель открыта наружу мимо прокси, или
+                // свой прокси пришёл с публичного адреса) за одним адресом стоят разные люди.
+                // Такому адресу даём только посекундный лимит частоты и никогда не включаем
+                // долгую паузу — иначе один поток погасил бы сайт всем, кто идёт через тот же
+                // адрес. Это гарантия на стороне сервера: от конфига прокси она не зависит.
+                var identifiesVisitor = WebClientAddress.IdentifiesVisitor(peer, head.Headers);
+
                 // Тело больше лимита: это 413 «слишком большое», а не 400. В счётчик
                 // отказов не идёт — панель просто так не принимает ничего крупного.
                 if (head.TooLarge)
@@ -190,7 +198,7 @@ public sealed class WebPanelServer : IDisposable
 
                 // Лимит частоты — до всего остального: он про людей, а не про сокеты, и
                 // проверять его надо даже тогда, когда соединения с адреса уже заняты.
-                var decision = _limiter.Check(remote);
+                var decision = _limiter.Check(remote, sharedBucket: !identifiesVisitor);
                 if (!decision.Allowed)
                 {
                     Interlocked.Increment(ref _requestsRejected);
