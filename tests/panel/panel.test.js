@@ -159,6 +159,34 @@ function toPage(list) {
   const $ = id => window.document.getElementById(id);
   const tick = ms => new Promise(r => setTimeout(r, ms));
 
+  /* ── ассеты под подпутём ──────────────────────────────────────────────
+     Панель открывается как example.com/vlalchillow/, поэтому страница отдаётся с
+     <base href="/vlalchillow/"> (его вставляет WebPanelRouter), а ссылки на
+     медиа — относительные. Корневой абсолютный путь /media/… уехал бы на
+     example.com/media/…, мимо прокси: видео и шрифты не пришли бы вовсе. */
+  const assetHrefs = [];
+  window.document.querySelectorAll('[src],[href],[poster]').forEach(function(n){
+    ['src','href','poster'].forEach(function(a){
+      const v = n.getAttribute(a);
+      if (v) assetHrefs.push(v);
+    });
+  });
+  const cssText = (html.split('<style>')[1] || '').split('</style>')[0];
+  const urlRe = /url\(\s*["']?([^"')]+)["']?\s*\)/gi;
+  let um;
+  while ((um = urlRe.exec(cssText)) !== null) assetHrefs.push(um[1]);
+
+  const local = assetHrefs.filter(function(u){
+    return u && u.charAt(0) !== '#' && u.indexOf('data:') !== 0 && !/^https?:/.test(u);
+  });
+  const rootAbsolute = local.filter(function(u){ return /^\/(?!\/)/.test(u); });
+  check('ни один ассет не уходит в корень домена', rootAbsolute.length === 0,
+    rootAbsolute.join(', '));
+  const escaped = local
+    .map(function(u){ return new window.URL(u, window.location.href).pathname; })
+    .filter(function(p){ return p.indexOf('/vlalchillow/') !== 0; });
+  check('все ассеты остаются под /vlalchillow/', escaped.length === 0, escaped.join(', '));
+
   check('window.__panel есть', !!P);
   if (!P) { report(); return; }
 
