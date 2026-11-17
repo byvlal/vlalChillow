@@ -83,6 +83,17 @@ public static class GameModeCatalog
             new[] { "ffa", "freeforall", "free-for-all" }),
     };
 
+    /// <summary>
+    /// Режимы, которые хост реально уводит в бой. Остальные тоже есть в каталоге
+    /// (клиент их показывает), но провод для них не расшифрован — сайт рисует их
+    /// приглушёнными и не даёт создать комнату.
+    /// </summary>
+    public static readonly HashSet<string> ImplementedModeIds =
+        new(StringComparer.Ordinal) { "Ranked2v2", "Ranked2v2Alt", "RankedDefuse" };
+
+    public static bool IsImplemented(string gameModeId) =>
+        ImplementedModeIds.Contains(gameModeId);
+
     private static readonly Dictionary<string, ModeInfo> ById =
         Modes.ToDictionary(m => m.GameModeId, StringComparer.Ordinal);
 
