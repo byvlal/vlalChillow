@@ -318,8 +318,19 @@ public sealed class WebLimitsConfig
     /// <summary>Сколько секунд ждём запрос целиком.</summary>
     public int RequestTimeoutSec { get; set; } = 5;
 
-    /// <summary>Одновременных соединений с одного IP.</summary>
-    public int MaxConnectionsPerIp { get; set; } = 2;
+    /// <summary>
+    /// Одновременных соединений с одного клиента. За прокси клиент — это реальный
+    /// адрес из <c>X-Forwarded-For</c> (см. <see cref="Web.WebClientAddress"/>),
+    /// а не адрес машины с прокси, иначе кап делили бы все посетители сайта.
+    /// </summary>
+    public int MaxConnectionsPerIp { get; set; } = 4;
+
+    /// <summary>
+    /// Одновременных соединений на весь сайт — предохранитель, чтобы наплыв людей
+    /// (или скрипт) не съел память панели. Отдельно от адресного капа, потому что
+    /// адрес клиента виден только после чтения заголовков.
+    /// </summary>
+    public int MaxConnectionsTotal { get; set; } = 256;
 }
 
 /// <summary>Длительности фаз матча в секундах.</summary>
@@ -889,7 +900,9 @@ public sealed class ServerConfig
         Web.Limits.RequestTimeoutSec = Check(
             Web.Limits.RequestTimeoutSec, 1, 120, 5, "web.limits.requestTimeoutSec");
         Web.Limits.MaxConnectionsPerIp = Check(
-            Web.Limits.MaxConnectionsPerIp, 1, 64, 2, "web.limits.maxConnectionsPerIp");
+            Web.Limits.MaxConnectionsPerIp, 1, 64, 4, "web.limits.maxConnectionsPerIp");
+        Web.Limits.MaxConnectionsTotal = Check(
+            Web.Limits.MaxConnectionsTotal, 16, 4096, 256, "web.limits.maxConnectionsTotal");
     }
 
     private void MigrateLegacyAdminGate()
@@ -1229,7 +1242,9 @@ public sealed class ServerConfig
       "requestsPerSecond": 10,   // больше — 429 с Retry-After
       "refusalsBeforeBlock": 5,
       "refusalWindowSec": 10,
-      "blockDurationSec": 60     // пауза для адреса, который долбит
+      "blockDurationSec": 60,    // пауза для адреса, который долбит
+      "maxConnectionsPerIp": 4,  // одновременных сокетов с одного клиента
+      "maxConnectionsTotal": 256 // одновременных сокетов на весь сайт (наплыв людей)
     }
   }
 }

@@ -35,6 +35,7 @@ public sealed class WebPanelServer : IDisposable
     private readonly List<Task> _connections = new();
     private readonly object _connGate = new();
     private readonly Dictionary<IPAddress, int> _activeByIp = new();
+    private int _activeTotal;
 
     private TcpListener? _listener;
     private Task? _acceptLoop;
@@ -135,68 +136,98 @@ public sealed class WebPanelServer : IDisposable
 
     private async Task ServeAsync(TcpClient client, CancellationToken token)
     {
-        var remote = (client.Client.RemoteEndPoint as IPEndPoint)?.Address;
-        var counted = false;
+        var peer = (client.Client.RemoteEndPoint as IPEndPoint)?.Address;
 
         try
         {
             client.ReceiveTimeout = _options.Limits.RequestTimeoutSec * 1000;
             client.SendTimeout = _options.Limits.RequestTimeoutSec * 1000;
 
-            // Соединений с одного адреса — не больше лимита: браузеру хватает одного-двух
-            // (страница + JSON), а скрипту с сотней параллельных сокетов — нет.
-            if (!TryAddConnection(remote))
+            // Предохранитель на весь сайт: сколько сокетов панель держит одновременно,
+            // что бы люди ни открывали. Адресный кап — ниже, когда уже ясно, чей запрос.
+            if (!TryAddConnectionTotal())
             {
                 Interlocked.Increment(ref _requestsRejected);
-                await WriteRawAsync(client, WebResponse.Throttled(1), token)
-                    .ConfigureAwait(false);
-                return;
-            }
-            counted = true;
-
-            var decision = _limiter.Check(remote);
-            if (!decision.Allowed)
-            {
-                Interlocked.Increment(ref _requestsRejected);
-                Console.WriteLine(
-                    $"[web] {remote} отказ ({decision.Reason}) — Retry-After {decision.RetryAfterSec}s");
-                await WriteRawAsync(client, WebResponse.Throttled(decision.RetryAfterSec), token)
+                await WriteRawAsync(client, WebResponse.Throttled(2), token)
                     .ConfigureAwait(false);
                 return;
             }
 
-            var request = await ReadRequestAsync(client, token).ConfigureAwait(false);
-            if (request is null)
-            {
-                _limiter.NoteRefusal(remote);
-                Interlocked.Increment(ref _requestsRejected);
-                await WriteRawAsync(client, WebResponse.Text("400", 400), token)
-                    .ConfigureAwait(false);
-                return;
-            }
-
-            WebResponse response;
             try
             {
-                response = _router(new WebRequestContext(
-                    request.Method,
-                    request.Path,
-                    request.Query,
-                    request.Body,
-                    remote,
-                    request.Headers));
+                var request = await ReadRequestAsync(client, token).ConfigureAwait(false);
+                if (request is null)
+                {
+                    // Разобрать не удалось — чей это запрос, не знает никто, включая
+                    // прокси. Отказ засчитывается прямому отправителю.
+                    _limiter.NoteRefusal(peer);
+                    Interlocked.Increment(ref _requestsRejected);
+                    await WriteRawAsync(client, WebResponse.Text("400", 400), token)
+                        .ConfigureAwait(false);
+                    return;
+                }
+
+                // Адрес клиента: за прокси все сокеты приходят с адреса прокси, и считать
+                // их одним клиентом нельзя — толпа выжигает общий лимит, и 429 получают
+                // все, даже те, кто только открыл сайт. Прокси ставит реальный адрес в
+                // X-Forwarded-For; WebClientAddress решает, когда ему можно верить.
+                var remote = WebClientAddress.Resolve(peer, request.Headers);
+
+                // Соединений с одного клиента — не больше лимита: браузеру хватает
+                // пары параллельных (страница + JSON), а скрипту с сотней сокетов — нет.
+                if (!TryAddConnection(remote))
+                {
+                    Interlocked.Increment(ref _requestsRejected);
+                    await WriteRawAsync(client, WebResponse.Throttled(1), token)
+                        .ConfigureAwait(false);
+                    return;
+                }
+
+                try
+                {
+                    var decision = _limiter.Check(remote);
+                    if (!decision.Allowed)
+                    {
+                        Interlocked.Increment(ref _requestsRejected);
+                        Console.WriteLine(
+                            $"[web] {remote} отказ ({decision.Reason}) — Retry-After {decision.RetryAfterSec}s");
+                        await WriteRawAsync(client, WebResponse.Throttled(decision.RetryAfterSec), token)
+                            .ConfigureAwait(false);
+                        return;
+                    }
+
+                    WebResponse response;
+                    try
+                    {
+                        response = _router(new WebRequestContext(
+                            request.Method,
+                            request.Path,
+                            request.Query,
+                            request.Body,
+                            remote,
+                            request.Headers));
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine($"[web] {request.Method} {request.Path} упал: {ex}");
+                        response = WebResponse.Text("500", 500);
+                    }
+
+                    Interlocked.Increment(ref _requestsServed);
+                    if (response.Status >= 400)
+                        _limiter.NoteRefusal(remote);
+
+                    await WriteRawAsync(client, response, token).ConfigureAwait(false);
+                }
+                finally
+                {
+                    ReleaseConnection(remote);
+                }
             }
-            catch (Exception ex)
+            finally
             {
-                Console.WriteLine($"[web] {request.Method} {request.Path} упал: {ex}");
-                response = WebResponse.Text("500", 500);
+                ReleaseConnectionTotal();
             }
-
-            Interlocked.Increment(ref _requestsServed);
-            if (response.Status >= 400)
-                _limiter.NoteRefusal(remote);
-
-            await WriteRawAsync(client, response, token).ConfigureAwait(false);
         }
         catch (Exception ex) when (ex is IOException or SocketException
                                        or OperationCanceledException
@@ -206,12 +237,10 @@ public sealed class WebPanelServer : IDisposable
         }
         catch (Exception ex)
         {
-            Console.WriteLine($"[web] соединение {remote}: {ex.Message}");
+            Console.WriteLine($"[web] соединение {peer}: {ex.Message}");
         }
         finally
         {
-            if (counted)
-                ReleaseConnection(remote);
             try { client.Close(); }
             catch { /* уже закрыт */ }
         }
@@ -230,6 +259,32 @@ public sealed class WebPanelServer : IDisposable
                 _activeByIp[address] = count + 1;
             }
             return true;
+        }
+    }
+
+    /// <summary>
+    /// Общий кап одновременных соединений — предохранитель всего сайта: адрес клиента
+    /// известен только после чтения заголовков, а переполнение сокетами надо гасить
+    /// раньше, чем оно съест память.
+    /// </summary>
+    private bool TryAddConnectionTotal()
+    {
+        var max = Math.Max(1, _options.Limits.MaxConnectionsTotal);
+        lock (_connGate)
+        {
+            if (_activeTotal >= max)
+                return false;
+            _activeTotal++;
+        }
+        return true;
+    }
+
+    private void ReleaseConnectionTotal()
+    {
+        lock (_connGate)
+        {
+            if (_activeTotal > 0)
+                _activeTotal--;
         }
     }
 
@@ -480,7 +535,8 @@ public sealed class WebPanelOptions
         public int MaxHeaderBytes { get; init; } = 8 * 1024;
         public int MaxBodyBytes { get; init; } = 4 * 1024;
         public int RequestTimeoutSec { get; init; } = 5;
-        public int MaxConnectionsPerIp { get; init; } = 2;
+        public int MaxConnectionsPerIp { get; init; } = 4;
+        public int MaxConnectionsTotal { get; init; } = 256;
     }
 }
 
