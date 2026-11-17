@@ -90,6 +90,27 @@ public sealed partial class GameMatchHost
                 uidRewritten = true;
             }
 
+            // verified: галочку «настоящий аккаунт» ставит только сервер. Не-админ, который
+            // прислал true (подмена на клиенте), получает false; админ получает true, что бы
+            // ни прислал его клиент. Актор 1 — сам сервер, ему всегда false.
+            if (key == MatchRoomPropKeys.Verified && IsAdminVerifiedFor is not null)
+            {
+                var clientClaimed = value.Kind == LobbyVariantKind.Bool && value.Bool;
+                var nickForCheck = ResolveActorNick(actorNr, st, room);
+                var isAdmin = actorNr != MatchHostActor.ActorNr
+                    && nickForCheck is not null
+                    && IsAdminVerifiedFor(nickForCheck, peer.Address);
+
+                if (clientClaimed && !isAdmin)
+                    Console.WriteLine(
+                        $"[match-host] SetProperty verified actor={actorNr} — клиент прислал true, " +
+                        "сброшено в false (галочку ставит только сервер)");
+                else if (isAdmin && !clientClaimed)
+                    Console.WriteLine($"[match-host] SetProperty verified actor={actorNr} — админ, установлено true");
+
+                value = LobbyVariant.FromBool(isAdmin);
+            }
+
             // SetProperty is one of the hottest paths (every hit/death/team change). Log it
             // only in verbose mode; the per-key combat/buy traces below stay (decisive).
             if (Diag.LogVerbose)
@@ -249,6 +270,26 @@ public sealed partial class GameMatchHost
                         }
 
                         v = serverUid;
+                    }
+
+                    // verified — как в одиночном SetProperty: значение ставит сервер.
+                    // Подмена «isVerified = true» на клиенте до игроков не доходит.
+                    if (k == MatchRoomPropKeys.Verified && IsAdminVerifiedFor is not null)
+                    {
+                        var clientClaimed = originalValue.Kind == LobbyVariantKind.Bool && originalValue.Bool;
+                        var nickForCheck = ResolveActorNick(actorNr, st, room);
+                        var isAdmin = actorNr != MatchHostActor.ActorNr
+                            && nickForCheck is not null
+                            && IsAdminVerifiedFor(nickForCheck, peer.Address);
+
+                        if (clientClaimed && !isAdmin)
+                            Console.WriteLine(
+                                $"[match-host] SetProperties verified actor={actorNr} — клиент прислал true, " +
+                                "сброшено в false (галочку ставит только сервер)");
+                        else if (isAdmin && !clientClaimed)
+                            Console.WriteLine($"[match-host] SetProperties verified actor={actorNr} — админ, установлено true");
+
+                        v = LobbyVariant.FromBool(isAdmin);
                     }
 
                     var had = room.ActorProps.TryGetValue((actorNr, k), out var prevK);

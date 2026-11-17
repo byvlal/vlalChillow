@@ -181,6 +181,8 @@ public sealed partial class GameMatchHost
                 return; // already counted
         }
 
+        NoteStatsDeath(room, actorNr);
+
         Console.WriteLine(
             $"[observe] death actor={actorNr} team={team} via {source} " +
             "(DeadActors armed → same-tick wipe check)");
@@ -418,6 +420,7 @@ public sealed partial class GameMatchHost
             Console.WriteLine(
                 $"[combat-death] kills++ killer={killerActorNr} → victim={victim} via {how} " +
                 "CONFIRMED-KILLER (already dead — attribution cleared, no second Destroy)");
+            NoteStatsKill(room, killerActorNr);
             return;
         }
 
@@ -427,6 +430,7 @@ public sealed partial class GameMatchHost
                 $"[combat-death] kills++ killer={killerActorNr} → victim={victim} via {how} " +
                 "SKIP AuthorBombModeDeath (not in LivingPawns — attribution cleared; " +
                 "death prop / Destroy-grace owns)");
+            NoteStatsKill(room, killerActorNr);
             return;
         }
 
@@ -443,6 +447,7 @@ public sealed partial class GameMatchHost
         Console.WriteLine(
             $"[combat-death] kills++ killer={killerActorNr} → victim={victim} via {how} " +
             "→ AuthorBombModeDeath");
+        NoteStatsKill(room, killerActorNr);
         AuthorBombModeDeath(room, victim, killerActorNr, source: $"kills/{how}");
     }
 

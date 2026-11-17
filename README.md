@@ -187,6 +187,21 @@ client sent, and puts **your room** at the top of the list with a «Заверш
 (the same end-of-match path as `/end`; the server re-checks the owner, so nobody else's
 room can be closed).
 
+The site is one page with hash routes: `#/` landing, `#/docs` the step-by-step instruction
+with screenshots, `#/play` room creation and the public list, `#/profile` your own stats
+(kills, deaths, K/D, time in matches, unique matches — kept on the server in `stats.json`),
+and `#/admin` — the admin panel.
+
+`#/admin` is gated three ways on **every** request: site session → the **live** `admin.ids`
+from `config.json` (a hot reload of the config cuts access at once) → the per-run code from
+`auth.txt` (an in-memory `sc_admin` cookie, dead on restart). From there an admin can set a
+custom displayed ID (`customids.json`; the numeric id used by bans and `admin.ids` never
+changes) and run bans — the same path as `/ban` in chat, so who / what / why / for how long
+is announced to everyone the same way.
+
+`stats.json` and `customids.json` are local runtime state next to the executable and are
+git-ignored.
+
 The page can also be published on the internet behind a reverse proxy. Limits are then
 counted **per real visitor**, not per proxy: the panel takes the client address from
 `X-Forwarded-For`, and only for a request that came from loopback or a private network, so

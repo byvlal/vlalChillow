@@ -4,7 +4,13 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="dark light">
-<title>влалChillow — комнаты</title>
+<meta name="theme-color" content="#0b141c">
+<title>влалChillow — свой сервер для Standoff 2</title>
+<link rel="preload" href="/media/Bebasbolt-1.1.4-release.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/media/roboto-400-cyrillic.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/media/roboto-400-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/media/roboto-700-cyrillic.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="/media/roboto-700-latin.woff2" as="font" type="font/woff2" crossorigin>
 <style>
 /* ══════════════════════════════════════════════════════════════════
    Material Design 3 (Material You)
@@ -55,37 +61,37 @@
   --md-sys-typescale-label-small:500 11px/16px;
 }
 
-/* ══ DARK — tonal-spot, seed #1E5AA8 ══ */
+/* ══ DARK — палитра Standoff 2: тёмный сине-бирюзовый интерфейс игры ══ */
 [data-theme="dark"]{
-  --md-sys-color-primary:#aac7ff;
-  --md-sys-color-on-primary:#0a305f;
-  --md-sys-color-primary-container:#274777;
-  --md-sys-color-on-primary-container:#d6e3ff;
-  --md-sys-color-secondary:#bec6dc;
-  --md-sys-color-on-secondary:#283141;
-  --md-sys-color-secondary-container:#3e4759;
-  --md-sys-color-on-secondary-container:#dae2f9;
-  --md-sys-color-tertiary:#dcbce0;
-  --md-sys-color-on-tertiary:#3f2844;
-  --md-sys-color-tertiary-container:#573e5c;
-  --md-sys-color-on-tertiary-container:#fad8fd;
+  --md-sys-color-primary:#a9c0de;
+  --md-sys-color-on-primary:#0c1721;
+  --md-sys-color-primary-container:#23405c;
+  --md-sys-color-on-primary-container:#d9e6f7;
+  --md-sys-color-secondary:#9ab4c8;
+  --md-sys-color-on-secondary:#122636;
+  --md-sys-color-secondary-container:#2c4356;
+  --md-sys-color-on-secondary-container:#d9e6f7;
+  --md-sys-color-tertiary:#e0b06a;
+  --md-sys-color-on-tertiary:#241a05;
+  --md-sys-color-tertiary-container:#4e3c17;
+  --md-sys-color-on-tertiary-container:#f5e3c2;
   --md-sys-color-error:#ffb4ab;
   --md-sys-color-on-error:#690005;
   --md-sys-color-error-container:#93000a;
   --md-sys-color-on-error-container:#ffdad6;
-  --md-sys-color-surface:#111318;
-  --md-sys-color-on-surface:#e2e2e9;
-  --md-sys-color-surface-variant:#44474e;
-  --md-sys-color-on-surface-variant:#c4c6d0;
-  --md-sys-color-outline:#8e9099;
-  --md-sys-color-outline-variant:#44474e;
-  --md-sys-color-surface-container-lowest:#0c0e13;
-  --md-sys-color-surface-container-low:#191c20;
-  --md-sys-color-surface-container:#1d2024;
-  --md-sys-color-surface-container-high:#282a2f;
-  --md-sys-color-surface-container-highest:#33353a;
-  --md-sys-color-surface-dim:#111318;
-  --md-sys-color-surface-bright:#37393e;
+  --md-sys-color-surface:#0b141c;
+  --md-sys-color-on-surface:#e9f0f6;
+  --md-sys-color-surface-variant:#2c3e4e;
+  --md-sys-color-on-surface-variant:#a8bccb;
+  --md-sys-color-outline:#7e93a5;
+  --md-sys-color-outline-variant:#2c3e4e;
+  --md-sys-color-surface-container-lowest:#08111a;
+  --md-sys-color-surface-container-low:#101d28;
+  --md-sys-color-surface-container:#142430;
+  --md-sys-color-surface-container-high:#1a2c3a;
+  --md-sys-color-surface-container-highest:#203646;
+  --md-sys-color-surface-dim:#0b141c;
+  --md-sys-color-surface-bright:#37474f;
   --md-sys-color-inverse-surface:#e2e2e9;
   --md-sys-color-inverse-on-surface:#2e3036;
   --md-sys-color-scrim:#000000;
@@ -137,7 +143,7 @@ html,body{margin:0;padding:0}
 body{
   background:var(--md-sys-color-surface);
   color:var(--md-sys-color-on-surface);
-  font-family:Roboto,"Segoe UI",system-ui,-apple-system,"Helvetica Neue",Arial,sans-serif;
+  font-family:"RobotoV",Roboto,"Segoe UI",system-ui,-apple-system,"Helvetica Neue",Arial,sans-serif;
   font:var(--md-sys-typescale-body-medium);
   letter-spacing:.25px;
   min-height:100vh;
@@ -640,192 +646,2001 @@ select.md-field__box{
 .md-profile__who{min-width:0}
 .md-profile__spacer{margin-left:auto}
 .md-badge--mine{background:var(--md-sys-color-primary-container);color:var(--md-sys-color-on-primary-container)}
+
+/* ══════════════════════════════════════════════════════════════════
+   ГЛАВНАЯ — стиль Standoff 2 (Cyrillic Bebasbolt + Roboto, как в игре)
+   Шрифты отдаёт сам сервер: /media/*.woff2 (вкомпилированы, кэш год).
+   ══════════════════════════════════════════════════════════════════ */
+
+/* Bebasbolt — свободный шрифт по мотивам логотипа Standoff 2 (Axlebolt LTD),
+   Wanja01 & Snowy, CC-BY-4.0: https://github.com/Wanja01YT/bebasbolt */
+@font-face{
+  font-family:"Bebasbolt";
+  src:url("/media/Bebasbolt-1.1.4-release.woff2") format("woff2");
+  font-weight:400;font-style:normal;font-display:swap;
+}
+/* Roboto — тот самый шрифт игры (Android). Кириллица и латиница отдельными файлами. */
+@font-face{
+  font-family:"RobotoV";
+  src:url("/media/roboto-400-cyrillic.woff2") format("woff2");
+  font-weight:400;unicode-range:U+0301,U+0400-045F,U+0490-0491,U+04B0-04B1,U+2116;
+  font-display:swap;
+}
+@font-face{
+  font-family:"RobotoV";
+  src:url("/media/roboto-400-latin.woff2") format("woff2");
+  font-weight:400;unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;
+  font-display:swap;
+}
+@font-face{
+  font-family:"RobotoV";
+  src:url("/media/roboto-500-cyrillic.woff2") format("woff2");
+  font-weight:500;unicode-range:U+0301,U+0400-045F,U+0490-0491,U+04B0-04B1,U+2116;
+  font-display:swap;
+}
+@font-face{
+  font-family:"RobotoV";
+  src:url("/media/roboto-500-latin.woff2") format("woff2");
+  font-weight:500;unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;
+  font-display:swap;
+}
+@font-face{
+  font-family:"RobotoV";
+  src:url("/media/roboto-700-cyrillic.woff2") format("woff2");
+  font-weight:700;unicode-range:U+0301,U+0400-045F,U+0490-0491,U+04B0-04B1,U+2116;
+  font-display:swap;
+}
+@font-face{
+  font-family:"RobotoV";
+  src:url("/media/roboto-700-latin.woff2") format("woff2");
+  font-weight:700;unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;
+  font-display:swap;
+}
+
+/* ══ токены главной (якорная палитра — интерфейс Standoff 2) ══ */
+:root{
+  --so-bg:#0b141c;
+  --so-bg-2:#0e1d29;
+  --so-bg-3:#13293a;
+  --so-panel:rgba(12,27,39,.55);
+  --so-line:rgba(154,196,226,.14);
+  --so-line-strong:rgba(154,196,226,.32);
+  --so-text:#e9f0f6;
+  --so-muted:#90a7b8;
+  --so-ct:#8fb4e8;       /* синие CT */
+  --so-t:#e8a33d;        /* оранжевые T */
+  --so-hp:#f0c33c;       /* HP-жёлтый */
+  --so-red:#c03b3b;
+  --so-gold:#d9a441;
+  /* акцент по умолчанию — CT-синий; ?select может переключить */
+  --so-acc:var(--so-ct);
+  --so-acc-ink:#0c1721;
+  --so-font:"RobotoV",Roboto,"Segoe UI",system-ui,sans-serif;
+  --so-display:"Bebasbolt","Arial Narrow",Impact,sans-serif;
+}
+html[data-accent="orange"]{--so-acc:var(--so-t);--so-acc-ink:#171004}
+html[data-accent="yellow"]{--so-acc:var(--so-hp);--so-acc-ink:#171204}
+html[data-btn="white"] .so-btn--play{background:linear-gradient(180deg,#ffffff,#dfe6ee)}
+
+.so-view{background:var(--so-bg);color:var(--so-text);font-family:var(--so-font);
+  -webkit-font-smoothing:antialiased}
+body.is-home{background:var(--so-bg)}
+
+/* ══ верхняя планка ══ */
+.so-top{
+  position:absolute;top:0;left:0;right:0;z-index:10;
+  display:flex;align-items:center;gap:28px;padding:20px 32px;
+}
+.so-top__logo{
+  font-family:var(--so-display);font-size:24px;letter-spacing:.05em;
+  color:var(--so-text);text-decoration:none;white-space:nowrap;
+}
+.so-top__logo b{color:var(--so-acc);font-weight:400}
+.so-top nav{margin-left:auto;display:flex;align-items:center;gap:28px}
+.so-top nav a{
+  font-family:var(--so-display);font-size:17px;letter-spacing:.1em;
+  color:var(--so-muted);text-decoration:none;transition:color .15s;
+}
+.so-top nav a:hover{color:var(--so-text)}
+.so-online{display:inline-flex;align-items:center;gap:8px}
+.so-online__dot{width:7px;height:7px;border-radius:50%;background:#57d98a;
+  box-shadow:0 0 8px rgba(87,217,138,.6)}
+.so-online__dot--off{background:#d95757;box-shadow:none}
+
+/* ══ hero с видео ══ */
+.so-hero{
+  position:relative;min-height:100svh;overflow:hidden;
+  display:flex;align-items:flex-end;isolation:isolate;
+}
+.so-hero__media{position:absolute;inset:0;z-index:-1}
+.so-hero__video{
+  position:absolute;inset:0;width:100%;height:100%;
+  object-fit:cover;transform:scale(1.14);will-change:transform;
+  background:#0b141c;
+}
+.so-hero__scrim{position:absolute;inset:0;background:
+  linear-gradient(180deg,rgba(7,13,20,.62) 0%,rgba(7,13,20,.22) 32%,
+                  rgba(7,13,20,.55) 74%,rgba(10,18,26,.94) 100%),
+  linear-gradient(97deg,rgba(7,13,20,.6) 0%,rgba(7,13,20,.22) 46%,rgba(7,13,20,0) 78%)}
+.so-hero__inner{
+  position:relative;z-index:2;width:100%;max-width:1240px;margin:0 auto;
+  padding:0 32px 108px;
+}
+.so-hero__over{
+  font-size:12px;font-weight:500;letter-spacing:.34em;text-transform:uppercase;
+  color:var(--so-muted);margin:0 0 14px;
+}
+.so-hero h1{
+  font-family:var(--so-display);font-weight:400;margin:0;
+  font-size:clamp(62px,10.5vw,148px);line-height:.9;letter-spacing:.008em;
+  color:#fff;text-shadow:0 2px 28px rgba(0,0,0,.4);
+}
+.so-hero h1 span{color:var(--so-acc)}
+.so-hero__sub{
+  margin:16px 0 0;max-width:600px;
+  color:#c3d2de;font-size:16px;line-height:1.62;
+}
+/* альтернативные заголовки для ?select */
+.so-hero h1 i{font-style:normal}
+.so-hero h1 .t2,.so-hero h1 .t3{display:none}
+html[data-title="2"] .so-hero h1 .t1{display:none}
+html[data-title="2"] .so-hero h1 .t2{display:inline}
+html[data-title="3"] .so-hero h1 .t1{display:none}
+html[data-title="3"] .so-hero h1 .t3{display:inline}
+
+/* кнопки в духе игры: ИГРАТЬ — светло-голубая плашка, вторая — тёмная */
+.so-cta{display:flex;align-items:center;gap:14px;margin-top:30px;flex-wrap:wrap}
+.so-btn{
+  font-family:var(--so-display);font-size:20px;letter-spacing:.1em;
+  display:inline-flex;align-items:center;gap:10px;
+  padding:15px 34px 12px;border-radius:6px;text-decoration:none;
+  border:1px solid transparent;
+  transition:filter .16s,transform .16s,border-color .16s,background .16s;
+  user-select:none;
+}
+.so-btn--play{
+  background:linear-gradient(180deg,#b6cbe7,#9db6d7);color:#0c1721;
+  box-shadow:0 10px 28px rgba(8,18,28,.5),inset 0 1px 0 rgba(255,255,255,.55);
+}
+.so-btn--play:hover{filter:brightness(1.08);transform:translateY(-1px)}
+.so-btn--play:active{transform:translateY(0)}
+.so-btn--ghost{
+  background:rgba(9,20,30,.55);color:var(--so-text);
+  border-color:var(--so-line-strong);backdrop-filter:blur(6px);
+}
+.so-btn--ghost:hover{border-color:rgba(169,196,226,.55);background:rgba(14,29,41,.75)}
+.so-btn[disabled]{opacity:.42;cursor:not-allowed;pointer-events:none}
+/* кнопки на страницах play/profile — средний размер */
+.so-btn--sm{font-size:16.5px;padding:12px 22px 9px}
+/* кликабельный текст со стрелкой под кнопкой */
+.so-howlink{
+  display:inline-flex;align-items:center;gap:9px;margin-top:20px;
+  font-family:var(--so-display);font-size:16px;letter-spacing:.14em;
+  color:var(--so-acc);text-decoration:none;transition:color .15s;
+}
+.so-howlink svg{transition:transform .15s}
+.so-howlink:hover{color:#fff}
+.so-howlink:hover svg{transform:translateX(5px)}
+/* живой счётчик в углу hero */
+.so-hero__live{
+  display:flex;width:max-content;align-items:center;gap:10px;margin-top:18px;
+  font-family:var(--so-display);font-size:15px;letter-spacing:.14em;color:var(--so-muted);
+}
+.so-hero__live b{color:var(--so-text);font-weight:400}
+/* стрелка «листай вниз» */
+.so-cue{
+  position:absolute;left:50%;bottom:26px;transform:translateX(-50%);z-index:2;
+  color:rgba(233,240,246,.55);animation:so-cue 2.4s ease-in-out infinite;
+}
+@keyframes so-cue{0%,100%{transform:translate(-50%,0)}50%{transform:translate(-50%,7px)}}
+
+/* бегущая строка режимов */
+.so-marquee{
+  overflow:hidden;border-top:1px solid var(--so-line);border-bottom:1px solid var(--so-line);
+  background:rgba(9,18,26,.72);
+}
+.so-marquee__track{display:flex;width:max-content;animation:so-marquee 30s linear infinite}
+.so-marquee__track span{
+  font-family:var(--so-display);font-size:16px;letter-spacing:.26em;
+  color:rgba(158,190,214,.38);padding:13px 0 10px;white-space:nowrap;
+}
+.so-marquee__track span i{font-style:normal;color:rgba(232,163,61,.5);padding:0 22px}
+@keyframes so-marquee{to{transform:translateX(-50%)}}
+
+/* ══ секции ══ */
+.so-sec{max-width:1240px;margin:0 auto;padding:96px 32px 0}
+.so-sec:last-of-type{padding-bottom:120px}
+.so-sec__label{
+  display:flex;align-items:center;gap:18px;margin:0;
+  font-family:var(--so-display);font-size:15px;letter-spacing:.34em;
+  color:var(--so-muted);text-transform:uppercase;
+}
+.so-sec__label::after{content:"";height:1px;flex:1;background:var(--so-line)}
+.so-sec h2{
+  font-family:var(--so-display);font-weight:400;margin:20px 0 0;
+  font-size:clamp(42px,6vw,76px);line-height:.94;letter-spacing:.01em;color:#fff;
+}
+.so-sec h2 em{font-style:normal;color:var(--so-acc)}
+
+/* манифест: серый текст, ключевое — белым (как у Apple) */
+.so-manifesto{margin:34px 0 0;max-width:920px}
+.so-manifesto p{
+  font-size:clamp(20px,2.4vw,29px);line-height:1.5;color:var(--so-muted);
+  margin:0 0 18px;font-weight:400;
+}
+.so-manifesto b{color:#fff;font-weight:400}
+/* факты — строки с волосяными линиями */
+.so-facts{margin-top:56px;border-top:1px solid var(--so-line)}
+.so-facts__row{
+  display:grid;grid-template-columns:190px 1fr auto;gap:20px;align-items:baseline;
+  padding:20px 0;border-bottom:1px solid var(--so-line);
+}
+.so-facts__k{font-family:var(--so-display);font-size:22px;letter-spacing:.06em;color:var(--so-text)}
+.so-facts__d{color:var(--so-muted);font-size:14px;line-height:1.5}
+.so-facts__v{font-family:var(--so-display);font-size:22px;color:var(--so-acc);letter-spacing:.08em;white-space:nowrap}
+
+/* шаги «как начать» */
+.so-steps{margin-top:44px;border-top:1px solid var(--so-line)}
+.so-step{
+  display:grid;grid-template-columns:120px 1fr auto;gap:26px;align-items:center;
+  padding:32px 0;border-bottom:1px solid var(--so-line);
+}
+.so-step__n{
+  font-family:var(--so-display);font-size:52px;line-height:1;
+  color:transparent;-webkit-text-stroke:1px rgba(158,190,214,.5);
+}
+.so-step__t{font-family:var(--so-display);font-size:27px;letter-spacing:.05em;color:#fff}
+.so-step__d{color:var(--so-muted);font-size:15px;line-height:1.55;margin-top:7px;max-width:640px}
+.so-step__d b{color:var(--so-text);font-weight:500}
+.so-step__a{
+  font-family:var(--so-display);font-size:16px;letter-spacing:.12em;
+  color:var(--so-acc);text-decoration:none;white-space:nowrap;
+}
+.so-step__a:hover{color:#fff}
+
+/* репорты */
+.so-report{
+  margin-top:40px;display:flex;gap:36px;align-items:center;justify-content:space-between;
+  background:var(--so-panel);border:1px solid var(--so-line);border-radius:12px;
+  padding:40px;backdrop-filter:blur(8px);flex-wrap:wrap;
+}
+.so-report__list{margin:0;padding:0;list-style:none;color:var(--so-muted);font-size:15px;line-height:2.05}
+.so-report__list b{color:var(--so-text);font-weight:500}
+.so-report__txt{max-width:560px}
+.so-report__txt p{color:var(--so-muted);font-size:15px;line-height:1.65;margin:14px 0 0}
+
+/* «прямо сейчас» — счёт как в табло */
+.so-now{
+  margin-top:40px;display:grid;grid-template-columns:repeat(4,1fr);
+  gap:1px;background:var(--so-line);border:1px solid var(--so-line);
+  border-radius:12px;overflow:hidden;
+}
+.so-now__cell{background:var(--so-bg-2);padding:30px 30px 26px}
+.so-now__v{font-family:var(--so-display);font-size:58px;line-height:1;color:#fff}
+.so-now__l{font-size:12px;letter-spacing:.2em;color:var(--so-muted);text-transform:uppercase;margin-top:10px}
+.so-now__hint{margin:16px 2px 0;color:var(--so-muted);font-size:13px}
+
+/* ══ подвал ══ */
+.so-foot{margin-top:110px;border-top:1px solid var(--so-line);background:#08101a}
+.so-foot__inner{max-width:1240px;margin:0 auto;padding:52px 32px 44px}
+.so-foot__links{display:flex;gap:44px;flex-wrap:wrap}
+.so-foot__links a{
+  font-family:var(--so-display);font-size:19px;letter-spacing:.12em;
+  color:var(--so-text);text-decoration:none;display:inline-flex;align-items:center;gap:10px;
+}
+.so-foot__links a svg{color:var(--so-acc)}
+.so-foot__links a:hover{color:var(--so-acc)}
+.so-foot__brand{
+  margin-top:34px;font-family:var(--so-display);font-size:15px;letter-spacing:.2em;
+  color:#4e6577;
+}
+.so-foot__credit{margin-top:12px;color:#41556a;font-size:12px;line-height:1.75;max-width:760px}
+.so-foot__credit a{color:#5c7285;text-decoration:none;border-bottom:1px solid #2c3e4e}
+.so-foot__credit a:hover{color:var(--so-muted)}
+
+/* ══ страница инструкции (#/docs) — та же система, планка прилипает сверху ══ */
+.so-top--static{
+  position:sticky;top:0;
+  background:rgba(11,20,28,.86);backdrop-filter:blur(10px);
+  border-bottom:1px solid var(--so-line);
+}
+.so-top nav a.is-here{color:var(--so-text)}
+.so-docs-head h1{
+  font-family:var(--so-display);font-weight:400;margin:22px 0 0;
+  font-size:clamp(46px,7.2vw,92px);line-height:.94;letter-spacing:.01em;color:#fff;
+}
+.so-docs-head h1 em{font-style:normal;color:var(--so-acc)}
+.so-docs-sub{margin:18px 0 0;max-width:660px;color:var(--so-muted);font-size:16px;line-height:1.65}
+/* подпись группы шагов: оранжевый ромб + буквы (как метки команд в игре) */
+.so-how-group{
+  display:flex;align-items:center;gap:14px;margin:46px 0 0;
+  font-family:var(--so-display);font-size:18px;letter-spacing:.24em;color:var(--so-text);
+}
+.so-how-group i{font-style:normal;font-size:11px;color:var(--so-t)}
+.so-steps .so-how-group:first-child{margin-top:0;padding-top:16px}
+/* шаг инструкции: номер + текст, ниже — скриншот с подписью */
+.so-doc{margin-top:48px}
+.so-doc__head{display:grid;grid-template-columns:96px 1fr;gap:22px;align-items:start}
+.so-doc__n{
+  font-family:var(--so-display);font-size:56px;line-height:.9;
+  color:transparent;-webkit-text-stroke:1px rgba(158,190,214,.5);
+}
+.so-doc__t{font-family:var(--so-display);font-size:29px;letter-spacing:.05em;color:#fff;padding-top:10px}
+.so-doc__d{color:var(--so-muted);font-size:15.5px;line-height:1.6;margin-top:9px;max-width:720px}
+.so-doc__d b{color:var(--so-text);font-weight:500}
+.so-doc__fig{margin:26px 0 0}
+.so-doc__fig img{
+  display:block;width:100%;height:auto;
+  border:1px solid var(--so-line-strong);border-radius:10px;
+  background:#0a121b;
+}
+.so-doc__fig figcaption{
+  margin-top:12px;display:flex;gap:10px;align-items:baseline;
+  color:#6e8698;font-size:13px;line-height:1.55;
+}
+.so-doc__fig figcaption::before{content:"◆";color:var(--so-t);font-size:9px;flex:0 0 auto}
+/* «если что-то не так»: симптом → что делать */
+.so-trouble{margin-top:40px;border-top:1px solid var(--so-line)}
+.so-trouble__row{
+  display:grid;grid-template-columns:1fr 1fr;gap:26px;align-items:start;
+  padding:24px 0;border-bottom:1px solid var(--so-line);
+}
+.so-trouble__q{font-family:var(--so-display);font-size:22px;letter-spacing:.04em;color:#fff}
+.so-trouble__a{color:var(--so-muted);font-size:15px;line-height:1.6}
+.so-trouble__a b{color:var(--so-text);font-weight:500}
+.so-howmore{margin-top:38px}
+
+/* ══ режим примерки вариантов (?select) ══ */
+.so-select{
+  position:fixed;right:16px;bottom:16px;z-index:60;width:264px;display:none;
+  background:rgba(9,19,28,.94);border:1px solid var(--so-line-strong);border-radius:10px;
+  padding:16px 16px 14px;font-family:var(--so-font);color:var(--so-muted);font-size:12px;
+  box-shadow:0 12px 40px rgba(0,0,0,.5);backdrop-filter:blur(10px);
+}
+html[data-select] .so-select{display:block}
+.so-select__row{margin-bottom:12px}
+.so-select__row:last-child{margin-bottom:0}
+.so-select__k{font-size:10px;letter-spacing:.24em;text-transform:uppercase;color:#68809a;margin-bottom:7px}
+.so-select__opts{display:flex;gap:6px;flex-wrap:wrap}
+.so-select__opts button{
+  font-family:var(--so-display);font-size:13px;letter-spacing:.08em;
+  color:var(--so-text);background:rgba(26,44,58,.8);border:1px solid var(--so-line);
+  border-radius:5px;padding:6px 10px 4px;cursor:pointer;transition:border-color .12s;
+}
+.so-select__opts button:hover{border-color:var(--so-line-strong)}
+.so-select__opts button[aria-pressed="true"]{
+  background:var(--so-acc);color:var(--so-acc-ink);border-color:transparent;
+}
+.so-select__sw{display:inline-block;width:11px;height:11px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+
+/* ══ мобильная версия главной ══ */
+@media (max-width:760px){
+  .so-top{padding:16px 18px;gap:16px}
+  .so-top nav{gap:16px}
+  .so-top nav a{font-size:15px}
+  .so-hero__inner{padding:0 20px 96px}
+  .so-hero__sub{font-size:15px}
+  .so-cta{gap:10px}
+  .so-btn{padding:13px 24px 10px;font-size:18px}
+  .so-hero__live{margin-top:26px}
+  .so-sec{padding:72px 20px 0}
+  .so-facts__row{grid-template-columns:1fr;gap:6px}
+  .so-step{grid-template-columns:64px 1fr;row-gap:4px}
+  .so-step__n{font-size:34px;grid-row:span 2}
+  .so-step__a{grid-column:2;justify-self:start}
+  .so-report{padding:24px}
+  .so-now{grid-template-columns:repeat(2,1fr)}
+  .so-now__v{font-size:44px}
+  .so-foot__inner{padding:44px 20px 36px}
+  .so-foot__links{gap:22px}
+  .so-how-group{font-size:15px;letter-spacing:.18em;margin-top:36px}
+  .so-doc{margin-top:38px}
+  .so-doc__head{grid-template-columns:56px 1fr;gap:14px}
+  .so-doc__n{font-size:36px}
+  .so-doc__t{font-size:22px;padding-top:4px}
+  .so-doc__d{font-size:14px}
+  .so-doc__fig figcaption{font-size:12px}
+  .so-trouble__row{grid-template-columns:1fr;gap:8px;padding:20px 0}
+  .so-trouble__q{font-size:19px}
+}
+
+/* ══ reduced motion: никаких бегущих строк и параллакса ══ */
+@media (prefers-reduced-motion:reduce){
+  .so-marquee__track{animation:none}
+  .so-cue{animation:none}
+  .so-hero__video{transform:none}
+  .so-btn,.so-howlink,.so-howlink svg{transition:none}
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   V2: панель справа (аккаунт/навигация) · ИГРАТЬ #/play · ПРОФИЛЬ
+   #/profile · оглавление в инструкции. Всё — в системе so-*.
+   ══════════════════════════════════════════════════════════════════ */
+
+/* ── кнопка ПАНЕЛЬ в верхней планке ── */
+.so-sidebtn{
+  font-family:var(--so-display);font-size:14px;letter-spacing:.16em;
+  display:inline-flex;align-items:center;gap:8px;
+  padding:10px 18px 8px;border-radius:6px;cursor:pointer;
+  background:rgba(9,20,30,.6);color:var(--so-text);
+  border:1px solid var(--so-line-strong);
+  transition:filter .16s,border-color .16s,transform .16s;
+}
+.so-sidebtn:hover{border-color:rgba(169,196,226,.6);filter:brightness(1.12)}
+.so-sidebtn:active{transform:translateY(1px)}
+.so-sidebtn b{color:var(--so-acc);font-weight:400}
+@media(max-width:760px){.so-sidebtn{padding:8px 12px 6px;font-size:13px}}
+
+/* ── выдвижная панель справа ── */
+.so-scrim{
+  position:fixed;inset:0;z-index:70;background:rgba(3,7,11,.6);
+  opacity:0;pointer-events:none;transition:opacity .22s;
+}
+body.so-side-open .so-scrim{opacity:1;pointer-events:auto}
+.so-side{
+  position:fixed;top:0;right:0;bottom:0;z-index:80;
+  width:min(348px,94vw);display:flex;flex-direction:column;
+  background:rgba(9,19,28,.98);border-left:1px solid var(--so-line-strong);
+  transform:translateX(103%);transition:transform .26s cubic-bezier(.2,0,0,1);
+  box-shadow:-20px 0 70px rgba(0,0,0,.5);
+}
+body.so-side-open .so-side{transform:none}
+.so-side__head{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:18px 20px 14px;border-bottom:1px solid var(--so-line);
+}
+.so-side__title{
+  font-family:var(--so-display);font-size:19px;letter-spacing:.24em;color:var(--so-text);
+}
+.so-side__title b{color:var(--so-acc);font-weight:400}
+.so-side__x{
+  width:34px;height:34px;border-radius:6px;cursor:pointer;
+  border:1px solid var(--so-line);background:transparent;
+  color:var(--so-muted);font-size:17px;line-height:1;
+  transition:color .15s,border-color .15s;
+}
+.so-side__x:hover{color:#fff;border-color:var(--so-line-strong)}
+.so-side__body{flex:1;overflow-y:auto;padding:20px}
+.so-side__foot{padding:16px 20px 20px;border-top:1px solid var(--so-line)}
+
+.so-acc{display:flex;align-items:center;gap:13px;min-width:0}
+.so-acc__av{
+  width:54px;height:54px;flex:0 0 auto;border-radius:50%;object-fit:cover;
+  background:#14263a;border:1px solid var(--so-line-strong);
+}
+.so-acc__fb{
+  width:54px;height:54px;flex:0 0 auto;border-radius:50%;
+  background:#14263a;border:1px solid var(--so-line-strong);
+  display:flex;align-items:center;justify-content:center;
+  font-family:var(--so-display);font-size:24px;color:var(--so-acc);
+}
+.so-acc__av--big{width:88px;height:88px}
+.so-acc__fb--big{width:88px;height:88px;font-size:38px}
+.so-acc__n{font-family:var(--so-display);font-size:21px;letter-spacing:.05em;color:#fff;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.so-acc__n--big{font-size:44px}
+.so-acc__i{font-size:12px;letter-spacing:.1em;color:var(--so-muted);margin-top:3px}
+
+.so-side__label{
+  margin:24px 0 10px;font-size:10.5px;letter-spacing:.26em;
+  text-transform:uppercase;color:#68809a;
+}
+.so-input{
+  width:100%;height:46px;padding:0 14px;border-radius:6px;outline:none;
+  border:1px solid var(--so-line-strong);background:rgba(5,12,19,.65);
+  color:var(--so-text);font-size:15px;letter-spacing:.12em;
+  transition:border-color .15s;
+}
+.so-input::placeholder{color:#5c7285;letter-spacing:.2em}
+.so-input:focus{border-color:var(--so-acc)}
+.so-input--select{
+  appearance:none;cursor:pointer;padding-right:40px;
+  background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%2390a7b8'><path d='M7 10l5 5 5-5z'/></svg>");
+  background-repeat:no-repeat;background-position:right 10px center;background-size:20px;
+}
+.so-input--slim{height:40px;font-size:14px}
+.so-formrow{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:12px}
+.so-formrow .so-input{flex:1;min-width:0}
+.so-err{margin-top:9px;color:#e08585;font-size:12.5px;line-height:1.45;min-height:1em}
+.so-note{margin-top:10px;color:var(--so-muted);font-size:13px;line-height:1.55}
+.so-note--err{color:#e08585}
+.so-note b{color:var(--so-text);font-weight:500}
+.so-hint{margin-top:12px;color:var(--so-muted);font-size:12.5px;line-height:1.6}
+
+.so-navbtn{
+  display:flex;align-items:center;gap:12px;width:100%;
+  padding:13px 15px;margin-top:8px;border-radius:8px;cursor:pointer;
+  background:rgba(26,44,58,.4);border:1px solid var(--so-line);
+  font-family:var(--so-display);font-size:16.5px;letter-spacing:.14em;
+  color:var(--so-text);text-decoration:none;text-align:left;
+  transition:border-color .15s,color .15s,background .15s;
+}
+.so-navbtn:hover{border-color:var(--so-acc);color:#fff;background:rgba(26,44,58,.65)}
+.so-navbtn svg{flex:0 0 auto;color:var(--so-acc)}
+.so-navbtn--acc{border-color:rgba(143,180,232,.45)}
+.so-navbtn--out{color:#e0a1a1;border-color:rgba(192,59,59,.35)}
+.so-navbtn--out svg{color:#e0a1a1}
+.so-navbtn--out:hover{border-color:rgba(192,59,59,.7);color:#ffb9b9}
+
+/* ── страницы play / profile: общее ── */
+.so-playhead__h{
+  font-family:var(--so-display);font-weight:400;margin:20px 0 0;
+  font-size:clamp(44px,6.4vw,78px);line-height:.94;letter-spacing:.01em;color:#fff;
+}
+.so-playhead__h em{font-style:normal;color:var(--so-acc)}
+.so-pills{display:flex;gap:10px;flex-wrap:wrap;margin-top:26px}
+.so-pill{
+  min-width:108px;padding:14px 18px 11px;border-radius:9px;
+  background:var(--so-panel);border:1px solid var(--so-line);
+  backdrop-filter:blur(6px);
+}
+.so-pill__v{
+  display:block;font-family:var(--so-display);font-size:30px;line-height:1;
+  color:#fff;font-variant-numeric:tabular-nums;
+}
+.so-pill__l{
+  display:block;margin-top:7px;font-size:10.5px;letter-spacing:.18em;
+  text-transform:uppercase;color:var(--so-muted);
+}
+.so-pill--big{min-width:150px}
+.so-pill--big .so-pill__v{font-size:42px}
+
+.so-card{
+  background:var(--so-panel);border:1px solid var(--so-line);border-radius:12px;
+  padding:26px;backdrop-filter:blur(8px);
+}
+.so-card + .so-card{margin-top:14px}
+.so-card--flush{padding:0;overflow:hidden}
+.so-card__t{font-family:var(--so-display);font-size:21px;letter-spacing:.12em;color:#fff}
+.so-card__d{margin-top:9px;color:var(--so-muted);font-size:14px;line-height:1.6}
+.so-card__d b{color:var(--so-text);font-weight:500}
+.so-card__label{
+  display:block;margin-bottom:9px;font-size:10.5px;letter-spacing:.22em;
+  text-transform:uppercase;color:#68809a;
+}
+.so-card__sec{margin-top:22px}
+.so-formgrid{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+@media(max-width:720px){.so-formgrid{grid-template-columns:1fr}}
+.so-chips{display:flex;flex-wrap:wrap;gap:8px}
+.so-chip{
+  font-family:var(--so-display);font-size:15px;letter-spacing:.08em;
+  color:var(--so-text);background:rgba(26,44,58,.55);
+  border:1px solid var(--so-line);border-radius:6px;
+  padding:8px 14px 6px;cursor:pointer;
+  transition:border-color .14s,background .14s,color .14s;
+}
+.so-chip:hover{border-color:var(--so-line-strong)}
+.so-chip[aria-pressed="true"]{
+  background:var(--so-acc);color:var(--so-acc-ink);border-color:transparent;
+}
+.so-warn{
+  margin:0 0 14px;padding:13px 16px;border-radius:9px;
+  background:rgba(192,59,59,.14);border:1px solid rgba(192,59,59,.45);
+  color:#f0b9b9;font-size:13.5px;line-height:1.5;
+}
+
+/* табы-переключатели в стиле игры */
+.so-tabs{display:flex;gap:10px;flex-wrap:wrap;margin:26px 0 16px}
+.so-tab{
+  font-family:var(--so-display);font-size:17px;letter-spacing:.12em;
+  padding:12px 22px 9px;border-radius:6px;cursor:pointer;
+  background:rgba(9,20,30,.55);color:var(--so-muted);
+  border:1px solid var(--so-line);transition:all .15s;
+}
+.so-tab:hover{color:var(--so-text);border-color:var(--so-line-strong)}
+.so-tab[aria-selected="true"]{
+  background:var(--so-acc);color:var(--so-acc-ink);border-color:transparent;
+}
+
+/* поле с командой /join */
+.so-cmd{
+  flex:1;min-width:0;width:100%;height:46px;padding:0 14px;border-radius:6px;
+  border:1px solid rgba(143,180,232,.4);background:rgba(5,12,19,.8);
+  color:#bcd2ec;font:500 15px/20px "Roboto Mono",ui-monospace,Menlo,Consolas,monospace;
+  letter-spacing:.04em;outline:none;
+}
+.so-result{
+  margin-top:20px;padding:18px;border-radius:10px;
+  background:rgba(143,180,232,.08);border:1px solid rgba(143,180,232,.3);
+}
+.so-result__t{font-family:var(--so-display);font-size:18px;letter-spacing:.1em;color:#fff}
+.so-result .so-formrow{margin-top:14px}
+
+/* нумерованные шаги «что делать дальше» — и в результате создания, и в окне входа */
+.so-steps{margin:14px 0 0;padding:0;list-style:none;counter-reset:st}
+.so-steps li{
+  counter-increment:st;position:relative;padding:0 0 14px 40px;
+  color:var(--so-muted);font-size:14px;line-height:1.55;
+}
+.so-steps li:last-child{padding-bottom:2px}
+.so-steps li b{color:var(--so-text);font-weight:500}
+.so-steps li::before{
+  content:counter(st, decimal-leading-zero);
+  position:absolute;left:0;top:-2px;width:28px;height:28px;border-radius:6px;
+  display:flex;align-items:center;justify-content:center;
+  font-family:var(--so-display);font-size:14px;letter-spacing:.04em;color:var(--so-acc);
+  background:rgba(143,180,232,.1);border:1px solid rgba(143,180,232,.3);
+}
+.so-steps--dlg{margin-top:2px}
+.so-steps--dlg li{padding-bottom:10px}
+
+/* ── список комнат ── */
+.so-filters{
+  display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+  padding:14px 16px;border-bottom:1px solid var(--so-line);
+}
+.so-filters .so-input{width:auto;min-width:150px;flex:0 1 auto}
+.so-filters__upd{
+  margin-left:auto;font-size:11px;letter-spacing:.16em;
+  text-transform:uppercase;color:#68809a;
+}
+/* ── сетка «создание слева / комнаты справа» ── */
+.so-playgrid{display:grid;gap:14px;margin-top:8px;align-items:start}
+@media(min-width:981px){
+  .so-playgrid{grid-template-columns:minmax(370px,430px) minmax(0,1fr)}
+}
+/* мини-табы нужны только телефону: на десктопе обе панели на экране */
+.so-tabs--mini{margin:24px 0 14px}
+@media(min-width:981px){.so-tabs--mini{display:none}}
+@media(max-width:980px){
+  #play-grid[data-tab="create"] #panel-list{display:none}
+  #play-grid[data-tab="list"] #panel-create{display:none}
+}
+
+/* ── экран «сначала войди» (#/play без сессии) ── */
+.so-gate{max-width:760px;margin-top:8px}
+.so-gate__card{
+  position:relative;overflow:hidden;
+  padding:36px 34px 32px;border-radius:14px;
+  background:linear-gradient(180deg,rgba(19,41,58,.6),rgba(12,27,39,.6));
+  border:1px solid var(--so-line-strong);backdrop-filter:blur(8px);
+}
+.so-gate__card::after{
+  content:'◆';position:absolute;right:10px;top:-30px;
+  font-family:var(--so-display);font-size:150px;line-height:1;color:rgba(143,180,232,.07);
+  pointer-events:none;
+}
+.so-gate__k{display:block;font-size:10.5px;letter-spacing:.28em;text-transform:uppercase;color:var(--so-acc)}
+.so-gate__t{font-family:var(--so-display);font-weight:400;font-size:56px;line-height:.92;margin:12px 0 0;color:#fff}
+.so-gate__t em{font-style:normal;color:var(--so-acc)}
+.so-gate__d{margin:16px 0 0;max-width:540px;color:var(--so-muted);font-size:14.5px;line-height:1.65}
+.so-gate__d b{color:var(--so-text);font-weight:500}
+.so-gate__steps{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:26px}
+@media(max-width:720px){.so-gate__steps{grid-template-columns:1fr}}
+.so-gate__step{padding:14px 14px 12px;border-radius:10px;background:rgba(5,12,19,.5);border:1px solid var(--so-line)}
+.so-gate__step i{font-style:normal;font-family:var(--so-display);font-size:14px;letter-spacing:.1em;color:var(--so-acc)}
+.so-gate__step b{display:block;margin-top:7px;font-family:var(--so-display);font-weight:400;font-size:17px;letter-spacing:.06em;color:#fff}
+.so-gate__step span{display:block;margin-top:5px;color:var(--so-muted);font-size:12.5px;line-height:1.5}
+.so-gate__cta{display:flex;align-items:center;gap:14px;flex-wrap:wrap;margin-top:28px}
+
+/* ── панель создания ── */
+.so-create{
+  padding:24px 22px 22px;border-radius:12px;
+  background:var(--so-panel);border:1px solid var(--so-line);backdrop-filter:blur(8px);
+}
+.so-create__k{display:block;font-size:10.5px;letter-spacing:.28em;text-transform:uppercase;color:var(--so-acc)}
+.so-create__t{font-family:var(--so-display);font-weight:400;font-size:30px;letter-spacing:.06em;color:#fff;margin:7px 0 0}
+.so-create__t em{font-style:normal;color:var(--so-muted)}
+.so-create__blk{margin-top:22px}
+.so-create__label{display:block;margin-bottom:9px;font-size:10.5px;letter-spacing:.22em;text-transform:uppercase;color:#68809a}
+
+/* режимы — карточки с водяным знаком алиаса (TDM, DM…) */
+.so-modes{display:grid;grid-template-columns:repeat(auto-fill,minmax(124px,1fr));gap:8px}
+.so-mode{
+  position:relative;overflow:hidden;text-align:left;cursor:pointer;
+  padding:12px 12px 10px;border-radius:9px;
+  background:rgba(9,20,30,.6);border:1px solid var(--so-line);
+  transition:border-color .14s,background .14s;
+}
+.so-mode:hover{border-color:var(--so-line-strong)}
+.so-mode::after{
+  content:'◆';position:absolute;top:10px;right:11px;
+  font-size:10px;color:transparent;transition:color .14s;
+}
+.so-mode[aria-checked="true"]{border-color:var(--so-acc);background:rgba(255,255,255,.05)}
+.so-mode[aria-checked="true"]::after{color:var(--so-acc)}
+.so-mode__wm{
+  position:absolute;right:-4px;bottom:-11px;pointer-events:none;
+  font-family:var(--so-display);font-size:46px;line-height:1;letter-spacing:.02em;
+  color:rgba(233,240,246,.055);white-space:nowrap;
+}
+.so-mode__n{display:block;font-family:var(--so-display);font-size:16.5px;letter-spacing:.05em;color:#fff}
+.so-mode__d{display:block;margin-top:5px;font-size:11px;letter-spacing:.04em;color:var(--so-muted)}
+
+/* карты — плитки; фон строится из хэша имени (huePair), картинок в каталоге нет */
+.so-maps{display:grid;grid-template-columns:repeat(auto-fill,minmax(128px,1fr));gap:8px}
+.so-map{
+  position:relative;overflow:hidden;cursor:pointer;text-align:left;
+  aspect-ratio:16/9;border-radius:9px;padding:0;
+  border:1px solid var(--so-line);background:#0a1420;
+  transition:border-color .14s,box-shadow .14s;
+}
+.so-map__bg{position:absolute;inset:0;background:linear-gradient(150deg,var(--c1),var(--c2))}
+.so-map::before{
+  content:'';position:absolute;inset:0;
+  background:linear-gradient(180deg,rgba(5,12,19,0) 30%,rgba(5,12,19,.72));
+}
+.so-map:hover{border-color:var(--so-line-strong)}
+.so-map[aria-pressed="true"]{border-color:var(--so-acc);box-shadow:inset 0 0 0 1px var(--so-acc)}
+.so-map__n{
+  position:absolute;left:10px;right:26px;bottom:7px;overflow:hidden;
+  font-family:var(--so-display);font-size:15px;letter-spacing:.05em;color:#fff;
+  text-shadow:0 1px 6px rgba(0,0,0,.65);text-overflow:ellipsis;white-space:nowrap;
+}
+.so-map__mk{
+  position:absolute;top:7px;right:9px;font-size:11px;color:var(--so-acc);
+  opacity:0;transform:scale(.4);transition:opacity .14s,transform .18s;
+}
+.so-map[aria-pressed="true"] .so-map__mk{opacity:1;transform:scale(1)}
+
+/* живой пересбор выбора одной строкой: режим ◆ размер ◆ карта ◆ имя */
+.so-create__sum{
+  margin-top:22px;min-height:46px;padding:12px 14px 10px;border-radius:9px;
+  background:rgba(5,12,19,.55);border:1px solid var(--so-line);
+  display:flex;align-items:center;gap:9px;flex-wrap:wrap;
+  font-family:var(--so-display);font-size:16.5px;letter-spacing:.08em;color:#dfe9f2;
+}
+.so-create__sum-d{color:var(--so-acc);font-size:10px}
+.so-create__go{width:100%;justify-content:center;margin-top:14px;font-size:23px}
+
+/* акцентная кнопка «Войти» в карточке комнаты */
+.so-btn--acc{background:var(--so-acc);color:var(--so-acc-ink)}
+.so-btn--acc:hover{filter:brightness(1.1)}
+
+/* ── список комнат ── */
+.so-list{
+  border-radius:12px;overflow:hidden;
+  background:var(--so-panel);border:1px solid var(--so-line);backdrop-filter:blur(8px);
+}
+.so-list__head{
+  display:flex;align-items:center;gap:14px;
+  padding:18px 20px 15px;border-bottom:1px solid var(--so-line);
+}
+.so-list__t{font-family:var(--so-display);font-weight:400;font-size:24px;letter-spacing:.08em;color:#fff}
+.so-list__t em{font-style:normal;color:var(--so-acc)}
+.so-list__count{margin-left:auto;display:flex;align-items:baseline;gap:7px}
+.so-list__count b{
+  font-family:var(--so-display);font-weight:400;font-size:27px;line-height:1;
+  color:var(--so-acc);font-variant-numeric:tabular-nums;
+}
+.so-list__count i{font-style:normal;font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:var(--so-muted)}
+
+.so-rooms{list-style:none;margin:0;padding:0}
+.so-room{
+  display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:14px;align-items:center;
+  padding:13px 18px;
+}
+.so-room + .so-room{border-top:1px solid var(--so-line)}
+.so-room:hover{background:rgba(26,44,58,.28)}
+.so-room__mode{
+  position:relative;overflow:hidden;display:block;flex:0 0 auto;
+  width:62px;height:56px;border-radius:9px;
+  background:linear-gradient(160deg,var(--c1,#1d3a52),var(--c2,#0e1d29));
+  border:1px solid rgba(255,255,255,.09);
+}
+.so-room__wm{
+  position:absolute;inset:0;display:flex;align-items:center;justify-content:center;
+  font-style:normal;font-family:var(--so-display);font-size:30px;letter-spacing:.02em;
+  color:rgba(233,240,246,.16);pointer-events:none;white-space:nowrap;
+}
+.so-room__num{
+  position:absolute;left:7px;top:4px;font-style:normal;
+  font-family:var(--so-display);font-size:13px;letter-spacing:.04em;color:rgba(255,255,255,.9);
+}
+.so-room__body{min-width:0}
+.so-room__name{
+  display:flex;align-items:center;gap:9px;flex-wrap:wrap;
+  font-family:var(--so-display);font-size:18.5px;letter-spacing:.05em;color:#fff;
+}
+.so-room__name--muted{color:var(--so-muted)}
+.so-room__meta{margin-top:4px;color:var(--so-muted);font-size:13px;letter-spacing:.02em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.so-room__meta b{color:#c6d6e4;font-weight:500}
+.so-room__side{display:flex;align-items:center;gap:12px;justify-content:flex-end}
+.so-room__score{
+  min-width:58px;text-align:center;
+  font:500 17px/22px "Roboto Mono",ui-monospace,Menlo,Consolas,monospace;
+  color:#57708a;white-space:nowrap;font-variant-numeric:tabular-nums;
+}
+.so-room__score b{font-weight:500}
+.so-room__score .sc-ct{color:var(--so-ct)}
+.so-room__score .sc-tr{color:var(--so-t)}
+.so-room__score i{font-style:normal;color:#57708a;padding:0 2px}
+.so-room__cap{
+  font-size:11.5px;letter-spacing:.06em;color:var(--so-muted);white-space:nowrap;
+  padding:4px 10px 2px;border-radius:99px;border:1px solid var(--so-line);
+  background:rgba(5,12,19,.5);font-variant-numeric:tabular-nums;
+}
+.so-room__cap--full{color:#e0a1a1;border-color:rgba(192,59,59,.4)}
+.so-room__act{display:flex;align-items:center;gap:8px}
+.so-badge{
+  padding:3px 8px 1px;border-radius:5px;
+  font-size:10.5px;letter-spacing:.12em;text-transform:uppercase;white-space:nowrap;
+}
+.so-badge--live{background:rgba(232,163,61,.16);color:#e8a33d;border:1px solid rgba(232,163,61,.4)}
+.so-badge--wait{background:rgba(87,217,138,.1);color:#7fdc9f;border:1px solid rgba(87,217,138,.3)}
+.so-badge--full{background:rgba(192,59,59,.14);color:#e0a1a1;border:1px solid rgba(192,59,59,.4)}
+.so-badge--mine{background:var(--so-acc);color:var(--so-acc-ink);border:1px solid transparent}
+.so-empty{padding:44px 20px;text-align:center;color:var(--so-muted);font-size:14.5px;line-height:1.7}
+.so-empty--rich{padding:54px 24px 48px}
+.so-empty__d{font-style:normal;font-family:var(--so-display);font-size:38px;line-height:1;color:rgba(143,180,232,.28)}
+.so-empty__t{margin-top:12px;font-family:var(--so-display);font-weight:400;font-size:23px;letter-spacing:.08em;color:#fff}
+.so-empty__p{margin:9px auto 0;max-width:380px;color:var(--so-muted);font-size:13.5px;line-height:1.65}
+.so-empty .so-btn{margin-top:20px}
+.so-playfoot{margin-top:26px;color:#5c7285;font-size:13px}
+.so-playfoot a{color:#6e8698;text-decoration:none;border-bottom:1px solid #24384a}
+.so-playfoot a:hover{color:var(--so-muted)}
+@media(max-width:980px){
+  .so-room{grid-template-columns:auto minmax(0,1fr);gap:12px}
+  .so-room__side{grid-column:1 / -1;justify-content:space-between}
+}
+
+/* ── профиль: K/D пончик ── */
+.so-pfwho{display:flex;align-items:center;gap:20px;margin-top:34px}
+.so-pfgrid{
+  display:grid;grid-template-columns:auto 1fr;gap:22px;align-items:stretch;
+  margin-top:30px;
+}
+@media(max-width:860px){.so-pfgrid{grid-template-columns:1fr}}
+.so-kdcard{
+  display:flex;flex-direction:column;align-items:center;justify-content:center;
+  padding:26px 30px;border-radius:12px;
+  background:var(--so-panel);border:1px solid var(--so-line);backdrop-filter:blur(8px);
+}
+.so-kdcard__t{font-family:var(--so-display);font-size:16px;letter-spacing:.26em;color:var(--so-muted)}
+.so-kd{width:196px;height:196px;margin:16px 0 10px}
+.so-kd circle{fill:none;stroke-width:13}
+.so-kd__track{stroke:rgba(154,196,226,.12)}
+.so-kd__k,.so-kd__d{transform:rotate(-90deg);transform-origin:70px 70px}
+.so-kd__k{stroke:#8fb4e8;transition:stroke-dasharray .5s cubic-bezier(.2,0,0,1)}
+.so-kd__d{stroke:#e8a33d;transition:stroke-dasharray .5s cubic-bezier(.2,0,0,1)}
+.so-kd__v{font-family:var(--so-display);font-size:35px;fill:#fff;text-anchor:middle}
+.so-kd__l{font-size:10.5px;letter-spacing:.32em;fill:#90a7b8;text-anchor:middle}
+.so-kdcard__legend{display:flex;gap:18px;font-size:12.5px;color:var(--so-muted)}
+.so-kdcard__legend i{
+  display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:7px;
+  vertical-align:-1px;
+}
+.so-kdcard__legend b{color:#fff;font-weight:500;margin-left:4px}
+.so-pfcells{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+@media(max-width:560px){.so-pfcells{grid-template-columns:1fr}}
+.so-pfnote{max-width:660px;margin-top:22px}
+
+/* ── инструкция: оглавление слева ── */
+.so-docs{
+  display:grid;grid-template-columns:236px minmax(0,1fr);gap:52px;
+  align-items:start;max-width:1240px;margin:0 auto;padding:0 32px 120px;
+}
+.so-docs .so-sec{max-width:none;margin:0;padding:64px 0 0}
+.so-docs .so-sec:first-child{padding-top:26px}
+.so-docs .so-sec:last-of-type{padding-bottom:0}
+.so-docnav{position:sticky;top:78px;padding-top:26px}
+.so-docnav__k{
+  margin:22px 0 7px;font-size:10.5px;letter-spacing:.24em;
+  text-transform:uppercase;color:#68809a;
+}
+.so-docnav__k:first-child{margin-top:0}
+.so-docnav a{
+  display:flex;align-items:center;gap:10px;padding:8px 11px;border-radius:7px;
+  border:1px solid transparent;color:var(--so-muted);
+  font-size:13.5px;line-height:1.3;text-decoration:none;
+  transition:color .14s,background .14s,border-color .14s;
+}
+.so-docnav a i{font-style:normal;flex:0 0 auto;font-family:var(--so-display);
+  font-size:13px;letter-spacing:.06em;color:var(--so-acc);min-width:20px}
+.so-docnav a:hover{color:#fff;background:rgba(26,44,58,.5)}
+.so-docnav a.is-here{
+  color:#fff;background:rgba(26,44,58,.65);border-color:var(--so-line-strong);
+}
+[data-docsec]{scroll-margin-top:84px}
+@media(max-width:1000px){
+  .so-docs{display:block;padding:0 20px 90px}
+  .so-docnav{
+    position:sticky;top:57px;z-index:6;display:flex;gap:8px;overflow-x:auto;
+    margin:26px -20px 10px;padding:12px 20px;scrollbar-width:none;
+    background:rgba(11,20,28,.94);backdrop-filter:blur(10px);
+    border-bottom:1px solid var(--so-line);
+  }
+  .so-docnav::-webkit-scrollbar{display:none}
+  .so-docnav__k{display:none}
+  .so-docnav a{
+    flex:0 0 auto;padding:8px 14px;border:1px solid var(--so-line);
+    border-radius:99px;white-space:nowrap;font-size:13px;
+  }
+  .so-docs .so-sec{padding-top:44px}
+  [data-docsec]{scroll-margin-top:118px}
+}
+
+/* ── окно «Войти» (join) ── */
+.so-dlgwrap{
+  position:fixed;inset:0;z-index:60;display:flex;align-items:center;justify-content:center;
+  padding:20px;background:rgba(3,7,11,.66);backdrop-filter:blur(4px);
+}
+.so-dlg{
+  width:min(560px,100%);padding:28px;border-radius:12px;
+  background:rgba(9,19,28,.99);border:1px solid var(--so-line-strong);
+  box-shadow:0 30px 90px rgba(0,0,0,.55);
+}
+.so-dlg__k{font-size:10.5px;letter-spacing:.26em;text-transform:uppercase;color:#68809a}
+.so-dlg__t{font-family:var(--so-display);font-weight:400;font-size:30px;letter-spacing:.04em;color:#fff;margin:8px 0 0}
+.so-dlg__d{margin:10px 0 16px;color:var(--so-muted);font-size:14px;line-height:1.55}
+.so-dlg .so-cmd{margin-top:0}
+
+/* ── админ панель (#/admin) ── */
+.so-admwho{
+  display:flex;align-items:center;gap:16px;margin-top:26px;
+  padding:16px 18px;border-radius:12px;
+  background:var(--so-panel);border:1px solid var(--so-line);
+}
+.so-admwho__meta{min-width:0;flex:1}
+.so-admwho__out{margin-left:auto;flex:0 0 auto}
+.so-acc__av--adm{width:48px;height:48px;border-radius:10px}
+.so-acc__fb--adm{width:48px;height:48px;border-radius:10px;font-size:20px;
+  display:inline-flex;align-items:center;justify-content:center}
+.so-admtabs{display:flex;gap:8px;margin-top:24px;flex-wrap:wrap}
+.so-admsteps{display:flex;gap:10px;flex-wrap:wrap;margin-top:18px}
+.so-admstep{
+  display:flex;align-items:center;gap:9px;padding:8px 15px 7px;border-radius:99px;
+  border:1px solid var(--so-line);color:var(--so-muted);font-size:11.5px;
+  letter-spacing:.16em;text-transform:uppercase;
+}
+.so-admstep i{
+  font-style:normal;display:inline-flex;width:21px;height:21px;border-radius:50%;
+  align-items:center;justify-content:center;background:rgba(5,12,19,.7);
+  border:1px solid var(--so-line-strong);font-size:11px;color:var(--so-muted);
+}
+.so-admstep--on{color:var(--so-text);border-color:var(--so-acc)}
+.so-admstep--on i{background:var(--so-acc);color:var(--so-acc-ink);border-color:transparent}
+.so-admstep--done{color:var(--so-text);opacity:.72}
+.so-admprev{
+  display:flex;align-items:center;gap:14px;margin-top:16px;padding:14px;
+  border-radius:10px;background:rgba(5,12,19,.5);border:1px solid var(--so-line);
+}
+.so-admprev__n{font-family:var(--so-display);font-size:19px;letter-spacing:.05em;color:#fff}
+.so-admprev__i{font-size:12px;color:var(--so-muted);margin-top:4px;letter-spacing:.06em}
+.so-admst{
+  margin-left:auto;padding:4px 12px 2px;border-radius:99px;font-size:10.5px;
+  letter-spacing:.16em;text-transform:uppercase;border:1px solid var(--so-line-strong);
+  color:var(--so-muted);white-space:nowrap;
+}
+.so-admst--match{color:#ffd76e;border-color:rgba(240,195,60,.5)}
+.so-admst--lobby{color:#8fd9a0;border-color:rgba(87,217,138,.4)}
+.so-admst--warn{color:#ffb1b1;border-color:rgba(192,59,59,.55)}
+.so-admst--ok{color:#8fd9a0}
+.so-admbans{margin-top:14px;display:grid;gap:10px}
+.so-admban{
+  display:flex;align-items:center;gap:14px;padding:14px 16px;border-radius:10px;
+  background:rgba(5,12,19,.5);border:1px solid var(--so-line);
+}
+.so-admban__n{font-family:var(--so-display);font-size:18px;color:#fff;letter-spacing:.05em}
+.so-admban__m{font-size:12.5px;color:var(--so-muted);margin-top:4px;line-height:1.5}
+.so-admban__x{margin-left:auto;flex:0 0 auto}
 </style>
 </head>
 <body>
 
-<header class="md-top-app-bar">
-  <div class="md-top-app-bar__logo">В</div>
-  <div class="md-top-app-bar__titles">
-    <span class="md-top-app-bar__title">влалChillow</span>
-    <span class="md-top-app-bar__subtitle">комнаты · LAN</span>
-  </div>
-  <div class="md-top-app-bar__spacer"></div>
+<!-- ═════════════════════ ГЛАВНАЯ (#/) ═════════════════════ -->
+<div id="view-home" class="so-view">
 
-  <span class="md-assist-chip" title="сервер отвечает">
-    <span class="md-assist-chip__dot"></span>
-    <span class="md-assist-chip__text">онлайн</span>
-  </span>
+  <section class="so-hero" id="hero">
+    <div class="so-hero__media">
+      <!-- Видео — реальный геймплей с сервера. Без постера на слабых машинах мигнёт чёрным. -->
+      <video class="so-hero__video" id="hero-video" autoplay muted loop playsinline preload="auto"
+             poster="/media/poster.jpg">
+        <source src="/media/hero.mp4" type="video/mp4">
+      </video>
+      <div class="so-hero__scrim"></div>
+    </div>
 
-  <button class="md-icon-button" id="theme-btn" aria-label="Сменить тему">
-    <svg viewBox="0 0 24 24"><path id="theme-icon" d="M12 3a9 9 0 1 0 9 9c0-.46-.04-.92-.1-1.36a5.39 5.39 0 0 1-4.4 2.26 5.4 5.4 0 0 1-3.14-9.8c-.44-.06-.9-.1-1.36-.1z"/></svg>
-  </button>
-</header>
+    <div class="so-top">
+      <a class="so-top__logo" href="#/">ВЛАЛ<b>CHILLOW</b></a>
+      <nav>
+        <a href="#/docs">ИНСТРУКЦИЯ</a>
+        <a href="#/reports">РЕПОРТЫ</a>
+        <a href="#/play">КОМНАТЫ</a>
+        <span class="so-online"><i class="so-online__dot" id="so-dot"></i></span>
+        <button class="so-sidebtn" type="button" data-side-open>ПАНЕЛЬ</button>
+      </nav>
+    </div>
 
-<main class="md-page">
+    <div class="so-hero__inner">
+      <p class="so-hero__over">Онлайн от комьюнити для StandChillow</p>
+      <h1>
+        <i class="t1">СВОЯ КАТКА.<br>СВОЙ <span>СЕРВЕР.</span></i>
+        <i class="t2">СВОЙ ХОСТ,<br>КОТОРЫЙ ВСЕГДА <span>ОНЛАЙН</span></i>
+        <i class="t3">ВКЛЮЧИЛ ПК —<br>И УЖЕ <span>В ИГРЕ</span></i>
+      </h1>
+      <p class="so-hero__sub">
+        Свои комнаты, свои правила. Сервер стоит на домашнем ПК —
+        подключайся по IP, из дома или извне.
+      </p>
+      <div class="so-cta">
+        <a class="so-btn so-btn--play" href="#/play">
+          НАЧАТЬ ИГРУ
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+        </a>
+        <a class="so-btn so-btn--ghost" href="#/reports">РЕПОРТЫ</a>
+      </div>
+      <a class="so-howlink" href="#/docs">
+        КАК НАЧАТЬ ИГРУ
+        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+      </a>
+      <div class="so-hero__live">
+        <i class="so-online__dot" id="so-dot-hero"></i>
+        СЕРВЕР <b id="so-hero-status">В СЕТИ</b>&nbsp;·&nbsp;<b id="so-hero-count">0</b>&nbsp;ОНЛАЙН
+      </div>
+    </div>
 
-  <section class="md-stats" aria-label="Онлайн">
-    <article class="md-stat">
-      <span class="md-stat__label">Всего онлайн</span>
-      <div class="md-stat__value tnum" id="s-total">0</div>
-      <div class="md-stat__hint">подключено к серверу</div>
-    </article>
-    <article class="md-stat">
-      <span class="md-stat__label">В лобби</span>
-      <div class="md-stat__value tnum" id="s-lobby">0</div>
-      <div class="md-stat__hint">ждут и выбирают режим</div>
-    </article>
-    <article class="md-stat">
-      <span class="md-stat__label">В матчах</span>
-      <div class="md-stat__value tnum" id="s-match">0</div>
-      <div class="md-stat__hint">играют в комнатах</div>
-    </article>
-    <article class="md-stat">
-      <span class="md-stat__label">Комнат открыто</span>
-      <div class="md-stat__value tnum" id="s-rooms">0 / 0</div>
-      <div class="md-stat__hint">одна комната на игрока</div>
-    </article>
+    <svg class="so-cue" width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+         stroke-width="2" aria-hidden="true"><path d="M6 9l6 6 6-6"/></svg>
   </section>
 
-  <!-- Честное состояние вместо бодрой кнопки: если UDP 7777 не поднялся, комната
-       создастся в реестре, но играть в неё будет нельзя. Лучше сказать это сразу. -->
-  <p class="md-banner md-banner--warn" id="s-warn" role="status" hidden></p>
+  <!-- бегущая строка режимов — заполняет JS из каталога сервера -->
+  <div class="so-marquee" aria-hidden="true">
+    <div class="so-marquee__track" id="so-marquee"></div>
+  </div>
 
-  <!-- ═══ кто я ═══
-       Без кода из лобби сайт ничего не может: комната создаётся за конкретным
-       игроком, и решает это сервер по сессии, а не страница по введённому тексту. -->
-  <section class="md-card" id="profile-card" aria-label="Вход">
-    <div id="auth-form">
-      <span class="md-section__label">Вход</span>
-      <p class="md-field__helper" style="margin-left:0;margin-top:8px">
-        Код приходит в чат лобби при входе: «Ты &lt;ник&gt; · ID: … · код: 123456».
-        Он действует 30 минут; новый — командой <b>/code</b> в чате лобби.
+  <!-- ══ о проекте ══ -->
+  <section class="so-sec" id="sec-about">
+    <p class="so-sec__label">О проекте</p>
+    <h2>СВОЙ СЕРВЕР,<br><em>КОТОРЫЙ ВСЕГДА ОНЛАЙН</em></h2>
+    <div class="so-manifesto">
+      <p>Не официальный матчмейкинг и не аренда чужого хостинга. <b>Один ПК в квартире</b>,
+         который держит комнаты для друзей — с тем же Standoff 2, что у тебя на телефоне.</p>
+      <p>Подключение — по <b>IP и порту 7778</b>: работает и из домашней сети, и извне.
+         Ввёл адрес в лобби, взял код в чате — и уже стоишь в очереди на катку.</p>
+    </div>
+    <div class="so-facts">
+      <div class="so-facts__row">
+        <span class="so-facts__k">ВХОД</span>
+        <span class="so-facts__d">в лобби игры вводишь адрес сервера — свежий IP всегда в Telegram</span>
+        <span class="so-facts__v">IP : 7778</span>
+      </div>
+      <div class="so-facts__row">
+        <span class="so-facts__k">КОМНАТЫ</span>
+        <span class="so-facts__d">создавай свою или заходи в чужую командой из чата</span>
+        <span class="so-facts__v">ДО 64</span>
+      </div>
+      <div class="so-facts__row">
+        <span class="so-facts__k">РЕЖИМЫ</span>
+        <span class="so-facts__d">те же, что в лобби сервера — каталог подтягивается сам</span>
+        <span class="so-facts__v">ВСЕ</span>
+      </div>
+      <div class="so-facts__row">
+        <span class="so-facts__k">РЕПОРТЫ</span>
+        <span class="so-facts__d">читаков разбирает живой админ, а не бот</span>
+        <span class="so-facts__v">24/7</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══ как начать ══ -->
+  <section class="so-sec" id="sec-how">
+    <p class="so-sec__label">Как начать</p>
+    <h2>ВОСЕМЬ ШАГОВ ДО КАТКИ</h2>
+    <div class="so-steps">
+      <div class="so-how-group"><i>◆</i> В ИГРЕ — STANDOFF 2</div>
+      <div class="so-step">
+        <span class="so-step__n">01</span>
+        <div>
+          <div class="so-step__t">ОТКРОЙ «LAN МУЛЬТИПЛЕЕР»</div>
+          <p class="so-step__d">Запусти <b>Standoff 2</b> и в главном меню выбери вкладку
+             «LAN Мультиплеер» — через неё заходят на сторонние серверы.</p>
+        </div>
+        <span class="so-step__a"></span>
+      </div>
+      <div class="so-step">
+        <span class="so-step__n">02</span>
+        <div>
+          <div class="so-step__t">ЖМИ «ПРИСОЕДИНИТЬСЯ»</div>
+          <p class="so-step__d">Откроется окно подключения к серверу.</p>
+        </div>
+        <span class="so-step__a"></span>
+      </div>
+      <div class="so-step">
+        <span class="so-step__n">03</span>
+        <div>
+          <div class="so-step__t">«ВВЕДИ IP АДРЕС»</div>
+          <p class="so-step__d">Нажми на эту строку — появится поле ввода.</p>
+        </div>
+        <span class="so-step__a"></span>
+      </div>
+      <div class="so-step">
+        <span class="so-step__n">04</span>
+        <div>
+          <div class="so-step__t">ВПИШИ АДРЕС И ПОРТ</div>
+          <p class="so-step__d">Например <b>1.2.3.4 : 7778</b>. Порт всегда <b>7778</b>.
+             IP может смениться — свежий всегда в Telegram.</p>
+        </div>
+        <a class="so-step__a" href="https://t.me/vlalikoffcChillow" target="_blank" rel="noopener">В ТЕЛЕГРАМ →</a>
+      </div>
+      <div class="so-step">
+        <span class="so-step__n">05</span>
+        <div>
+          <div class="so-step__t">ЖМИ «ПОДКЛЮЧИТЬСЯ»</div>
+          <p class="so-step__d">Игра зайдёт в лобби сервера — чат там же.</p>
+        </div>
+        <span class="so-step__a"></span>
+      </div>
+      <div class="so-step">
+        <span class="so-step__n">06</span>
+        <div>
+          <div class="so-step__t">ВОЗЬМИ КОД В ЧАТЕ</div>
+          <p class="so-step__d">Сервер сам напишет в чат лобби: <b>«код: 123456»</b>.
+             Код живёт 30 минут, новый — командой <b>/code</b>.</p>
+        </div>
+        <span class="so-step__a"></span>
+      </div>
+      <div class="so-how-group"><i>◆</i> НА САЙТЕ</div>
+      <div class="so-step">
+        <span class="so-step__n">07</span>
+        <div>
+          <div class="so-step__t">ЖМИ «НАЧАТЬ ИГРУ»</div>
+          <p class="so-step__d">Кнопка на этой странице или на странице комнат.
+              Не авторизован — появится форма входа.</p>
+        </div>
+        <a class="so-step__a" href="#/play">К КОМНАТАМ →</a>
+      </div>
+      <div class="so-step">
+        <span class="so-step__n">08</span>
+        <div>
+          <div class="so-step__t">ВБЕЙ КОД</div>
+          <p class="so-step__d">Код из чата лобби в форму входа — и комнаты открыты.</p>
+        </div>
+        <span class="so-step__a"></span>
+      </div>
+    </div>
+    <p class="so-howmore">
+      <a class="so-btn so-btn--ghost" href="#/docs">
+        ПОЛНАЯ ИНСТРУКЦИЯ СО СКРИНШОТАМИ
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+      </a>
+    </p>
+  </section>
+
+  <!-- ══ репорты ══ -->
+  <section class="so-sec" id="sec-reports">
+    <p class="so-sec__label">Репорты</p>
+    <h2>ЧИТАКОВ ОТЛОВИМ <em>БЫСТРО</em></h2>
+    <div class="so-report">
+      <ul class="so-report__list">
+        <li><b>Кому:</b> живой админ сервера — репорт приходит лично ему</li>
+        <li><b>Что писать:</b> ник нарушителя, режим и что случилось</li>
+        <li><b>Куда:</b> в Telegram — так быстрее всего</li>
+      </ul>
+      <div class="so-report__txt">
+        <a class="so-btn so-btn--ghost" href="https://t.me/vlalikoffcChillow" target="_blank" rel="noopener">
+          НАПИСАТЬ В ТЕЛЕГРАМ
+        </a>
+        <p>Наш сервер — маленькое комьюнити. Тут не нужны bans-роботы на три тысячи
+           строк: админ видит каждый репорт и разбирает его лично.</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══ прямо сейчас ══ -->
+  <section class="so-sec" id="sec-now">
+    <p class="so-sec__label">Статус</p>
+    <h2>ПРЯМО СЕЙЧАС <em>НА СЕРВЕРЕ</em></h2>
+    <div class="so-now">
+      <div class="so-now__cell"><div class="so-now__v" id="n-online">0</div><div class="so-now__l">онлайн</div></div>
+      <div class="so-now__cell"><div class="so-now__v" id="n-lobby">0</div><div class="so-now__l">в лобби</div></div>
+      <div class="so-now__cell"><div class="so-now__v" id="n-match">0</div><div class="so-now__l">в матчах</div></div>
+      <div class="so-now__cell"><div class="so-now__v" id="n-rooms">0 / 0</div><div class="so-now__l">комнат</div></div>
+    </div>
+    <p class="so-now__hint">Цифры приходят прямо с сервера и обновляются каждые 2 секунды.</p>
+  </section>
+
+  <!-- ══ подвал ══ -->
+  <footer class="so-foot" id="contacts">
+    <div class="so-foot__inner">
+      <div class="so-foot__links">
+        <a href="https://t.me/vlalikoffcChillow" target="_blank" rel="noopener">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+          ТЕЛЕГРАМ
+        </a>
+        <a href="https://github.com/byvlal/vlalChillow" target="_blank" rel="noopener">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></svg>
+          GITHUB
+        </a>
+      </div>
+      <div class="so-foot__brand">ВЛАЛCHILLOW — СВОЙ СЕРВЕР, СВОИ КАТКИ</div>
+      <p class="so-foot__credit">
+        © 2026 vlalChillow. Standoff 2 — торговая марка Axlebolt LTD; это фан-проект
+        для игры на своём сервере и он не связан с разработчиком. Шрифт
+        <a href="https://github.com/Wanja01YT/bebasbolt" target="_blank" rel="noopener">Bebasbolt</a>
+        — Wanja01 &amp; Snowy, по мотивам логотипа Standoff 2 (Axlebolt LTD), лицензия CC-BY-4.0.
       </p>
-      <div class="md-form-grid" style="margin-top:16px">
-        <div class="md-field">
-          <input class="md-field__box" id="auth-code" inputmode="numeric" maxlength="6"
-                 placeholder="123456" autocomplete="off">
-          <label class="md-field__label" for="auth-code">Код из лобби</label>
+    </div>
+  </footer>
+
+  <!-- примерка вариантов: открывается адресом /?select -->
+  <div class="so-select" id="so-select" aria-label="Выбор варианта дизайна">
+    <div class="so-select__row">
+      <div class="so-select__k">Заголовок</div>
+      <div class="so-select__opts" id="sel-title">
+        <button type="button" data-v="1">1</button>
+        <button type="button" data-v="2">2</button>
+        <button type="button" data-v="3">3</button>
+      </div>
+    </div>
+    <div class="so-select__row">
+      <div class="so-select__k">Акцент</div>
+      <div class="so-select__opts" id="sel-accent">
+        <button type="button" data-v="blue"><span class="so-select__sw" style="background:#8fb4e8"></span>CT</button>
+        <button type="button" data-v="orange"><span class="so-select__sw" style="background:#e8a33d"></span>T</button>
+        <button type="button" data-v="yellow"><span class="so-select__sw" style="background:#f0c33c"></span>HP</button>
+      </div>
+    </div>
+    <div class="so-select__row">
+      <div class="so-select__k">Кнопка</div>
+      <div class="so-select__opts" id="sel-btn">
+        <button type="button" data-v="blue">CT-СИНИЙ</button>
+        <button type="button" data-v="white">БЕЛЫЙ</button>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- ═════════════════════ ИНСТРУКЦИЯ (#/docs) ═════════════════════ -->
+<div id="view-docs" class="so-view" hidden>
+
+  <div class="so-top so-top--static">
+    <a class="so-top__logo" href="#/">ВЛАЛ<b>CHILLOW</b></a>
+    <nav>
+      <a href="#/">ГЛАВНАЯ</a>
+      <a href="#/docs" class="is-here">ИНСТРУКЦИЯ</a>
+      <a href="#/play">КОМНАТЫ</a>
+      <span class="so-online"><i class="so-online__dot" id="so-dot-docs"></i></span>
+      <button class="so-sidebtn" type="button" data-side-open>ПАНЕЛЬ</button>
+    </nav>
+  </div>
+
+  <section class="so-sec so-docs-head">
+    <p class="so-sec__label">Инструкция</p>
+    <h1>КАК ЗАЙТИ НА СЕРВЕР <em>И НАЧАТЬ ИГРАТЬ</em></h1>
+    <p class="so-docs-sub">Восемь шагов от главного меню до комнат на сайте. Каждый шаг —
+       со скриншотом и подписью. Никакой магии: ввёл адрес, взял код, вошёл на сайт.
+       Застрял — в конце есть раздел «если что-то не так».</p>
+  </section>
+
+  <div class="so-docs">
+    <nav class="so-docnav" aria-label="Оглавление инструкции">
+      <div class="so-docnav__k">НАЧАТЬ ИГРУ</div>
+      <a href="#" data-goto="doc-1"><i>01</i>LAN Мультиплеер</a>
+      <a href="#" data-goto="doc-2"><i>02</i>Присоединиться</a>
+      <a href="#" data-goto="doc-3"><i>03</i>Ввести IP Адрес</a>
+      <a href="#" data-goto="doc-45"><i>04</i>Адрес и порт</a>
+      <a href="#" data-goto="doc-5"><i>05</i>Подключиться</a>
+      <a href="#" data-goto="doc-6"><i>06</i>Код в чате</a>
+      <div class="so-docnav__k">НА САЙТЕ</div>
+      <a href="#" data-goto="doc-7"><i>07</i>Начать игру</a>
+      <a href="#" data-goto="doc-8"><i>08</i>Вбить код</a>
+      <div class="so-docnav__k">КОМНАТЫ</div>
+      <a href="#" data-goto="doc-a"><i>A</i>Создать свою</a>
+      <a href="#" data-goto="doc-b"><i>B</i>Зайти в чужую</a>
+      <div class="so-docnav__k">ПОМОЩЬ</div>
+      <a href="#" data-goto="doc-trouble"><i>◆</i>Если что-то не так</a>
+      <a href="#" data-goto="doc-reports"><i>◆</i>Репорты</a>
+    </nav>
+    <div class="so-docs__col">
+
+  <!-- ══ шаги 1-6: в игре ══ -->
+  <section class="so-sec">
+    <div class="so-how-group"><i>◆</i> В ИГРЕ — STANDOFF 2</div>
+
+    <article class="so-doc" id="doc-1" data-docsec>
+      <div class="so-doc__head">
+        <span class="so-doc__n">01</span>
+        <div>
+          <div class="so-doc__t">ОТКРОЙ «LAN МУЛЬТИПЛЕЕР»</div>
+          <p class="so-doc__d">Запусти <b>Standoff 2</b>. В главном меню есть вкладка
+             <b>«LAN Мультиплеер»</b> — через неё заходят на сторонние серверы, как наш.
+             Жми на неё.</p>
         </div>
       </div>
-      <div class="md-actions">
-        <button class="md-button md-button--filled" id="auth-btn">Войти</button>
-        <span class="md-field__helper md-field__helper--error" id="auth-err" style="margin:0"></span>
-      </div>
-    </div>
+      <figure class="so-doc__fig">
+        <img src="/media/doc-1.jpg" width="1280" height="582" loading="lazy"
+             alt="Главное меню Standoff 2, выделена вкладка LAN Мультиплеер">
+        <figcaption>Главное меню игры. Вкладка «LAN Мультиплеер» — наш вход на сервер.</figcaption>
+      </figure>
+    </article>
 
-    <div class="md-profile" id="profile" hidden>
-      <img class="md-avatar" id="avatar" alt="аватар" width="56" height="56" hidden>
-      <div class="md-avatar md-avatar--fallback" id="avatar-fallback">?</div>
-      <div class="md-profile__who">
-        <div class="md-row__title" id="profile-name">Привет</div>
-        <div class="md-row__meta" id="profile-id">ID</div>
+    <article class="so-doc" id="doc-2" data-docsec>
+      <div class="so-doc__head">
+        <span class="so-doc__n">02</span>
+        <div>
+          <div class="so-doc__t">ЖМИ «ПРИСОЕДИНИТЬСЯ»</div>
+          <p class="so-doc__d">Откроется окно подключения к серверу. Здесь нужна одна кнопка —
+             <b>«Присоединиться»</b>. Нажимай.</p>
+        </div>
       </div>
-      <div class="md-profile__spacer">
-        <button class="md-button md-button--text" id="logout-btn">
-          <span>Выйти</span>
-        </button>
+      <figure class="so-doc__fig">
+        <img src="/media/doc-2.jpg" width="1280" height="582" loading="lazy"
+             alt="Окно серверов, выделена кнопка Присоединиться">
+        <figcaption>Окно подключения. Кнопка «Присоединиться» — следующий шаг.</figcaption>
+      </figure>
+    </article>
+
+    <article class="so-doc" id="doc-3" data-docsec>
+      <div class="so-doc__head">
+        <span class="so-doc__n">03</span>
+        <div>
+          <div class="so-doc__t">«ВВЕДИ IP АДРЕС»</div>
+          <p class="so-doc__d">Появится список — там строка <b>«Ввести IP Адрес»</b>.
+             Нажми на неё: откроется поле, куда вписывают адрес сервера.</p>
+        </div>
+      </div>
+      <figure class="so-doc__fig">
+        <img src="/media/doc-3.jpg" width="1280" height="582" loading="lazy"
+             alt="Строка Ввести IP Адрес выделена">
+        <figcaption>Нажми на «Ввести IP Адрес» — появится поле ввода.</figcaption>
+      </figure>
+    </article>
+
+    <article class="so-doc" id="doc-45" data-docsec>
+      <div class="so-doc__head">
+        <span class="so-doc__n">04</span>
+        <div>
+          <div class="so-doc__t">ВПИШИ АДРЕС И ПОРТ</div>
+          <p class="so-doc__d">В поле вводи <b>IP сервера</b>, рядом — порт. Порт всегда один:
+             <b>7778</b>. Выглядит это так: <b>1.2.3.4 : 7778</b>.
+             IP может смениться после перезапуска сервера — свежий адрес всегда закреплён
+             в <a href="https://t.me/vlalikoffcChillow" target="_blank" rel="noopener">Telegram</a>.</p>
+        </div>
+      </div>
+      <figure class="so-doc__fig">
+        <img src="/media/doc-45.jpg" width="1280" height="582" loading="lazy"
+             alt="Поле IP и порта 7778 и кнопка Подключиться">
+        <figcaption>Адрес и порт 7778. Справа — кнопка «Подключиться», она нужна на шаге 05.</figcaption>
+      </figure>
+    </article>
+
+    <article class="so-doc" id="doc-5" data-docsec>
+      <div class="so-doc__head">
+        <span class="so-doc__n">05</span>
+        <div>
+          <div class="so-doc__t">ЖМИ «ПОДКЛЮЧИТЬСЯ»</div>
+          <p class="so-doc__d">Проверь, что адрес и порт вписаны без опечаток, и жми
+             <b>«Подключиться»</b> — она была на предыдущем скриншоте справа.
+             Игра зайдёт в лобби нашего сервера.</p>
+        </div>
+      </div>
+    </article>
+
+    <article class="so-doc" id="doc-6" data-docsec>
+      <div class="so-doc__head">
+        <span class="so-doc__n">06</span>
+        <div>
+          <div class="so-doc__t">ВОЗЬМИ КОД В ЧАТЕ</div>
+          <p class="so-doc__d">Как только попал в лобби — сервер сам напишет в чат:
+             <b>«Ты &lt;ник&gt; · ID: … · код: 123456»</b>. Запомни шесть цифр после
+             «код:» — они нужны на сайте. Код живёт <b>30 минут</b>; сгорел — напиши
+             в чат команду <b>/code</b>, сервер выдаст новый.</p>
+        </div>
+      </div>
+      <figure class="so-doc__fig">
+        <img src="/media/doc-6.jpg" width="1280" height="582" loading="lazy"
+             alt="Чат лобби с сообщением кода 550877">
+        <figcaption>Чат лобби. В сообщении — твой код: 550877. Бери цифры после «код:».</figcaption>
+      </figure>
+    </article>
+  </section>
+
+  <!-- ══ шаги 7-8: на сайте ══ -->
+  <section class="so-sec">
+    <div class="so-how-group"><i>◆</i> НА САЙТЕ</div>
+
+    <article class="so-doc" id="doc-7" data-docsec>
+      <div class="so-doc__head">
+        <span class="so-doc__n">07</span>
+        <div>
+          <div class="so-doc__t">ЖМИ «НАЧАТЬ ИГРУ»</div>
+          <p class="so-doc__d">Вернись на сайт — код вводится здесь, а не в игре. Жми большую
+             кнопку <b>«НАЧАТЬ ИГРУ»</b> на главной. Если ты ещё не авторизован, сайт
+             покажет форму входа.</p>
+        </div>
+      </div>
+      <figure class="so-doc__fig">
+        <img src="/media/doc-7.jpg" width="1280" height="886" loading="lazy"
+             alt="Главная страница сайта с кнопкой Начать игру">
+        <figcaption>Главная сайта. Кнопка «НАЧАТЬ ИГРУ» ведёт на страницу комнат.</figcaption>
+      </figure>
+    </article>
+
+    <article class="so-doc" id="doc-8" data-docsec>
+      <div class="so-doc__head">
+        <span class="so-doc__n">08</span>
+        <div>
+          <div class="so-doc__t">ВБЕЙ КОД</div>
+          <p class="so-doc__d">В форме входа введи код из чата лобби (шаг 06) и жми
+             <b>«Войти»</b>. Сайт подхватит твой профиль — и страницы комнат откроются:
+             можно создавать катки или заходить в чужие.</p>
+        </div>
+      </div>
+      <figure class="so-doc__fig">
+        <img src="/media/doc-8.jpg" width="1280" height="886" loading="lazy"
+             alt="Форма входа с полем Код из лобби">
+        <figcaption>Форма входа. Поле «Код из лобби» — сюда цифры из чата, потом «Войти».</figcaption>
+      </figure>
+    </article>
+  </section>
+
+  <!-- ══ комнаты: своя и чужая ══ -->
+  <section class="so-sec">
+    <p class="so-sec__label">Комнаты</p>
+    <h2>СВОЯ И <em>ЧУЖАЯ</em></h2>
+
+    <article class="so-doc" id="doc-a" data-docsec>
+      <div class="so-doc__head">
+        <span class="so-doc__n">A</span>
+        <div>
+          <div class="so-doc__t">СОЗДАТЬ СВОЮ КОМНАТУ</div>
+          <p class="so-doc__d">На странице комнат, вкладка <b>«Создать комнату»</b> — четыре
+             шага: <b>режим</b> → <b>карта</b> → размер команд (если режим их выбирает)
+             → <b>название</b>, можно не писать. Жми <b>«Создать комнату»</b> — она
+             откроется сразу, а сайт даст <b>команду входа</b> и сам её скопирует.
+             Вставь её в чат лобби в игре — и ты в своей катке. Друзья найдут комнату
+             в «Публичных комнатах» и войдут так же — по своей команде.</p>
+        </div>
+      </div>
+      <figure class="so-doc__fig">
+        <img src="/media/doc-create.jpg" width="1280" height="886" loading="lazy"
+             alt="Вкладка Создать комнату: режим, название, карта">
+        <figcaption>Вкладка «Создать комнату»: режим → карта → название — и кнопка внизу.</figcaption>
+      </figure>
+    </article>
+
+    <article class="so-doc" id="doc-b" data-docsec>
+      <div class="so-doc__head">
+        <span class="so-doc__n">B</span>
+        <div>
+          <div class="so-doc__t">ЗАЙТИ В ЧУЖУЮ КОМНАТУ</div>
+          <p class="so-doc__d">Вкладка <b>«Публичные комнаты»</b> — всё, что открыто прямо
+             сейчас, в любом режиме. Нашёл нужную — жми <b>«Войти»</b> справа: сайт даст
+             <b>команду входа</b> вида <b>/join … #номер</b> и сразу скопирует её.
+             Вставь её в <b>чат лобби</b> в игре — сервер сам закинет тебя в комнату.</p>
+        </div>
+      </div>
+      <figure class="so-doc__fig">
+        <img src="/media/doc-rooms.jpg" width="1280" height="886" loading="lazy"
+             alt="Список публичных комнат с кнопкой Войти">
+        <figcaption>Список публичных комнат. «Войти» — справа от комнаты.</figcaption>
+      </figure>
+      <figure class="so-doc__fig">
+        <img src="/media/doc-join.jpg" width="1280" height="886" loading="lazy"
+             alt="Окно с командой входа /join">
+        <figcaption>Команда уже скопирована — вставь её в чат лобби игры и отправь.</figcaption>
+      </figure>
+    </article>
+  </section>
+
+  <!-- ══ если что-то не так ══ -->
+  <section class="so-sec" id="doc-trouble" data-docsec>
+    <p class="so-sec__label">Поломки</p>
+    <h2>ЕСЛИ ЧТО-ТО <em>НЕ ТАК</em></h2>
+    <div class="so-trouble">
+      <div class="so-trouble__row">
+        <div class="so-trouble__q">Игра не подключается</div>
+        <div class="so-trouble__a">Перепроверь <b>порт 7778</b> и адрес без пробелов.
+            IP может смениться после перезапуска сервера — свежий всегда
+            <a href="https://t.me/vlalikoffcChillow" target="_blank" rel="noopener">в Telegram</a>.</div>
+      </div>
+      <div class="so-trouble__row">
+        <div class="so-trouble__q">Код не подходит</div>
+        <div class="so-trouble__a">Код живёт <b>30 минут</b> и сгорает при перезаходе в лобби.
+            Напиши в чат лобби команду <b>/code</b> — сервер выдаст свежий.</div>
+      </div>
+      <div class="so-trouble__row">
+        <div class="so-trouble__q">Сайт не пускает по коду</div>
+        <div class="so-trouble__a">Нужны ровно те цифры из чата лобби, без пробелов и букв.
+            Не помогло — вернись в лобби и возьми код заново.</div>
+      </div>
+      <div class="so-trouble__row">
+        <div class="so-trouble__q">В комнату не закидывает</div>
+        <div class="so-trouble__a">Скопируй команду входа из окна на сайте
+            (<b>/join … #номер</b>) и вставь в чат лобби игры — руками её не найти,
+            сервер входит только по команде.</div>
+      </div>
+      <div class="so-trouble__row">
+        <div class="so-trouble__q">Всё сломалось</div>
+        <div class="so-trouble__a">Пиши админу в
+            <a href="https://t.me/vlalikoffcChillow" target="_blank" rel="noopener">Telegram</a>:
+            что делал по шагам и что написал сервер. Разберёмся лично.</div>
       </div>
     </div>
   </section>
 
-  <div class="md-tabs" role="tablist" aria-label="Разделы">
-    <button class="md-tab" role="tab" id="tab-create" aria-selected="true" aria-controls="panel-create">Создать комнату</button>
-    <button class="md-tab" role="tab" id="tab-list" aria-selected="false" aria-controls="panel-list">Публичные комнаты</button>
-  </div>
-
-  <!-- ═══ создать ═══ -->
-  <section class="md-card" id="panel-create" role="tabpanel" aria-labelledby="tab-create">
-    <div class="md-form-grid">
-      <div class="md-field">
-        <select class="md-field__box" id="mode"></select>
-        <label class="md-field__label" for="mode">Режим</label>
+  <!-- ══ репорт ══ -->
+  <section class="so-sec" id="doc-reports" data-docsec>
+    <p class="so-sec__label">Репорты</p>
+    <h2>ЗАМЁТ ЧИТАКА — <em>СООБЩИ</em></h2>
+    <div class="so-report">
+      <ul class="so-report__list">
+        <li><b>Кому:</b> живой админ сервера — репорт приходит лично ему</li>
+        <li><b>Что писать:</b> ник нарушителя, режим и что случилось</li>
+        <li><b>Куда:</b> в Telegram — так быстрее всего</li>
+      </ul>
+      <div class="so-report__txt">
+        <a class="so-btn so-btn--ghost" href="https://t.me/vlalikoffcChillow" target="_blank" rel="noopener">
+          НАПИСАТЬ В ТЕЛЕГРАМ
+        </a>
+        <p>Сервер маленький и живой: админ видит каждый репорт и разбирает его лично.</p>
       </div>
-
-      <div class="md-field">
-        <input class="md-field__box" id="room-name" maxlength="24" placeholder="Комната" autocomplete="off">
-        <label class="md-field__label" for="room-name">Название комнаты</label>
-      </div>
-    </div>
-
-    <p class="body-small" id="mode-note" style="margin-top:12px;color:var(--md-sys-color-on-surface-variant)"></p>
-
-    <!-- Размер команды: показываем только там, где режим его выбирает
-         (союзники и дуэль — 1 на 1 или 2 на 2). У бомбы размер фиксированный,
-         у остальных режимов деления на команды нет — секция скрыта. -->
-    <div class="md-section" id="team-section" hidden>
-      <span class="md-section__label">Сколько игроков</span>
-      <div class="md-chips" id="teams" role="radiogroup" aria-label="Размер команды"></div>
-      <p class="md-field__helper" id="team-note" style="margin-left:0"></p>
-    </div>
-
-    <div class="md-section">
-      <span class="md-section__label">Карта</span>
-      <div class="md-chips" id="maps"></div>
-      <p class="md-field__helper md-field__helper--error" id="map-note" hidden style="margin-left:0"></p>
-    </div>
-
-    <!-- Кто владелец, решает сервер по сессии, поэтому поля «твой ID» здесь больше
-         нет: вписать чужой ID раньше было можно, теперь — нет (#51). -->
-    <div class="md-actions">
-      <button class="md-button md-button--filled" id="create-btn">
-        <svg viewBox="0 0 24 24"><path d="M19 13h-6v6h-2v-6H5v-2h6V5h2v6h6z"/></svg>
-        Создать комнату
-      </button>
-      <span class="md-field__helper md-field__helper--error" id="create-err" style="margin:0"></span>
-    </div>
-
-    <div class="md-result" id="result" hidden>
-      <div class="md-result__title">Комната создана и уже открыта</div>
-      <div class="md-result__row">
-        <span class="md-result__cmd" id="result-cmd">/join 2v2 #1</span>
-        <button class="md-button md-button--text" id="copy-btn">
-          <svg viewBox="0 0 24 24"><path d="M16 1H4c-1.1 0-2 .9-2 2v14h2V3h12V1zm3 4H8c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h11c1.1 0 2-.9 2-2V7c0-1.1-.9-2-2-2zm0 16H8V7h11v14z"/></svg>
-          <span>Скопировать</span>
-        </button>
-      </div>
-      <div class="md-result__hint">введи команду в чат лобби — сервер сам закинет тебя в комнату</div>
     </div>
   </section>
 
-  <!-- ═══ список ═══ -->
-  <section class="md-card md-card--flush" id="panel-list" role="tabpanel" aria-labelledby="tab-list" hidden>
-    <div class="md-filters">
-      <select class="md-select-outlined" id="f-mode" aria-label="Фильтр по режиму"></select>
-      <select class="md-select-outlined" id="f-map" aria-label="Фильтр по карте"></select>
-      <span class="md-assist-chip" style="margin-left:auto">
-        <span class="md-assist-chip__text">обновление 2 с</span>
-      </span>
-    </div>
-    <ul class="md-list" id="rooms"></ul>
-  </section>
+  </div><!-- /so-docs__col -->
+  </div><!-- /so-docs -->
 
-  <footer class="md-foot">
-    <span>влалChillow dedicated</span>
-    <span>·</span>
-    <span>UDP 7777</span>
-    <span>·</span>
-    <span id="f-count">комнат: 0</span>
-    <span>·</span>
-    <span class="md-foot__demo">демо-данные, это макет</span>
+  <footer class="so-foot">
+    <div class="so-foot__inner">
+      <div class="so-foot__links">
+        <a href="https://t.me/vlalikoffcChillow" target="_blank" rel="noopener">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+          ТЕЛЕГРАМ
+        </a>
+        <a href="https://github.com/byvlal/vlalChillow" target="_blank" rel="noopener">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 .297c-6.63 0-12 5.373-12 12 0 5.303 3.438 9.8 8.205 11.385.6.113.82-.258.82-.577 0-.285-.01-1.04-.015-2.04-3.338.724-4.042-1.61-4.042-1.61C4.422 18.07 3.633 17.7 3.633 17.7c-1.087-.744.084-.729.084-.729 1.205.084 1.838 1.236 1.838 1.236 1.07 1.835 2.809 1.305 3.495.998.108-.776.417-1.305.76-1.605-2.665-.3-5.466-1.332-5.466-5.93 0-1.31.465-2.38 1.235-3.22-.135-.303-.54-1.523.105-3.176 0 0 1.005-.322 3.3 1.23.96-.267 1.98-.399 3-.405 1.02.006 2.04.138 3 .405 2.28-1.552 3.285-1.23 3.285-1.23.645 1.653.24 2.873.12 3.176.765.84 1.23 1.91 1.23 3.22 0 4.61-2.805 5.625-5.475 5.92.42.36.81 1.096.81 2.22 0 1.606-.015 2.896-.015 3.286 0 .315.21.69.825.57C20.565 22.092 24 17.592 24 12.297c0-6.627-5.373-12-12-12"/></svg>
+          GITHUB
+        </a>
+        <a href="#/">НА ГЛАВНУЮ</a>
+      </div>
+      <div class="so-foot__brand">ВЛАЛCHILLOW — СВОЙ СЕРВЕР, СВОИ КАТКИ</div>
+      <p class="so-foot__credit">
+        © 2026 vlalChillow. Standoff 2 — торговая марка Axlebolt LTD; это фан-проект
+        для игры на своём сервере и он не связан с разработчиком. Шрифт
+        <a href="https://github.com/Wanja01YT/bebasbolt" target="_blank" rel="noopener">Bebasbolt</a>
+        — Wanja01 &amp; Snowy, по мотивам логотипа Standoff 2 (Axlebolt LTD), лицензия CC-BY-4.0.
+      </p>
+    </div>
   </footer>
-</main>
+
+</div>
+
+<!-- ═════════════════════ КОМНАТЫ (#/play) ═════════════════════ -->
+<div id="view-play" hidden>
+
+  <header class="so-top so-top--static">
+    <a class="so-top__logo" href="#/">ВЛАЛ<b>CHILLOW</b></a>
+    <nav>
+      <a href="#/">ГЛАВНАЯ</a>
+      <a href="#/docs">ИНСТРУКЦИЯ</a>
+      <a href="#/play" class="is-here">КОМНАТЫ</a>
+      <span class="so-online" title="сервер отвечает"><i class="so-online__dot" id="so-dot-play"></i></span>
+      <button class="so-sidebtn" type="button" data-side-open>ПАНЕЛЬ</button>
+    </nav>
+  </header>
+
+  <main class="so-sec" style="padding-top:34px;padding-bottom:110px">
+
+    <!-- ═══ без кода из лобби дальше идти некуда ═══
+         Комната создаётся за конкретным игроком, и решает это сервер по сессии.
+         Формы кода здесь больше нет: вход живёт на #/profile и в панели справа. -->
+    <section class="so-gate" id="play-gate" aria-label="Сначала войди" hidden>
+      <div class="so-gate__card">
+        <span class="so-gate__k">◆ Доступ по коду из лобби</span>
+        <h1 class="so-gate__t">СНАЧАЛА <em>ВХОД</em></h1>
+        <p class="so-gate__d">Комнаты создаются за конкретным игроком — сервер должен знать,
+           кто ты. Код живёт <b>30 минут</b>; новый выдаёт команда <b>/code</b> в чате лобби.</p>
+        <div class="so-gate__steps">
+          <div class="so-gate__step"><i>01</i><b>Зайди в лобби</b><span>в игре: «LAN Мультиплеер» → адрес сервера → «Подключиться»</span></div>
+          <div class="so-gate__step"><i>02</i><b>Возьми код в чате</b><span>сервер сам напишет: «Ты … · код: 123456»</span></div>
+          <div class="so-gate__step"><i>03</i><b>Введи код на сайте</b><span>страница «Профиль» — и возвращайся сюда</span></div>
+        </div>
+        <div class="so-gate__cta">
+          <a class="so-btn so-btn--play" id="gate-go" href="#/profile"><span>ПЕРЕЙТИ К ВХОДУ</span></a>
+          <button class="so-btn so-btn--sm so-btn--ghost" id="gate-how" type="button"><span>Где взять код?</span></button>
+        </div>
+      </div>
+    </section>
+
+    <!-- ═══ интерфейс комнат — только после входа ═══ -->
+    <div id="play-main" hidden>
+
+      <h1 class="so-playhead__h">ИГРАТЬ <em>СЕЙЧАС</em></h1>
+
+      <div class="so-pills" aria-label="Онлайн">
+        <span class="so-pill"><span class="so-pill__v" id="s-total">0</span><span class="so-pill__l">Всего онлайн</span></span>
+        <span class="so-pill"><span class="so-pill__v" id="s-lobby">0</span><span class="so-pill__l">В лобби</span></span>
+        <span class="so-pill"><span class="so-pill__v" id="s-match">0</span><span class="so-pill__l">В матчах</span></span>
+        <span class="so-pill so-pill--big"><span class="so-pill__v" id="s-rooms">0 / 0</span><span class="so-pill__l">Комнат открыто</span></span>
+      </div>
+
+      <!-- Честное состояние вместо бодрой кнопки: если UDP 7777 не поднялся, комната
+           создастся в реестре, но играть в неё будет нельзя. Лучше сказать это сразу. -->
+      <p class="so-warn" id="s-warn" role="status" hidden style="margin-top:18px"></p>
+
+      <!-- Две панели: на десктопе — создание слева, комнаты справа;
+           на телефоне — стопкой, и выбирает мини-таб на сетке (#play-grid[data-tab]). -->
+      <div class="so-playgrid" id="play-grid" data-tab="create">
+
+        <div class="so-tabs so-tabs--mini" role="tablist" aria-label="Разделы">
+          <button class="so-tab" role="tab" id="tab-create" aria-selected="true" aria-controls="panel-create">Создать</button>
+          <button class="so-tab" role="tab" id="tab-list" aria-selected="false" aria-controls="panel-list">Комнаты</button>
+        </div>
+
+        <!-- ── создать: режим → размер → карта → имя, универсально для любого режима ── -->
+        <section class="so-create" id="panel-create" role="tabpanel" aria-labelledby="tab-create">
+          <span class="so-create__k">◆ Лобби</span>
+          <h2 class="so-create__t">НОВАЯ <em>КОМНАТА</em></h2>
+
+          <div class="so-create__blk">
+            <span class="so-create__label">Режим</span>
+            <div class="so-modes" id="mode-chips" role="radiogroup" aria-label="Режим"></div>
+            <p class="so-note" id="mode-note" style="margin-top:12px"></p>
+          </div>
+
+          <!-- Размер команды: показываем только там, где режим его выбирает
+               (союзники и дуэль — 1 на 1 или 2 на 2). У бомбы размер фиксированный,
+               у остальных режимов деления на команды нет — секция скрыта. -->
+          <div class="so-create__blk" id="team-section" hidden>
+            <span class="so-create__label">Игроков в команде</span>
+            <div class="so-chips" id="teams" role="radiogroup" aria-label="Размер команды"></div>
+            <p class="so-note" id="team-note" style="margin-top:12px"></p>
+          </div>
+
+          <div class="so-create__blk">
+            <span class="so-create__label">Карта</span>
+            <div class="so-maps" id="maps"></div>
+            <p class="so-note so-note--err" id="map-note" hidden style="margin-top:12px"></p>
+          </div>
+
+          <div class="so-create__blk">
+            <span class="so-create__label">Название — можно не писать</span>
+            <input class="so-input" id="room-name" maxlength="24" placeholder="Комната" autocomplete="off">
+          </div>
+
+          <!-- Живой пересбор выбора: то, что уйдёт на сервер, видно одним взглядом. -->
+          <div class="so-create__sum" id="create-preview" role="status" aria-label="Что создастся"></div>
+
+          <!-- Кто владелец, решает сервер по сессии, поэтому поля «твой ID» здесь больше
+               нет: вписать чужой ID раньше было можно, теперь — нет (#51). -->
+          <button class="so-btn so-btn--play so-create__go" id="create-btn"><span>СОЗДАТЬ КОМНАТУ</span></button>
+          <p class="so-err" id="create-err"></p>
+
+          <!-- Что делать после создания: команда входа и два шага. -->
+          <div class="so-result" id="result" hidden>
+            <div class="so-result__t">Комната открыта — осталось войти</div>
+            <ol class="so-steps">
+              <li><b>Команда входа уже скопирована</b> — она ниже; потерялась — жми «Скопировать»</li>
+              <li>Открой <b>чат лобби</b> в Standoff 2</li>
+              <li>Вставь команду и отправь — <b>сервер сам закинет тебя в комнату</b></li>
+            </ol>
+            <div class="so-formrow" style="margin-top:14px">
+              <input class="so-cmd" id="result-cmd" readonly aria-label="Команда входа в комнату">
+              <button class="so-btn so-btn--sm so-btn--ghost" id="copy-btn"><span>Скопировать</span></button>
+            </div>
+            <p class="so-note" style="margin-top:12px">Друзья увидят комнату в списке справа —
+               войдут так же: «Войти» → команда → чат лобби.</p>
+          </div>
+        </section>
+
+        <!-- ── список публичных комнат ── -->
+        <section class="so-list" id="panel-list" role="tabpanel" aria-labelledby="tab-list">
+          <div class="so-list__head">
+            <div class="so-list__t">ПУБЛИЧНЫЕ <em>КОМНАТЫ</em></div>
+            <div class="so-list__count"><b id="f-count">0</b><i>открыто</i></div>
+          </div>
+          <div class="so-filters">
+            <select class="so-input so-input--select so-input--slim" id="f-mode" aria-label="Фильтр по режиму"></select>
+            <select class="so-input so-input--select so-input--slim" id="f-map" aria-label="Фильтр по карте"></select>
+            <span class="so-filters__upd">обновление 2 с</span>
+          </div>
+          <ul class="so-rooms" id="rooms"></ul>
+        </section>
+
+      </div><!-- /play-grid -->
+
+      <p class="so-playfoot">
+        влалChillow dedicated · UDP 7777 · данные обновляются каждые 2 с
+      </p>
+    </div><!-- /play-main -->
+  </main>
+</div><!-- /view-play -->
 
 <!-- «Войти» из публичной комнаты: команда копируется и остаётся выделяемой. -->
-<div class="md-dialog-backdrop" id="join-dialog" hidden>
-  <div class="md-dialog" role="dialog" aria-modal="true" aria-labelledby="join-dialog-title">
-    <h2 class="md-dialog__title" id="join-dialog-title">Команда скопирована</h2>
-    <p class="md-dialog__text">Вставь её в чат лобби — сервер сам закинет тебя в комнату.</p>
-    <input class="md-dialog__cmd" id="join-cmd" readonly aria-label="Команда входа в комнату">
-    <p class="md-dialog__hint" id="join-copy-state">
+<div class="so-dlgwrap" id="join-dialog" hidden>
+  <div class="so-dlg" role="dialog" aria-modal="true" aria-labelledby="join-dialog-title">
+    <div class="so-dlg__k">Вход в комнату</div>
+    <h2 class="so-dlg__t" id="join-dialog-title">Команда скопирована</h2>
+    <ol class="so-steps so-steps--dlg">
+      <li>Команда уже в буфере — нет так нет, жми «Скопировать ещё раз»</li>
+      <li>Открой <b>чат лобби</b> в Standoff 2</li>
+      <li>Вставь и отправь — <b>сервер сам закинет тебя в комнату</b></li>
+    </ol>
+    <input class="so-cmd" id="join-cmd" readonly aria-label="Команда входа в комнату">
+    <p class="so-note" id="join-copy-state" style="margin-top:12px">
       Команда скопирована. Вставь её в чат лобби.
     </p>
-    <div class="md-actions">
-      <button class="md-button md-button--text" id="join-copy-btn"><span>Скопировать ещё раз</span></button>
-      <button class="md-button md-button--filled" id="join-close-btn"><span>Понятно</span></button>
+    <div class="so-formrow" style="margin-top:16px">
+      <button class="so-btn so-btn--sm so-btn--ghost" id="join-copy-btn"><span>Скопировать ещё раз</span></button>
+      <button class="so-btn so-btn--sm so-btn--acc" id="join-close-btn"><span>Понятно</span></button>
     </div>
   </div>
 </div>
+
+<!-- ═════════════════════ ПРОФИЛЬ (#/profile) ═════════════════════ -->
+<div id="view-profile" hidden>
+
+  <header class="so-top so-top--static">
+    <a class="so-top__logo" href="#/">ВЛАЛ<b>CHILLOW</b></a>
+    <nav>
+      <a href="#/">ГЛАВНАЯ</a>
+      <a href="#/docs">ИНСТРУКЦИЯ</a>
+      <a href="#/play">КОМНАТЫ</a>
+      <span class="so-online" title="сервер отвечает"><i class="so-online__dot" id="so-dot-profile"></i></span>
+      <button class="so-sidebtn" type="button" data-side-open>ПАНЕЛЬ</button>
+    </nav>
+  </header>
+
+  <main class="so-sec" style="padding-top:30px;padding-bottom:110px">
+
+    <h1 class="so-playhead__h">ПРОФИЛЬ <em>ИГРОКА</em></h1>
+
+    <!-- без кода: форма входа -->
+    <section class="so-card" id="pf-when-anon" aria-label="Вход по коду" style="margin-top:30px;max-width:620px">
+      <div class="so-card__t">ВХОД ПО КОДУ</div>
+      <p class="so-card__d" style="margin-top:10px">
+        Код приходит в чат лобби при входе: <b>«Ты &lt;ник&gt; · ID: … · код: 123456»</b>.
+        Живёт 30 минут; новый — командой <b>/code</b> в чате лобби.
+      </p>
+      <div class="so-formrow" style="margin-top:18px">
+        <input class="so-input" id="pf-code" inputmode="numeric" maxlength="6"
+               placeholder="123456" autocomplete="off" aria-label="Код из лобби">
+        <button class="so-btn so-btn--sm" id="pf-btn">ВОЙТИ</button>
+      </div>
+      <p class="so-err" id="pf-err"></p>
+    </section>
+
+    <!-- авторизован: кто + статистика -->
+    <div id="pf-when-auth" hidden>
+      <div class="so-pfwho">
+        <img class="so-acc__av so-acc__av--big" id="pf-avatar" alt="аватар" width="88" height="88" hidden>
+        <div class="so-acc__fb so-acc__fb--big" id="pf-avatar-fb" hidden>?</div>
+        <div style="min-width:0">
+          <div class="so-acc__n so-acc__n--big" id="pf-nick">—</div>
+          <div class="so-acc__i" id="pf-id">ID —</div>
+        </div>
+      </div>
+
+      <div class="so-pfgrid">
+        <div class="so-kdcard">
+          <div class="so-kdcard__t">K / D</div>
+          <svg class="so-kd" viewBox="0 0 140 140" role="img" aria-label="Соотношение киллов и смертей">
+            <circle class="so-kd__track" cx="70" cy="70" r="58"></circle>
+            <circle class="so-kd__d" id="pf-arc-d" cx="70" cy="70" r="58"></circle>
+            <circle class="so-kd__k" id="pf-arc-k" cx="70" cy="70" r="58"></circle>
+            <text class="so-kd__v" id="pf-kd" x="70" y="70" dy="7">0.00</text>
+            <text class="so-kd__l" x="70" y="102">K / D</text>
+          </svg>
+          <div class="so-kdcard__legend">
+            <span><i style="background:#8fb4e8"></i>Киллы<b id="pf-kills-leg">0</b></span>
+            <span><i style="background:#e8a33d"></i>Смерти<b id="pf-deaths-leg">0</b></span>
+          </div>
+        </div>
+
+        <div class="so-card">
+          <div class="so-card__t">СТАТИСТИКА ЗА ВСЁ ВРЕМЯ</div>
+          <div class="so-pfcells" style="margin-top:22px">
+            <span class="so-pill"><span class="so-pill__v" id="pf-kills">0</span><span class="so-pill__l">Киллы</span></span>
+            <span class="so-pill"><span class="so-pill__v" id="pf-deaths">0</span><span class="so-pill__l">Смерти</span></span>
+            <span class="so-pill"><span class="so-pill__v" id="pf-time">0 м</span><span class="so-pill__l">Часов в матчах</span></span>
+            <span class="so-pill"><span class="so-pill__v" id="pf-matches">0</span><span class="so-pill__l">Матчей сыграно</span></span>
+          </div>
+          <p class="so-note so-pfnote">Время идёт только в живых матчах. «Матчей» — уникальные забеги:
+             один забег комнаты считается один раз; перезашёл в ту же комнату — второй раз не посчитают.</p>
+        </div>
+      </div>
+    </div>
+  </main>
+</div><!-- /view-profile -->
+
+<!-- ═════════════════════ АДМИН ПАНЕЛЬ (#/admin) ═════════════════════ -->
+<div id="view-admin" hidden>
+
+  <header class="so-top so-top--static">
+    <a class="so-top__logo" href="#/">ВЛАЛ<b>CHILLOW</b></a>
+    <nav>
+      <a href="#/">ГЛАВНАЯ</a>
+      <a href="#/docs">ИНСТРУКЦИЯ</a>
+      <a href="#/play">КОМНАТЫ</a>
+      <span class="so-online" title="сервер отвечает"><i class="so-online__dot" id="so-dot-admin"></i></span>
+      <button class="so-sidebtn" type="button" data-side-open>ПАНЕЛЬ</button>
+    </nav>
+  </header>
+
+  <main class="so-sec" style="padding-top:30px;padding-bottom:110px">
+
+    <h1 class="so-playhead__h">АДМИН <em>ПАНЕЛЬ</em></h1>
+
+    <!-- доступ закрыт: не админ или нет сессии сайта -->
+    <section class="so-card" id="adm-notadmin" aria-label="Доступ закрыт" style="margin-top:30px;max-width:620px">
+      <div class="so-card__t">ДОСТУП ЗАКРЫТ</div>
+      <p class="so-card__d" style="margin-top:10px" id="adm-notadmin-d">
+        Админ панель доступна только аккаунтам из списка <b>admin.ids</b> в config.json.
+        Сервер отклоняет все попытки остальных войти или выполнить админское действие.
+      </p>
+    </section>
+
+    <!-- вход по коду этого запуска -->
+    <section class="so-card" id="adm-auth" aria-label="Код этого запуска" hidden style="margin-top:30px;max-width:620px">
+      <div class="so-card__t">КОД ЭТОГО ЗАПУСКА</div>
+      <p class="so-card__d" style="margin-top:10px">
+        Код лежит в <b>auth.txt</b> рядом с config.json и печатается сервером в консоль при
+        старте. Тот же код, что админы вводят в чат лобби. После перезапуска сервера код
+        новый — авторизоваться надо заново.
+      </p>
+      <div class="so-formrow" style="margin-top:18px">
+        <input class="so-input" id="adm-code" autocomplete="off" spellcheck="false"
+               placeholder="код из auth.txt" aria-label="Код этого запуска">
+        <button class="so-btn so-btn--sm" id="adm-login">ВОЙТИ</button>
+      </div>
+      <p class="so-err" id="adm-auth-err"></p>
+    </section>
+
+    <!-- панель -->
+    <div id="adm-panel" hidden>
+      <div class="so-admwho">
+        <img class="so-acc__av so-acc__av--adm" id="adm-avatar" alt="аватар" width="48" height="48" hidden>
+        <div class="so-acc__fb so-acc__fb--adm" id="adm-avatar-fb" hidden>?</div>
+        <div class="so-admwho__meta">
+          <div class="so-acc__n" id="adm-nick">—</div>
+          <div class="so-acc__i" id="adm-id">ID —</div>
+        </div>
+        <button class="so-btn so-btn--sm so-admwho__out" id="adm-logout">ВЫЙТИ</button>
+      </div>
+
+      <div class="so-admtabs" role="tablist" aria-label="Разделы админ панели">
+        <button class="so-tab" id="adm-tab-custom" aria-selected="true" aria-controls="adm-panel-custom">Кастомизация</button>
+        <button class="so-tab" id="adm-tab-bans" aria-selected="false" aria-controls="adm-panel-bans">Баны</button>
+      </div>
+
+      <!-- вкладка: кастомизация -->
+      <section class="so-card" id="adm-panel-custom" role="tabpanel" style="margin-top:18px;max-width:620px">
+        <div class="so-card__t">СВОЙ ID</div>
+        <p class="so-card__d" style="margin-top:10px">
+          ID, который видят игроки вместо числового. Разрешены только цифры и английские
+          буквы. Оригинальный числовой ID сервер помнит: баны, конфиг и статистика работают
+          по нему как раньше. Новое значение применится при следующем входе в игру, и все
+          увидят его в катке и в лобби.
+        </p>
+        <div class="so-formrow" style="margin-top:18px">
+          <input class="so-input" id="adm-cid" maxlength="24" spellcheck="false" autocomplete="off"
+                 placeholder="MoйNick2026" aria-label="Кастомный ID">
+          <button class="so-btn so-btn--sm" id="adm-cid-save">СОХРАНИТЬ</button>
+          <button class="so-btn so-btn--sm" id="adm-cid-clear">СБРОС</button>
+        </div>
+        <p class="so-note" id="adm-cid-now"></p>
+        <p class="so-err" id="adm-cid-err"></p>
+      </section>
+
+      <!-- вкладка: баны -->
+      <section class="so-card" id="adm-panel-bans" role="tabpanel" hidden style="margin-top:18px;max-width:680px">
+        <div class="so-card__t">БАН ИГРОКА</div>
+        <div class="so-admsteps">
+          <span class="so-admstep so-admstep--on" id="adm-bstep-1"><i>1</i>найти игрока</span>
+          <span class="so-admstep" id="adm-bstep-2"><i>2</i>проверить</span>
+          <span class="so-admstep" id="adm-bstep-3"><i>3</i>бан</span>
+        </div>
+
+        <!-- шаг 1: ввод ID с живым превью -->
+        <div id="adm-bstep1" style="margin-top:16px">
+          <label class="so-card__label" for="adm-bid">ID игрока</label>
+          <div class="so-formrow" style="margin-top:0">
+            <input class="so-input so-input--slim" id="adm-bid" inputmode="numeric" autocomplete="off"
+                   placeholder="например 12345" aria-label="ID игрока">
+            <button class="so-btn so-btn--sm" id="adm-bnext">ДАЛЕЕ</button>
+          </div>
+          <div id="adm-bprev" hidden></div>
+          <p class="so-err" id="adm-berr"></p>
+        </div>
+
+        <!-- шаг 2: «всё верно?» -->
+        <div id="adm-bstep2" hidden style="margin-top:16px">
+          <p class="so-card__d" style="margin-top:0">Всё верно? Банится:</p>
+          <div id="adm-bconfirm"></div>
+          <div class="so-formrow">
+            <button class="so-btn so-btn--sm" id="adm-byes">ДА, БАНИТЬ</button>
+            <button class="so-btn so-btn--sm" id="adm-bback">НАЗАД</button>
+          </div>
+        </div>
+
+        <!-- шаг 3: форма бана -->
+        <div id="adm-bstep3" hidden style="margin-top:16px">
+          <label class="so-card__label" for="adm-breason">Причина (можно пропустить)</label>
+          <input class="so-input so-input--slim" id="adm-breason" maxlength="200" autocomplete="off"
+                 placeholder="например: читы" aria-label="Причина бана">
+          <label class="so-card__label" for="adm-bdur" style="margin-top:14px">На сколько банить</label>
+          <div class="so-formrow" style="margin-top:0">
+            <input class="so-input so-input--slim" id="adm-bdur" type="number" min="1" step="1" value="6"
+                   style="max-width:130px" inputmode="numeric" aria-label="Сколько">
+            <select class="so-input so-input--slim so-input--select" id="adm-bunit" style="max-width:160px" aria-label="Единица срока">
+              <option value="m">минут</option>
+              <option value="h">часов</option>
+              <option value="d" selected>дней</option>
+            </select>
+            <button class="so-btn so-btn--sm" id="adm-ban-go">ЗАБАНИТЬ</button>
+          </div>
+          <p class="so-note" id="adm-brange"></p>
+          <p class="so-err" id="adm-ban-err"></p>
+        </div>
+
+        <!-- результат -->
+        <div id="adm-bdone" hidden style="margin-top:16px"></div>
+
+        <div class="so-card__t" style="margin-top:30px;font-size:17px">АКТИВНЫЕ БАНЫ</div>
+        <p class="so-note" id="adm-bans-empty" style="margin-top:10px">Активных банов нет.</p>
+        <div class="so-admbans" id="adm-bans"></div>
+      </section>
+    </div>
+  </main>
+</div><!-- /view-admin -->
+
+<!-- ═════════════════════ ПАНЕЛЬ СПРАВА ═════════════════════ -->
+<div class="so-scrim" id="side-scrim"></div>
+<aside class="so-side" id="side" role="dialog" aria-label="Панель">
+  <div class="so-side__head">
+    <span class="so-side__title">ПАНЕЛЬ <b>·</b> МЕНЮ</span>
+    <button class="so-side__x" id="side-close" aria-label="Закрыть панель">✕</button>
+  </div>
+  <div class="so-side__body">
+
+    <!-- авторизован -->
+    <div id="side-acc" hidden>
+      <div class="so-acc">
+        <img class="so-acc__av" id="side-avatar" alt="аватар" width="54" height="54" hidden>
+        <div class="so-acc__fb" id="side-avatar-fb" hidden>?</div>
+        <div style="min-width:0">
+          <div class="so-acc__n" id="side-nick">—</div>
+          <div class="so-acc__i" id="side-id">ID —</div>
+        </div>
+      </div>
+
+      <button class="so-navbtn so-navbtn--acc" id="side-admin" hidden>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4z"/></svg>
+        <span>Админ панель</span>
+      </button>
+
+      <div class="so-side__label">Навигация</div>
+      <a class="so-navbtn" href="#/profile" id="side-profile" data-side-nav>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z"/></svg>
+        <span>Профиль</span>
+      </a>
+      <a class="so-navbtn" href="#/play" id="side-play" data-side-nav>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>
+        <span>Играть</span>
+      </a>
+      <a class="so-navbtn" href="#/reports" id="side-reports" data-side-nav>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/></svg>
+        <span>Репорты</span>
+      </a>
+    </div>
+
+    <!-- без кода -->
+    <div id="side-anon" hidden>
+      <div class="so-side__label">Аккаунт</div>
+      <p class="so-note" style="margin-top:0">Войди по коду из чата лобби — профиль, статистика
+         и создание комнат живут в аккаунте.</p>
+      <div class="so-formrow" style="margin-top:16px">
+        <input class="so-input" id="side-code" inputmode="numeric" maxlength="6"
+               placeholder="123456" autocomplete="off" aria-label="Код из лобби">
+        <button class="so-btn so-btn--sm" id="side-login-btn">ВОЙТИ</button>
+      </div>
+      <p class="so-err" id="side-auth-err"></p>
+      <p class="so-hint">Нет кода? Зайди в лобби сервера в игре — он напишет его в чат.
+         Сгорел — напиши в чате <b>/code</b>.</p>
+    </div>
+
+  </div>
+  <div class="so-side__foot">
+    <button class="so-navbtn so-navbtn--out" id="side-logout" hidden>
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M17 7l-1.41 1.41L18.17 11H8v2h10.17l-2.58 2.58L17 17l5-5zM4 5h8V3H4c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h8v-2H4V5z"/></svg>
+      <span>Выйти</span>
+    </button>
+    <p class="so-note" style="margin:12px 0 0">ВЛАЛCHILLOW — свой сервер, свои катки.</p>
+  </div>
+</aside>
 
 <script>
 'use strict';
@@ -855,10 +2670,12 @@ function esc(s){
   });
 }
 
-/* ═══════════ селекты и карты ═══════════ */
+/* ═══════════ селекты, режимы и карты ═══════════ */
+/* Выбор режима — чипами, а не выпадающим списком: все режимы каталога видны
+   сразу, что бы сервер ни прислал. Фильтр списка комнат остаётся селектом —
+   там вариантов столько, что чипы заняли бы весь экран. */
 function buildSelects(){
-  var modeSel = $('mode'), fMode = $('f-mode');
-  modeSel.innerHTML = '';
+  var fMode = $('f-mode');
   fMode.innerHTML = '';
 
   /* «Все режимы» добавляем ПЕРВОЙ опцией и явно выбираем её.
@@ -869,11 +2686,6 @@ function buildSelects(){
   fMode.appendChild(all);
 
   MODES.forEach(function(m){
-    var o = document.createElement('option');
-    o.value = m.id;
-    o.textContent = m.name + (m.alias && m.alias !== m.id ? ' · ' + m.alias : '');
-    modeSel.appendChild(o);
-
     var f = document.createElement('option');
     f.value = m.id; f.textContent = m.name;
     fMode.appendChild(f);
@@ -881,26 +2693,66 @@ function buildSelects(){
 
   // явная детерминированная выбранность — не полагаемся на побочный эффект DOM
   fMode.selectedIndex = 0;
-  modeSel.selectedIndex = 0;
+
+  renderModes();
+}
+
+/* Выбранный режим держим в curMode: чипы его ставят, остальные шаги читают. */
+var curMode = '';
+
+function renderModes(){
+  var box = $('mode-chips');
+  if (!box) return;
+  box.innerHTML = '';
+  if (!MODES.length){ curMode = ''; updateCreatePreview(); return; }
+
+  /* Прошлый выбор живёт, пока страница открыта; по умолчанию — первый из каталога. */
+  if (!modeById(curMode)) curMode = MODES[0].id;
+
+  MODES.forEach(function(m){
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'so-mode';
+    b.setAttribute('role', 'radio');
+    b.setAttribute('aria-checked', m.id === curMode ? 'true' : 'false');
+    /* Карточка, а не чип: имя крупно, водяной знак — алиас команды входа,
+       снизу честное «сколько карт». Выбранная подсвечена ромбом-акцентом. */
+    b.innerHTML =
+      '<span class="so-mode__wm" aria-hidden="true">' + esc(String(m.alias || m.id).toUpperCase()) + '</span>' +
+      '<span class="so-mode__n">' + esc(m.name) + '</span>' +
+      '<span class="so-mode__d">' + (m.levels ? m.levels.length : 0) + ' карт</span>';
+    b.addEventListener('click', function(){
+      if (curMode === m.id) return;
+      curMode = m.id;
+      Array.prototype.forEach.call(box.children, function(k){
+        k.setAttribute('aria-checked', k === b ? 'true' : 'false');
+      });
+      renderTeams();
+      renderMaps();
+    });
+    box.appendChild(b);
+  });
 }
 
 /* Размер команды: чипы «1 на 1» / «2 на 2» — только для режимов, где он
    выбирается. Сервер отдаёт teamSizes в /api/modes (пустой список — не выбирается),
    поэтому страница не держит свою копию правил и не разъедется с сервером. */
 function renderTeams(){
-  var m = modeById($('mode').value);
+  var m = modeById(curMode);
   var section = $('team-section');
   var box = $('teams');
   box.innerHTML = '';
-  if (!m) { section.hidden = true; return; }
-
-  var sizes = m.teamSizes || [];
-  if (!sizes.length) { section.hidden = true; return; }
+  if (!m || !(m.teamSizes || []).length){
+    if (section) section.hidden = true;
+    updateCreatePreview();
+    return;
+  }
 
   section.hidden = false;
 
   /* По умолчанию — самый большой вариант: человек, которому всё равно,
      получит полноценную катку, а не «1 на 1» по недоразумению. */
+  var sizes = m.teamSizes;
   var preferred = sizes[sizes.length - 1];
   var saved = teamChoice[m.id];
   if (saved && sizes.indexOf(saved) >= 0) preferred = saved;
@@ -908,7 +2760,7 @@ function renderTeams(){
   sizes.forEach(function(size){
     var b = document.createElement('button');
     b.type = 'button';
-    b.className = 'md-chip';
+    b.className = 'so-chip';
     b.textContent = size + ' на ' + size;
     b.setAttribute('role', 'radio');
     b.setAttribute('aria-checked', size === preferred ? 'true' : 'false');
@@ -924,11 +2776,13 @@ function renderTeams(){
       b.setAttribute('aria-pressed', 'true');
       teamChoice[m.id] = size;
       updateTeamNote(m, size);
+      updateCreatePreview();
     });
     box.appendChild(b);
   });
 
   updateTeamNote(m, preferred);
+  updateCreatePreview();
 }
 
 /* Подпись под чипами: сколько всего человек поместится. Без неё «2 на 2»
@@ -943,7 +2797,7 @@ function updateTeamNote(m, perTeam){
 var teamChoice = {};
 
 function selectedPerTeam(){
-  var m = modeById($('mode').value);
+  var m = modeById(curMode);
   if (!m) return 0;
   var sizes = m.teamSizes || [];
   if (!sizes.length) return 0;
@@ -957,9 +2811,61 @@ function selectedPerTeam(){
   return sizes[sizes.length - 1];
 }
 
+/* ◆ Хэш имени → оттенок: у каждой карты/режима свой устойчивый цвет фона.
+   Картинок в каталоге нет — визуал строится из самого имени и не врёт,
+   когда сервер добавляет карту. */
+function hueOf(name){
+  var h = 0;
+  var s = String(name).toUpperCase();
+  for (var i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) % 360;
+  return h;
+}
+/* Пара границ градиента из оттенка — чтобы не городить hsl-арифметику в CSS. */
+function huePair(name){
+  var h = hueOf(name);
+  return 'hsl(' + h + ',42%,25%)|hsl(' + ((h + 42) % 360) + ',52%,12%)';
+}
+
+/* Выбранная плитка карты. Текст лежит в dataset.map: внутри плитки есть
+   декоративный ◆, и textContent бы вернул его вместе с названием. */
+function selectedMap(){
+  var box = $('maps');
+  if (!box) return '';
+  var kids = box.children;
+  for (var k = 0; k < kids.length; k++){
+    if (kids[k].getAttribute('aria-pressed') === 'true')
+      return kids[k].dataset.map || kids[k].textContent;
+  }
+  return '';
+}
+
+/* Живая строка «что создастся»: режим ◆ размер ◆ карта ◆ имя.
+   Пересобирается на каждом выборе — до отправки на сервер видно всё. */
+function updateCreatePreview(){
+  var el = $('create-preview');
+  if (!el) return;
+  var parts = [];
+  var m = modeById(curMode);
+  if (m) parts.push(esc(m.name));
+  var per = selectedPerTeam();
+  if (per) parts.push(per + ' на ' + per);
+  var map = selectedMap();
+  if (map) parts.push(esc(map));
+  var name = ($('room-name').value || '').trim();
+  if (name) parts.push(esc(name));
+  el.innerHTML = parts.length
+    ? parts.join('<span class="so-create__sum-d">◆</span>')
+    : '<span style="color:#57708a">выбери режим — здесь соберётся будущая комната</span>';
+}
+
 function renderMaps(){
-  var m = modeById($('mode').value);
-  if (!m) return;
+  var m = modeById(curMode);
+  if (!m){
+    var note0 = $('mode-note');
+    if (note0) note0.textContent = '';
+    updateCreatePreview();
+    return;
+  }
 
   $('mode-note').textContent = m.note || '';
 
@@ -975,13 +2881,19 @@ function renderMaps(){
   m.levels.forEach(function(lv){
     var b = document.createElement('button');
     b.type = 'button';
-    b.className = 'md-chip';
-    b.textContent = lv;
+    b.className = 'so-map';
+    b.dataset.map = lv;
     b.setAttribute('aria-pressed', lv === preferred ? 'true' : 'false');
+    var pair = huePair(lv).split('|');
+    b.innerHTML =
+      '<i class="so-map__bg" style="--c1:' + pair[0] + ';--c2:' + pair[1] + '" aria-hidden="true"></i>' +
+      '<span class="so-map__n">' + esc(lv) + '</span>' +
+      '<span class="so-map__mk" aria-hidden="true">◆</span>';
     b.addEventListener('click', function(){
       var kids = box.children;
       for (var k = 0; k < kids.length; k++) kids[k].setAttribute('aria-pressed', 'false');
       b.setAttribute('aria-pressed', 'true');
+      updateCreatePreview();
     });
     box.appendChild(b);
   });
@@ -989,6 +2901,8 @@ function renderMaps(){
   var note = $('map-note');
   if (m.warn) { note.textContent = m.warn; note.hidden = false; }
   else { note.textContent = ''; note.hidden = true; }
+
+  updateCreatePreview();
 
   var fMap = $('f-map');
   var keep = fMap.value;
@@ -1025,70 +2939,527 @@ function renderStats(){
   $('s-total').textContent = online.total;
   var hint = $('s-rooms');
   if (hint) hint.textContent = rooms.length + ' / ' + online.max;
+  renderHomeNow();
 }
 
 /* ═══════════ профиль ═══════════ */
 /* Аватар — те же байты, что клиент прислал в лобби (сервер отдаёт их как JPEG).
-   Если аватара нет или он не отдался — показываем букву, а не битую картинку. */
-function setAvatar(id){
-  var img = $('avatar');
-  var fallback = $('avatar-fallback');
-  if (!id || !me){
+   Если аватара нет или он не отдался — показываем букву, а не битую картинку.
+   Одно на все места: страница комнат, панель справа, профиль. */
+function setAvatar(imgId, fbId){
+  var img = $(imgId), fallback = $(fbId);
+  if (!img || !fallback) return;
+
+  var letter = me && me.nick ? me.nick.charAt(0) : '?';
+  if (!me){
     img.hidden = true;
     fallback.hidden = false;
-    fallback.textContent = me && me.nick ? me.nick.charAt(0) : '?';
+    fallback.textContent = letter;
     return;
   }
+
   img.onerror = function(){
     img.hidden = true;
     fallback.hidden = false;
-    fallback.textContent = me && me.nick ? me.nick.charAt(0) : '?';
+    fallback.textContent = letter;
   };
   img.src = 'api/avatar?v=' + encodeURIComponent(String(me.id));
   img.hidden = false;
   fallback.hidden = true;
 }
 
+/* Один вход — страница профиля, панель справа и гейт на #/play. */
 function renderProfile(){
-  var form = $('auth-form');
-  var card = $('profile');
+  renderPlayGate();
+  renderSide();
+  renderProfileView();
+}
+
+/* Страница комнат начинается не с интерфейса, а с вопроса «кто ты»:
+   без кода из лобби сервер всё равно откажет и в создании, и во входе (#51).
+   Сам вход живёт на #/profile и в панели справа — здесь только гейт. */
+function renderPlayGate(){
+  var gate = $('play-gate');
+  var main = $('play-main');
+  if (!gate || !main) return;
+  gate.hidden = !!me;
+  main.hidden = !me;
+}
+
+/* ── панель справа: кто вошёл и что ему показывать ── */
+function renderSide(){
+  var acc = $('side-acc');
+  var anon = $('side-anon');
+  if (!acc || !anon) return;
+
+  acc.hidden = !me;
+  anon.hidden = !!me;
+
+  var lg = $('side-logout');
+  if (lg) lg.hidden = !me;
+
+  var adm = $('side-admin');
+  if (adm) adm.hidden = !(me && me.admin === true);
+
   if (!me){
-    form.hidden = false;
-    card.hidden = true;
+    var err = $('side-auth-err');
+    if (err) err.textContent = '';
     return;
   }
 
-  form.hidden = true;
-  card.hidden = false;
-  $('profile-name').textContent = 'Привет, ' + me.nick;
-  $('profile-id').textContent = 'ID ' + me.id;
-  setAvatar(me.id);
+  var n = $('side-nick');
+  var pi = $('side-id');
+  if (n) n.textContent = me.nick;
+  if (pi) pi.textContent = 'ID ' + me.id;
+  setAvatar('side-avatar', 'side-avatar-fb');
+}
 
-  /* Кнопка создания без авторизации — ложь: сервер всё равно откажет. */
-  var btn = $('create-btn');
-  if (btn) btn.disabled = false;
+/* ── страница #/profile ── */
+function renderProfileView(){
+  var anon = $('pf-when-anon');
+  var auth = $('pf-when-auth');
+  if (!anon || !auth) return;
+
+  anon.hidden = !!me;
+  auth.hidden = !me;
+  if (!me) return;
+
+  var n = $('pf-nick');
+  var pi = $('pf-id');
+  if (n) n.textContent = me.nick;
+  if (pi) pi.textContent = 'ID ' + me.id;
+  setAvatar('pf-avatar', 'pf-avatar-fb');
+
+  loadStats();
+}
+
+/* Статистика из хранилища на диске: киллы, смерти, K/D, время, матчи.
+   401 — просто не авторизован: страница уже показала форму входа. */
+function loadStats(){
+  return api('GET', 'api/stats/me').then(function(res){
+    if (!res.ok || !res.data) return;
+
+    setDonut(res.data.kills || 0, res.data.deaths || 0, res.data.kd);
+    var set = function(id, v){ var el = $(id); if (el) el.textContent = v; };
+    set('pf-kills', fmtNum(res.data.kills || 0));
+    set('pf-deaths', fmtNum(res.data.deaths || 0));
+    set('pf-kills-leg', fmtNum(res.data.kills || 0));
+    set('pf-deaths-leg', fmtNum(res.data.deaths || 0));
+    set('pf-time', fmtTime(res.data.seconds || 0));
+    set('pf-matches', fmtNum(res.data.matches || 0));
+  });
+}
+
+/* K/D пончик: две дуги из одной точки (rotate −90°), смерти сдвинуты на длину
+   киллов — сегменты идут друг за другом по кругу. C — длина полного круга r=58. */
+function setDonut(kills, deaths, kd){
+  var C = 2 * Math.PI * 58;
+  var total = kills + deaths;
+
+  var kdEl = $('pf-kd');
+  if (kdEl) kdEl.textContent = (typeof kd === 'number' ? kd : 0).toFixed(2);
+
+  var kArc = $('pf-arc-k');
+  var dArc = $('pf-arc-d');
+  if (!kArc || !dArc) return;
+
+  var ck = total ? C * (kills / total) : 0;
+  var cd = total ? C * (deaths / total) : 0;
+  kArc.setAttribute('stroke-dasharray', ck.toFixed(1) + ' ' + C.toFixed(1));
+  dArc.setAttribute('stroke-dasharray', cd.toFixed(1) + ' ' + C.toFixed(1));
+  dArc.setAttribute('stroke-dashoffset', (-ck).toFixed(1));
+}
+
+function fmtNum(n){
+  return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+}
+
+/* «ЧЧ ММ»: часы и минуты в матчах; до часа — просто минуты. */
+function fmtTime(sec){
+  var h = Math.floor(sec / 3600);
+  var m = Math.floor((sec % 3600) / 60);
+  if (h > 0) return h + ' ч ' + (m < 10 ? '0' : '') + m + ' м';
+  return m + ' м';
+}
+
+/* ═══════════ админ панель (#/admin) ═══════════ */
+/* Всё серверно: страница только показывает. Каждый чих сервер проверяет трижды:
+   сессия сайта → живой admin.ids → код этого запуска (админ-кука). */
+var adminState = null;   /* ответ GET api/admin */
+var adminTab = 'custom';
+var adminTarget = null;  /* найденный для бана игрок */
+var adminBidTimer = 0;
+
+function adminStatusText(status){
+  if (status === 'match') return 'в игре';
+  if (status === 'lobby') return 'в лобби';
+  return 'не в сети';
+}
+function adminStatusClass(status){
+  if (status === 'match') return 'so-admst so-admst--match';
+  if (status === 'lobby') return 'so-admst so-admst--lobby';
+  return 'so-admst';
+}
+
+function loadAdminState(){
+  return api('GET', 'api/admin').then(function(res){
+    adminState = res.ok && res.data ? res.data : { admin: false, authed: false };
+    renderAdmin();
+    return adminState;
+  });
+}
+
+function renderAdmin(){
+  var notadmin = $('adm-notadmin');
+  var auth = $('adm-auth');
+  var panel = $('adm-panel');
+  if (!notadmin || !auth || !panel) return;
+
+  var st = adminState || { admin: false, authed: false };
+
+  /* Текст «доступ закрыт» зависит от того, есть ли вообще сессия сайта. */
+  var d = $('adm-notadmin-d');
+  if (d && !st.admin){
+    d.innerHTML = !me
+      ? 'Сначала войди на сайт — код из чата лобби на странице <b>#/profile</b>. ' +
+        'Панель открывается только аккаунтам из списка <b>admin.ids</b> в config.json; ' +
+        'сервер отклоняет всех остальных.'
+      : 'Твоего аккаунта нет в списке <b>admin.ids</b> в config.json. Сервер отклоняет все ' +
+        'попытки не-админов войти или выполнить админское действие.';
+  }
+
+  notadmin.hidden = !!st.admin;
+  auth.hidden = !(st.admin && !st.authed);
+  panel.hidden = !(st.admin && st.authed);
+
+  if (!st.admin || !st.authed) return;
+
+  $('adm-nick').textContent = st.nick || '—';
+  $('adm-id').textContent = st.customId
+    ? 'ID ' + st.customId + ' · оригинал ' + st.id
+    : 'ID ' + st.id;
+
+  /* аватар — те же байты, что клиент прислал в лобби */
+  var img = $('adm-avatar'), fb = $('adm-avatar-fb');
+  if (img && fb){
+    var letter = (st.nick || '?').charAt(0);
+    img.onerror = function(){
+      img.hidden = true; fb.hidden = false; fb.textContent = letter;
+    };
+    img.src = 'api/admin/avatar?id=' + encodeURIComponent(String(st.id));
+    img.hidden = false; fb.hidden = true;
+  }
+
+  var cid = $('adm-cid');
+  if (cid) cid.value = st.customId || '';
+  renderAdminCidNow();
+  renderAdminBanRange();
+  switchAdminTab(adminTab);
+  if (adminTab === 'bans') loadAdminBans();
+}
+
+function renderAdminCidNow(){
+  var st = adminState || {};
+  var el = $('adm-cid-now');
+  if (el) el.innerHTML = st.customId
+    ? 'Сейчас: <b>' + esc(st.customId) + '</b>'
+    : 'Сейчас: обычный числовой ID';
+}
+
+function switchAdminTab(tab){
+  adminTab = tab === 'bans' ? 'bans' : 'custom';
+  var custom = $('adm-panel-custom'), bans = $('adm-panel-bans');
+  var tCustom = $('adm-tab-custom'), tBans = $('adm-tab-bans');
+  if (!custom || !bans || !tCustom || !tBans) return;
+
+  custom.hidden = adminTab !== 'custom';
+  bans.hidden = adminTab !== 'bans';
+  tCustom.setAttribute('aria-selected', String(adminTab === 'custom'));
+  tBans.setAttribute('aria-selected', String(adminTab === 'bans'));
+
+  if (adminTab === 'bans') loadAdminBans();
+}
+
+function adminLogin(){
+  var input = $('adm-code');
+  var err = $('adm-auth-err');
+  var code = input ? input.value.trim() : '';
+  if (err) err.textContent = '';
+  if (!code){
+    if (err) err.textContent = 'введи код из auth.txt';
+    return;
+  }
+
+  return api('POST', 'api/admin/login', { code: code }).then(function(res){
+    if (!res.ok || !res.data){
+      if (err) err.textContent = (res.data && res.data.message) || 'код не подошёл';
+      return;
+    }
+    adminState = res.data;
+    if (input) input.value = '';
+    renderAdmin();
+  });
+}
+
+function adminLogout(){
+  return api('POST', 'api/admin/logout').then(function(){
+    adminState = { admin: adminState && adminState.admin, authed: false };
+    adminTarget = null;
+    renderAdmin();
+  });
+}
+
+/* ── кастомизация: только цифры и английские буквы, проверка и на клиенте ── */
+function adminFilterCid(){
+  var input = $('adm-cid');
+  if (!input) return;
+  var clean = input.value.replace(/[^A-Za-z0-9]/g, '');
+  if (clean !== input.value) input.value = clean;
+}
+
+function adminSaveCid(clear){
+  var err = $('adm-cid-err');
+  var input = $('adm-cid');
+  if (err) err.textContent = '';
+  var value = clear ? '' : (input ? input.value.trim() : '');
+  if (!clear && !value){
+    if (err) err.textContent = 'введи новый ID (цифры и английские буквы)';
+    return;
+  }
+
+  return api('POST', 'api/admin/customid', { customId: value }).then(function(res){
+    if (!res.ok || !res.data){
+      if (err) err.textContent = (res.data && res.data.message) || 'сервер не принял ID';
+      return;
+    }
+    adminState = res.data;
+    renderAdminCidNow();
+    if (input) input.value = adminState.customId || '';
+    var who = $('adm-id');
+    if (who) who.textContent = adminState.customId
+      ? 'ID ' + adminState.customId + ' · оригинал ' + adminState.id
+      : 'ID ' + adminState.id;
+  });
+}
+
+/* ── баны: 3 шага + живое превью по мере ввода ── */
+function adminBanStep(n){
+  for (var i = 1; i <= 3; i++){
+    var box = $('adm-bstep' + i);
+    if (box) box.hidden = i !== n;
+    var dot = $('adm-bstep-' + i);
+    if (dot){
+      dot.className = 'so-admstep' + (i === n ? ' so-admstep--on' : (i < n ? ' so-admstep--done' : ''));
+    }
+  }
+  var done = $('adm-bdone');
+  if (done) done.hidden = true;
+}
+
+function renderAdminTarget(box, t){
+  if (!box) return;
+  box.innerHTML =
+    '<div class="so-admprev">' +
+      '<div style="min-width:0">' +
+        '<div class="so-admprev__n">' + esc(t.nick) + '</div>' +
+        '<div class="so-admprev__i">ID ' + esc(String(t.id)) +
+          (t.customId ? ' · показывается как ' + esc(t.customId) : '') +
+          (t.status === 'offline' && t.lastSeen
+            ? ' · был в сети ' + esc(adminSeenText(t.lastSeen))
+            : '') +
+        '</div>' +
+      '</div>' +
+      '<span class="' + adminStatusClass(t.status) + '">' + adminStatusText(t.status) + '</span>' +
+      (t.banned ? '<span class="so-admst so-admst--warn">уже забанен</span>' : '') +
+    '</div>' +
+    (t.note ? '<p class="so-err" style="margin-top:10px">' + esc(t.note) + '</p>' : '');
+}
+
+function adminSeenText(iso){
+  var d = new Date(iso);
+  if (isNaN(d.getTime())) return '';
+  var pad = function(n){ return (n < 10 ? '0' : '') + n; };
+  return pad(d.getDate()) + '.' + pad(d.getMonth() + 1) + ' ' +
+         pad(d.getHours()) + ':' + pad(d.getMinutes());
+}
+
+function adminLookupBan(){
+  var input = $('adm-bid');
+  var prev = $('adm-bprev');
+  var err = $('adm-berr');
+  if (!input || !prev) return;
+
+  var raw = input.value.trim();
+  var id = parseInt(raw, 10);
+  adminTarget = null;
+  prev.hidden = true;
+  if (err) err.textContent = '';
+
+  if (!/^\d+$/.test(raw) || id <= 0){
+    if (raw.length > 0 && err) err.textContent = 'ID — число';
+    return;
+  }
+
+  api('GET', 'api/admin/lookup?id=' + id).then(function(res){
+    /* ответ мог прийти на старую строку — сверяем id */
+    if (!input || input.value.trim() !== String(id)) return;
+    if (res.status === 404){
+      if (err) err.textContent = (res.data && res.data.message) || ('никого с id ' + id + ' сервер не помнит');
+      return;
+    }
+    if (!res.ok || !res.data || res.data.ok === false){
+      if (err) err.textContent = (res.data && res.data.message) || 'поиск не удался';
+      return;
+    }
+    if (err) err.textContent = '';
+    adminTarget = res.data;
+    prev.hidden = false;
+    renderAdminTarget(prev, res.data);
+  });
+}
+
+function adminBidChanged(){
+  window.clearTimeout(adminBidTimer);
+  adminBidTimer = window.setTimeout(adminLookupBan, 350);
+}
+
+function adminBanNext(){
+  var err = $('adm-berr');
+  if (!adminTarget){
+    if (err) err.textContent = 'сначала найди игрока по ID';
+    return;
+  }
+  if (err) err.textContent = '';
+  renderAdminTarget($('adm-bconfirm'), adminTarget);
+  adminBanStep(2);
+}
+
+function adminBanBack(){
+  adminBanStep(1);
+}
+
+function renderAdminBanRange(){
+  var st = adminState || {};
+  var el = $('adm-brange');
+  var bans = st.bans || {};
+  if (el){
+    el.textContent = bans.enabled
+      ? 'Срок по настройкам сервера: от ' + bans.minMinutes + ' минут до ' + bans.maxDays + ' дней.'
+      : 'Баны на этом сервере выключены (admin.ban.enabled = false).';
+  }
+  var unit = $('adm-bunit');
+  var dur = $('adm-bdur');
+  if (unit && dur && bans.enabled && bans.minMinutes){
+    if (bans.minMinutes < 60) dur.min = bans.minMinutes;
+  }
+}
+
+function adminBanGo(){
+  var err = $('adm-ban-err');
+  var reason = ($('adm-breason') || {}).value || '';
+  var num = parseInt(($('adm-bdur') || {}).value, 10);
+  var unit = (($('adm-bunit') || {}).value || 'd');
+  if (err) err.textContent = '';
+
+  if (!adminTarget){ adminBanStep(1); return; }
+  if (!num || num <= 0){
+    if (err) err.textContent = 'срок — число больше нуля';
+    return;
+  }
+
+  return api('POST', 'api/admin/ban', {
+    id: adminTarget.id,
+    reason: reason.trim(),
+    durationValue: num,
+    durationUnit: unit
+  }).then(function(res){
+    if (!res.ok || !res.data || res.data.ok === false){
+      if (err) err.textContent = (res.data && res.data.message) || 'сервер отклонил бан';
+      return;
+    }
+    adminTarget = null;
+    var bid = $('adm-bid');
+    if (bid) bid.value = '';
+    var prev = $('adm-bprev');
+    if (prev) prev.hidden = true;
+    adminBanStep(1); /* сбрасывает шаги и прячет результат — рисуем его после */
+    var done = $('adm-bdone');
+    if (done){
+      done.hidden = false;
+      done.innerHTML =
+        '<div class="so-admprev" style="border-color:rgba(87,217,138,.4)">' +
+          '<div style="min-width:0">' +
+            '<div class="so-admprev__n">' + esc(res.data.nick) + ' — забанен</div>' +
+            '<div class="so-admprev__i">на ' + esc(res.data.duration) +
+              ' · до ' + esc(res.data.expires) +
+              (res.data.reason ? ' · причина: ' + esc(res.data.reason) : '') + '</div>' +
+          '</div>' +
+          '<span class="so-admst so-admst--ok">объявление увидят все</span>' +
+        '</div>';
+    }
+    loadAdminBans();
+  });
+}
+
+function loadAdminBans(){
+  var box = $('adm-bans');
+  var empty = $('adm-bans-empty');
+  if (!box) return Promise.resolve();
+
+  return api('GET', 'api/admin/bans').then(function(res){
+    if (!res.ok || !res.data || !res.data.bans){
+      if (empty) empty.textContent = 'список банов недоступен';
+      return;
+    }
+    var list = res.data.bans || [];
+    if (empty) empty.hidden = list.length > 0;
+    box.innerHTML = '';
+    list.forEach(function(b){
+      var row = document.createElement('div');
+      row.className = 'so-admban';
+      row.innerHTML =
+        '<div style="min-width:0">' +
+          '<div class="so-admban__n">' + esc(b.nick) + '</div>' +
+          '<div class="so-admban__m">ID ' + esc(String(b.id)) +
+            ' · на ' + esc(b.duration) + ' · осталось ' + esc(b.remaining) +
+            '<br>кто: ' + esc(b.bannedBy) +
+            (b.reason ? ' · причина: ' + esc(b.reason) : ' · причина: не указана') +
+            ' · до ' + esc(adminSeenText(b.expires)) + '</div>' +
+        '</div>' +
+        '<button class="so-btn so-btn--sm so-admban__x" type="button">РАЗБАНИТЬ</button>';
+      row.querySelector('button').addEventListener('click', function(){
+        api('POST', 'api/admin/unban', { id: b.id }).then(function(r2){
+          loadAdminBans();
+          if (adminTarget && adminTarget.id === b.id) adminLookupBan();
+        });
+      });
+      box.appendChild(row);
+    });
+  });
 }
 
 function setMe(next){
   me = next;
-  $('auth-err').textContent = '';
+  var err = $('auth-err');
+  if (err) err.textContent = '';
   renderProfile();
   renderRooms();
 }
 
-/* Код из лобби → сессия. Ответ 403 здесь означает бан: авторизация слетает. */
-function login(){
-  var err = $('auth-err');
+/* Код из лобби → сессия. Ответ 403 здесь означает бан: авторизация слетает.
+   Форм входа три — страница комнат, панель справа, профиль — логика одна. */
+function loginFrom(codeInput, err, btn){
+  if (!codeInput || !err) return;
   err.textContent = '';
 
-  var code = $('auth-code').value.trim();
+  var code = codeInput.value.trim();
   if (!code){
     err.textContent = 'введи код из лобби';
-    $('auth-code').focus();
+    codeInput.focus();
     return;
   }
 
-  $('auth-btn').disabled = true;
+  if (btn) btn.disabled = true;
   api('POST', 'api/auth', { code: code })
     .then(function(res){
       if (!res.ok){
@@ -1101,13 +3472,17 @@ function login(){
         err.textContent = (res.data && res.data.message) || describeError(res.data, res.status);
         return;
       }
-      $('auth-code').value = '';
-      setMe({ id: res.data.id, nick: res.data.nick });
+      codeInput.value = '';
+      setMe({ id: res.data.id, nick: res.data.nick, admin: res.data.admin === true });
       loadRooms().then(function(){ renderStats(); renderRooms(); });
     })
     .catch(function(){ err.textContent = 'сервер не ответил — проверь, что он запущен'; })
-    .then(function(){ $('auth-btn').disabled = false; });
+    .then(function(){ if (btn) btn.disabled = false; });
 }
+
+function login(){ loginFrom($('auth-code'), $('auth-err'), $('auth-btn')); }
+function sideLogin(){ loginFrom($('side-code'), $('side-auth-err'), $('side-login-btn')); }
+function pfLogin(){ loginFrom($('pf-code'), $('pf-err'), $('pf-btn')); }
 
 function logout(){
   api('POST', 'api/logout', {})
@@ -1119,19 +3494,25 @@ function logout(){
 function loadMe(){
   return api('GET', 'api/me').then(function(res){
     if (res.ok && res.data){
-      setMe({ id: res.data.id, nick: res.data.nick });
+      setMe({ id: res.data.id, nick: res.data.nick, admin: res.data.admin === true });
       return;
     }
     setMe(null);
-    if (res.status === 403) $('auth-err').textContent = 'аккаунт забанен';
+    if (res.status === 403){
+      var err = $('auth-err');
+      if (err) err.textContent = 'аккаунт забанен';
+    }
   });
 }
 
-/* Любой отказ «нет авторизации» — повод вернуть форму входа. */
+/* Любой отказ «нет авторизации» — повод показать гейт входа (setMe → renderProfile). */
 function noteAuthLoss(res){
   if (res.status === 401 || (res.status === 403 && res.data && res.data.code === 'banned')){
     setMe(null);
-    if (res.data && res.data.code === 'banned') $('auth-err').textContent = 'аккаунт забанен';
+    if (res.data && res.data.code === 'banned'){
+      var err = $('auth-err');
+      if (err) err.textContent = 'аккаунт забанен';
+    }
   }
 }
 
@@ -1157,10 +3538,18 @@ function renderRooms(){
 
   var box = $('rooms');
   box.innerHTML = '';
-  $('f-count').textContent = 'комнат: ' + list.length;
+  var cnt = $('f-count');
+  if (cnt) cnt.textContent = String(list.length);
 
   if (list.length === 0){
-    box.innerHTML = '<li class="md-empty">Таких комнат нет.<br>Создай свою — это одна кнопка.</li>';
+    /* Пустой список — не тупик, а приглашение: кнопка перебрасывает на создание. */
+    box.innerHTML =
+      '<li class="so-empty so-empty--rich">' +
+        '<div class="so-empty__d" aria-hidden="true">◆</div>' +
+        '<div class="so-empty__t">Комнат пока нет</div>' +
+        '<p class="so-empty__p">Фильтры тоже ничего не нашли. Открой свою — друзья увидят её здесь и войдут одной кнопкой.</p>' +
+        '<button class="so-btn so-btn--sm so-btn--acc" type="button" data-empty-create><span>СОЗДАТЬ КОМНАТУ</span></button>' +
+      '</li>';
     return;
   }
 
@@ -1172,45 +3561,64 @@ function renderRooms(){
     var full = r.players >= cap;
 
     var li = document.createElement('li');
-    li.className = 'md-row';
+    li.className = 'so-room';
+
+    // Три состояния реестра: waiting / live / finished. Счёт приходит с сервера:
+    // CT синим слева, T оранжевым справа; в ожидании его честно нет.
+    var badge = '';
+    if (r.isMine) badge += '<span class="so-badge so-badge--mine">моя</span>';
+    if (r.state === 'live') badge += '<span class="so-badge so-badge--live">идёт</span>';
+    else if (r.state === 'finished') badge += '<span class="so-badge so-badge--full">конец</span>';
+    else badge += '<span class="so-badge so-badge--wait">ожидание</span>';
+    if (full) badge += '<span class="so-badge so-badge--full">заполнена</span>';
 
     var titleHtml = r.name
       ? esc(r.name)
-      : '<span class="md-row__title--muted">Комната #' + r.n + '</span>';
+      : '<span class="so-room__name--muted">Комната #' + r.n + '</span>';
 
-    // Три состояния реестра: waiting / live / finished. Счёт приходит с сервера:
-    // CT слева, T справа. Раунда в панели нет — его не публикуем.
-    var badge;
-    if (r.state === 'live') badge = '<span class="md-badge md-badge--live">идёт</span>';
-    else if (r.state === 'finished') badge = '<span class="md-badge md-badge--full">закончилась</span>';
-    else badge = '<span class="md-badge md-badge--wait">ожидание</span>';
+    var score;
+    if (r.state === 'waiting'){
+      score = '<span class="so-room__score" aria-label="матч ещё не начался">—</span>';
+    } else {
+      score = '<span class="so-room__score" aria-label="счёт CT и T">' +
+        '<b class="sc-ct">' + (r.scoreCt || 0) + '</b><i>:</i><b class="sc-tr">' + (r.scoreTr || 0) + '</b></span>';
+    }
 
-    if (full) badge += ' <span class="md-badge md-badge--full">заполнена</span>';
-    if (r.isMine) badge = '<span class="md-badge md-badge--mine">Моя комната</span> ' + badge;
+    /* Градиентный блок — по алиасу режима (huePair): цвет устойчив между
+       перерисовками и совпадает с тем, что видно на плитках карт. */
+    var alias = m ? (m.alias || m.id) : r.mode;
+    var pair = huePair(alias).split('|');
 
     li.innerHTML =
-      '<span class="md-row__num">#' + r.n + '</span>' +
-      '<div>' +
-        '<div class="md-row__title">' + titleHtml + badge + '</div>' +
-        '<div class="md-row__meta">' + esc(m ? m.name : r.mode) +
+      '<span class="so-room__mode" style="--c1:' + pair[0] + ';--c2:' + pair[1] + '" aria-hidden="true">' +
+        '<i class="so-room__wm">' + esc(String(alias).toUpperCase()) + '</i>' +
+        '<i class="so-room__num">#' + r.n + '</i>' +
+      '</span>' +
+      '<div class="so-room__body">' +
+        '<div class="so-room__name">' + titleHtml + badge + '</div>' +
+        '<div class="so-room__meta">' + esc(m ? m.name : r.mode) +
           (r.teamLabel ? ' · ' + esc(r.teamLabel) : '') +
-          ' · ' + esc(r.map) + '</div>' +
+          ' · ' + esc(r.map) +
+          (r.owner ? ' · хост <b>' + esc(r.owner) + '</b>' : '') + '</div>' +
       '</div>' +
-      '<div class="md-row__actions">' +
-        '<span class="md-row__score" aria-label="счёт CT и T"><b>' +
-          (r.scoreCt || 0) + '</b> * <b>' + (r.scoreTr || 0) + '</b></span>' +
-        '<button class="md-button md-button--outlined"' +
-          (full || r.state === 'finished' ? ' disabled' : '') + '>' +
-          (full ? 'мест нет' : r.state === 'finished' ? 'закрыта' : 'Войти') + '</button>' +
-        /* «Завершить игру» — только у своей комнаты: чужую катку закрывать нельзя. */
-        (r.isMine
-          ? '<button class="md-button md-button--text md-end-btn"' +
-              (r.state === 'finished' ? ' disabled' : '') + '>' +
-              '<span>' + (r.state === 'finished' ? 'завершена' : 'Завершить игру') + '</span></button>'
-          : '') +
+      '<div class="so-room__side">' +
+        score +
+        '<span class="so-room__cap' + (full ? ' so-room__cap--full' : '') + '">' +
+          r.players + ' / ' + cap + '</span>' +
+        '<span class="so-room__act">' +
+          '<button class="so-btn so-btn--sm so-btn--acc so-join-btn"' +
+            (full || r.state === 'finished' ? ' disabled' : '') + '>' +
+            '<span>' + (full ? 'мест нет' : r.state === 'finished' ? 'закрыта' : 'ВОЙТИ') + '</span></button>' +
+          /* «Завершить игру» — только у своей комнаты: чужую катку закрывать нельзя. */
+          (r.isMine
+            ? '<button class="so-btn so-btn--sm so-btn--ghost md-end-btn"' +
+                (r.state === 'finished' ? ' disabled' : '') + '>' +
+                '<span>' + (r.state === 'finished' ? 'завершена' : 'Завершить') + '</span></button>'
+            : '') +
+        '</span>' +
       '</div>';
 
-    var joinBtn = li.querySelector('.md-button--outlined');
+    var joinBtn = li.querySelector('.so-join-btn');
     if (joinBtn && !full && r.state !== 'finished'){
       joinBtn.addEventListener('click', function(){ showJoinModal(r); });
     }
@@ -1271,13 +3679,15 @@ function copyJoinCommand(cmd){
 }
 
 /* ═══════════ табы ═══════════ */
+/* Панели не прячутся атрибутом hidden: на десктопе обе на экране (создание слева,
+   список справа), а на телефоне их переключает data-tab на сетке + CSS. */
 function switchTab(which){
-  var isCreate = which === 'create';
-  $('tab-create').setAttribute('aria-selected', String(isCreate));
-  $('tab-list').setAttribute('aria-selected', String(!isCreate));
-  $('panel-create').hidden = !isCreate;
-  $('panel-list').hidden = isCreate;
-  if (!isCreate) renderRooms();
+  var grid = $('play-grid');
+  if (grid) grid.setAttribute('data-tab', which);
+  var tc = $('tab-create'), tl = $('tab-list');
+  if (tc) tc.setAttribute('aria-selected', String(which === 'create'));
+  if (tl) tl.setAttribute('aria-selected', String(which !== 'create'));
+  if (which !== 'create') renderRooms();
 }
 
 /* ═══════════ завершение своей катки ═══════════ */
@@ -1319,15 +3729,15 @@ function createRoom(){
   var err = $('create-err');
   err.textContent = '';
 
-  /* Без авторизации сервер не примет создание: владелец берётся из сессии (#51). */
+  /* Без авторизации сервер не примет создание: владелец берётся из сессии (#51).
+     Формы кода на этой странице больше нет — отправляем туда, где он вводится. */
   if (!me){
-    err.textContent = 'сначала введи код из лобби';
-    var codeInput = $('auth-code');
-    if (codeInput) codeInput.focus();
+    err.textContent = 'сначала войди по коду из лобби';
+    location.hash = '#/profile';
     return;
   }
 
-  var mode = modeById($('mode').value);
+  var mode = modeById(curMode);
   if (!mode){
     err.textContent = 'выбери режим';
     return;
@@ -1342,11 +3752,7 @@ function createRoom(){
     return;
   }
 
-  var chip = null;
-  var kids = $('maps').children;
-  for (var k=0;k<kids.length;k++) if (kids[k].getAttribute('aria-pressed')==='true') chip = kids[k];
-
-  var map = chip ? chip.textContent : mode.levels[0];
+  var map = selectedMap() || mode.levels[0];
   var name = $('room-name').value.trim();
 
   // Одна кнопка — один запрос. Двойной клик не должен создать две комнаты:
@@ -1371,8 +3777,10 @@ function createRoom(){
         perTeam: r.perTeam, maxPlayers: r.maxPlayers, teamLabel: r.teamLabel,
         isMine: true
       });
-      $('result-cmd').textContent = r.joinCommand;
+      $('result-cmd').value = r.joinCommand;
       $('result').hidden = false;
+      if ($('result').scrollIntoView)
+        $('result').scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'nearest' });
       $('room-name').value = '';
       renderStats();
       renderRooms();
@@ -1460,6 +3868,7 @@ function loadModes(){
     buildSelects();
     renderTeams();
     renderMaps();
+    fillMarquee();
   });
 }
 
@@ -1491,21 +3900,25 @@ function loadStatus(){
     online.max = res.data.roomsMax;
     var warn = $('s-warn');
     if (warn){
-      // Честное состояние: игровой сокет мог не подняться, и тогда кнопка бесполезна.
-      var down = res.data.gameListening === false;
+      /* Порт гасится намеренно, когда последняя катка закрылась (SuspendMatchListen),
+       * и поднимается сам при следующей комнате — это норма, а не авария. Тревога
+       * только при реальном провале перебинда (gamePortFailed) и только админам. */
+      var down = res.data.gamePortFailed === true && me && me.admin === true;
       warn.hidden = !down;
       if (down) warn.textContent = 'игровой порт 7777 не слушается — комнаты не запустятся';
     }
     renderStats();
+    renderHomeStatus(res);
   });
 }
 
 /* ═══════════ копирование ═══════════ */
 function copyText(text, btn){
-  var label = btn.querySelector('span');
-  var original = label.textContent;
+  var label = btn ? btn.querySelector('span') : null;
+  var original = label ? label.textContent : '';
 
   function done(){
+    if (!label) return;
     label.textContent = 'Скопировано';
     setTimeout(function(){ label.textContent = original; }, 1600);
   }
@@ -1533,13 +3946,27 @@ var ICON_MOON = 'M12 3a9 9 0 1 0 9 9c0-.46-.04-.92-.1-1.36a5.39 5.39 0 0 1-4.4 2
 
 function setTheme(t){
   document.documentElement.setAttribute('data-theme', t);
-  $('theme-icon').setAttribute('d', t === 'dark' ? ICON_SUN : ICON_MOON);
+  var icon = $('theme-icon');
+  if (icon) icon.setAttribute('d', t === 'dark' ? ICON_SUN : ICON_MOON);
   try { localStorage.setItem('vlal-theme', t); } catch (e) { /* ignore */ }
+}
+
+/* ═══════════ панель справа ═══════════ */
+function openSide(){
+  document.body.classList.add('so-side-open');
+  var side = $('side');
+  if (side) side.setAttribute('aria-hidden', 'false');
+  renderSide();
+}
+
+function closeSide(){
+  document.body.classList.remove('so-side-open');
+  var side = $('side');
+  if (side) side.setAttribute('aria-hidden', 'true');
 }
 
 /* ═══════════ init ═══════════ */
 function init(){
-  $('mode').addEventListener('change', function(){ renderTeams(); renderMaps(); });
   $('join-close-btn').addEventListener('click', closeJoinModal);
   $('join-copy-btn').addEventListener('click', function(){
     copyJoinCommand($('join-cmd').value);
@@ -1548,23 +3975,78 @@ function init(){
     if (e.target === $('join-dialog')) closeJoinModal();
   });
   document.addEventListener('keydown', function(e){
-    if (e.key === 'Escape' && !$('join-dialog').hidden) closeJoinModal();
+    if (e.key !== 'Escape') return;
+    if (!$('join-dialog').hidden) closeJoinModal();
+    if (document.body.classList.contains('so-side-open')) closeSide();
   });
   $('tab-create').addEventListener('click', function(){ switchTab('create'); });
   $('tab-list').addEventListener('click', function(){ switchTab('list'); });
   $('create-btn').addEventListener('click', createRoom);
-  $('auth-btn').addEventListener('click', login);
-  $('logout-btn').addEventListener('click', logout);
-  $('auth-code').addEventListener('keydown', function(e){
-    if (e.key === 'Enter') login();
-  });
   $('f-mode').addEventListener('change', renderRooms);
   $('f-map').addEventListener('change', renderRooms);
   $('copy-btn').addEventListener('click', function(){
-    copyText($('result-cmd').textContent, $('copy-btn'));
+    copyText($('result-cmd').value, $('copy-btn'));
   });
-  $('theme-btn').addEventListener('click', function(){
-    setTheme(document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark');
+  /* Гейт: «где взять код» — глубокая ссылка в инструкцию (шаг 06). */
+  $('gate-how').addEventListener('click', function(){ gotoDoc('doc-6'); });
+  /* Живая строка «что создастся» следит и за именем комнаты. */
+  $('room-name').addEventListener('input', updateCreatePreview);
+  /* Пустой список зовёт создать комнату — из любой вкладки, одним делегированием. */
+  $('rooms').addEventListener('click', function(e){
+    var b = e.target && e.target.closest ? e.target.closest('[data-empty-create]') : null;
+    if (!b) return;
+    switchTab('create');
+    var panel = $('panel-create');
+    if (panel && panel.scrollIntoView)
+      panel.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'start' });
+  });
+
+  /* панель справа: кнопки ПАНЕЛЬ на всех страницах, крестик, скрим, навигация */
+  Array.prototype.forEach.call(
+    document.querySelectorAll('[data-side-open]'),
+    function(b){ b.addEventListener('click', openSide); });
+  $('side-close').addEventListener('click', closeSide);
+  $('side-scrim').addEventListener('click', closeSide);
+  $('side-login-btn').addEventListener('click', sideLogin);
+  $('side-code').addEventListener('keydown', function(e){
+    if (e.key === 'Enter') sideLogin();
+  });
+  $('side-logout').addEventListener('click', logout);
+  $('side-admin').addEventListener('click', function(){
+    closeSide();
+    location.hash = '#/admin';
+  });
+
+  /* админ панель: вход, вкладки, кастомизация, баны */
+  $('adm-login').addEventListener('click', adminLogin);
+  $('adm-code').addEventListener('keydown', function(e){
+    if (e.key === 'Enter') adminLogin();
+  });
+  $('adm-logout').addEventListener('click', adminLogout);
+  $('adm-tab-custom').addEventListener('click', function(){ switchAdminTab('custom'); });
+  $('adm-tab-bans').addEventListener('click', function(){ switchAdminTab('bans'); });
+  $('adm-cid').addEventListener('input', adminFilterCid);
+  $('adm-cid').addEventListener('keydown', function(e){
+    if (e.key === 'Enter') adminSaveCid(false);
+  });
+  $('adm-cid-save').addEventListener('click', function(){ adminSaveCid(false); });
+  $('adm-cid-clear').addEventListener('click', function(){ adminSaveCid(true); });
+  $('adm-bid').addEventListener('input', adminBidChanged);
+  $('adm-bid').addEventListener('keydown', function(e){
+    if (e.key === 'Enter') adminBanNext();
+  });
+  $('adm-bnext').addEventListener('click', adminBanNext);
+  $('adm-byes').addEventListener('click', function(){ adminBanStep(3); });
+  $('adm-bback').addEventListener('click', adminBanBack);
+  $('adm-ban-go').addEventListener('click', adminBanGo);
+  Array.prototype.forEach.call(
+    document.querySelectorAll('[data-side-nav]'),
+    function(a){ a.addEventListener('click', closeSide); });
+
+  /* страница профиля: своя форма входа */
+  $('pf-btn').addEventListener('click', pfLogin);
+  $('pf-code').addEventListener('keydown', function(e){
+    if (e.key === 'Enter') pfLogin();
   });
 
   var saved = 'dark';
@@ -1604,10 +4086,264 @@ setInterval(function(){
   loadRooms().then(function(){
     loadStatus().then(function(){
       renderStats();
-      if (!$('panel-list').hidden) renderRooms();
+      /* Перерисовываем только на открытой странице комнат: список живёт
+         на обеих вкладках десктопа, на телефоне панель просто скрыта CSS. */
+      if (playView && !playView.hidden) renderRooms();
     });
   }).catch(function(){ /* сеть моргнула — до следующего тика */ });
 }, 2000);
+
+/* ══════════════════════════════════════════════════════════════════
+   ГЛАВНАЯ (#/): роутер, видео hero, параллакс, бегущая строка, примерка.
+   Хэш-маршруты: #/ — лендинг, #/how и #/reports — якоря лендинга,
+   #/docs — страница инструкции, #/play — страницы комнат.
+   Всё остальное считается лендингом.
+   ══════════════════════════════════════════════════════════════════ */
+var homeView = $('view-home');
+var docsView = $('view-docs');
+var playView = $('view-play');
+var profileView = $('view-profile');
+var adminView = $('view-admin');
+var heroVideo = $('hero-video');
+var heroSection = document.querySelector('.so-hero');
+var reduceMotion = !!(window.matchMedia &&
+  window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+var heroOnScreen = true;
+
+/* Видео играет только когда hero на экране, вкладка активна и зритель не
+   просил «без движения». Иначе — пауза: батарея телефона скажет спасибо. */
+function syncHeroVideo(){
+  if (!heroVideo) return;
+  var want = homeView && !homeView.hidden && heroOnScreen &&
+             !document.hidden && !reduceMotion;
+  if (want && heroVideo.paused) {
+    var p = heroVideo.play();
+    if (p && p.catch) p.catch(function(){ /* постер остаётся кадром-заглушкой */ });
+  }
+  if (!want && !heroVideo.paused) heroVideo.pause();
+}
+
+/* Цифры «прямо сейчас» + счётчик в hero. Всё — реальное состояние. */
+function renderHomeNow(){
+  if (!homeView) return;
+  var set = function(id, v){ var el = $(id); if (el) el.textContent = v; };
+  set('n-online', online.total);
+  set('n-lobby', online.lobby);
+  set('n-match', online.match);
+  set('n-rooms', rooms.length + ' / ' + (online.max || 0));
+  set('so-hero-count', online.total);
+}
+
+/* Строка «СЕРВЕР В СЕТИ» в hero: честно, если игровой порт не слушается. */
+function renderHomeStatus(res){
+  if (!res || !res.data) return;
+  var down = res.data.gameListening === false;
+  ['so-dot', 'so-dot-hero', 'so-dot-docs', 'so-dot-play', 'so-dot-profile'].forEach(function(id){
+    var el = $(id);
+    if (el) el.classList.toggle('so-online__dot--off', down);
+  });
+  var st = $('so-hero-status');
+  if (st) st.textContent = down ? 'БЕЗ ИГРЫ' : 'В СЕТИ';
+  renderHomeNow();
+}
+
+function escHtml(s){
+  return String(s).replace(/[&<>"]/g, function(c){
+    return { '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;' }[c];
+  });
+}
+
+/* Бегущая строка — из каталога сервера; пока каталог не грузился, заглушка. */
+function fillMarquee(){
+  var track = $('so-marquee');
+  if (!track) return;
+  var names = MODES.map(function(m){ return m.name || m.alias || '?'; });
+  if (!names.length) names = ['deathmatch', 'team deathmatch', 'arms race', 'sniper only'];
+  var line = names.map(function(n){ return escHtml(String(n).toUpperCase()) + '<i>◆</i>'; }).join('');
+  track.innerHTML = '<span>' + line + '</span><span>' + line + '</span>';
+}
+
+function currentRoute(){
+  var h = (location.hash || '').replace(/^#\/?/, '');
+  if (h === 'play' || h.indexOf('play/') === 0 || h.indexOf('play?') === 0) return 'play';
+  if (h === 'profile' || h.indexOf('profile/') === 0) return 'profile';
+  if (h === 'admin' || h.indexOf('admin/') === 0) return 'admin';
+  if (h === 'docs' || h.indexOf('docs/') === 0) return 'docs';
+  if (h === 'how' || h.indexOf('how/') === 0) return 'how';
+  if (h === 'reports' || h.indexOf('reports/') === 0) return 'reports';
+  return 'home';
+}
+
+function applyRoute(){
+  if (!homeView || !playView || !docsView || !profileView || !adminView) return;
+  var route = currentRoute();
+  var onPlay = route === 'play';
+  var onDocs = route === 'docs';
+  var onProfile = route === 'profile';
+  var onAdmin = route === 'admin';
+  homeView.hidden = onPlay || onDocs || onProfile || onAdmin;
+  docsView.hidden = !onDocs;
+  playView.hidden = !onPlay;
+  profileView.hidden = !onProfile;
+  adminView.hidden = !onAdmin;
+  document.body.classList.toggle('is-home', !onPlay);
+  /* На профиле цифры тянутся свежими: сессия живёт, статистика — на диске. */
+  if (onProfile && me) loadStats();
+  /* Админка всегда переспрашивает сервер: сессия могла умереть с рестартом. */
+  if (onAdmin) loadAdminState();
+  /* Гейт комнат синхронен с сессией: зашёл — интерфейс, вышел — экран входа. */
+  if (onPlay) renderPlayGate();
+  /* Глубокая ссылка в инструкцию: якорей-хэшей нет, цель передаётся переменной
+     и скроллится на следующий кадр — после того, как view раскрылся. */
+  if (onDocs && docJumpTarget){
+    var jump = $(docJumpTarget);
+    docJumpTarget = null;
+    if (jump) requestAnimationFrame(function(){
+      jump.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'start' });
+    });
+  }
+  if (!onPlay && !onDocs && !onProfile && !onAdmin){
+    var anchor = (route === 'how' || route === 'reports') ? $('sec-' + route) : null;
+    if (anchor){
+      /* ждём кадр: hidden только что снялся, размеры ещё считаются */
+      requestAnimationFrame(function(){
+        var top = anchor.getBoundingClientRect().top + (window.pageYOffset || 0);
+        window.scrollTo({ top: top, behavior: reduceMotion ? 'auto' : 'smooth' });
+      });
+    } else {
+      window.scrollTo(0, 0);
+    }
+  } else {
+    window.scrollTo(0, 0);
+  }
+  syncHeroVideo();
+}
+
+/* Переход к конкретному шагу инструкции со страниц, где хэш-якоря занят роутером
+   (например «Где взять код?» из гейта на #/play): цель ждёт в docJumpTarget. */
+var docJumpTarget = null;
+function gotoDoc(id){
+  docJumpTarget = id;
+  if (currentRoute() === 'docs') applyRoute();
+  else location.hash = '#/docs';
+}
+
+/* Параллакс: видео догоняет скролл на 22% — край уходит, центр остаётся. */
+var parallaxQueued = false;
+function heroParallax(){
+  parallaxQueued = false;
+  if (reduceMotion || !heroVideo || !heroOnScreen) return;
+  var y = window.pageYOffset || document.documentElement.scrollTop || 0;
+  heroVideo.style.transform = 'translate3d(0,' + (y * 0.22).toFixed(1) + 'px,0) scale(1.14)';
+}
+window.addEventListener('scroll', function(){
+  if (!parallaxQueued){
+    parallaxQueued = true;
+    requestAnimationFrame(heroParallax);
+  }
+}, { passive: true });
+
+/* Пауза, когда hero уехал из виду или вкладку спрятали. */
+if ('IntersectionObserver' in window && heroSection){
+  new IntersectionObserver(function(entries){
+    heroOnScreen = entries[0].isIntersecting;
+    syncHeroVideo();
+  }, { threshold: 0.04 }).observe(heroSection);
+}
+document.addEventListener('visibilitychange', syncHeroVideo);
+
+/* ── примерка вариантов (?select): заголовок, акцент, кнопка ── */
+var SELECT_DEFAULTS = { 'data-title': '1', 'data-accent': 'blue', 'data-btn': 'blue' };
+var SELECT_GROUPS = [
+  { id: 'sel-title',  attr: 'data-title' },
+  { id: 'sel-accent', attr: 'data-accent' },
+  { id: 'sel-btn',    attr: 'data-btn' }
+];
+
+function markSelect(){
+  SELECT_GROUPS.forEach(function(g){
+    var box = $(g.id);
+    if (!box) return;
+    var cur = document.documentElement.getAttribute(g.attr) || SELECT_DEFAULTS[g.attr];
+    Array.prototype.forEach.call(box.querySelectorAll('button'), function(b){
+      b.setAttribute('aria-pressed', b.getAttribute('data-v') === cur ? 'true' : 'false');
+    });
+  });
+}
+
+function applySelect(){
+  if (!homeView) return;
+  var q = new URLSearchParams(location.search);
+  if (!q.has('select')) return;
+  var de = document.documentElement;
+  de.setAttribute('data-select', '');
+  ['title', 'accent', 'btn'].forEach(function(k){
+    var v = q.get(k);
+    if (v) de.setAttribute('data-' + k, v);
+  });
+  markSelect();
+  SELECT_GROUPS.forEach(function(g){
+    var box = $(g.id);
+    if (!box) return;
+    box.addEventListener('click', function(e){
+      var t = e.target;
+      var btn = t && t.closest ? t.closest('button') : null;
+      if (!btn) return;
+      var v = btn.getAttribute('data-v');
+      if (!v) return;
+      de.setAttribute(g.attr, v);
+      var url = new URL(location.href);
+      url.searchParams.set(g.attr.slice(5), v);
+      history.replaceState(null, '', url);
+      markSelect();
+    });
+  });
+}
+
+/* ── инструкция: оглавление слева + подсветка текущего раздела ──
+   Ссылки не хэш-якоря (роутер счёл бы их маршрутом), а плавный скролл. */
+function initDocsNav(){
+  var nav = document.querySelector('.so-docnav');
+  if (!nav) return;
+
+  nav.addEventListener('click', function(e){
+    var a = e.target && e.target.closest ? e.target.closest('a[data-goto]') : null;
+    if (!a) return;
+    e.preventDefault();
+    var target = $(a.getAttribute('data-goto'));
+    if (!target) return;
+    target.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'start' });
+  });
+
+  var links = Array.prototype.slice.call(nav.querySelectorAll('a[data-goto]'));
+  var secs = links.map(function(a){ return $(a.getAttribute('data-goto')); });
+
+  function spy(){
+    if (docsView && docsView.hidden) return;
+    var mid = (window.innerHeight || 640) * 0.5;
+    var idx = -1;
+    for (var i = 0; i < secs.length; i++){
+      var s = secs[i];
+      if (!s) continue;
+      if (s.getBoundingClientRect().top <= mid) idx = i;
+      else break;
+    }
+    links.forEach(function(a, i){
+      a.classList.toggle('is-here', i === idx);
+    });
+  }
+
+  window.addEventListener('scroll', function(){ requestAnimationFrame(spy); }, { passive: true });
+  window.addEventListener('resize', spy);
+  spy();
+}
+
+/* ── старт главной ── */
+applySelect();
+applyRoute();
+fillMarquee();
+initDocsNav();
+window.addEventListener('hashchange', applyRoute);
 
 /* отдаём функции тесту (jsdom) — в браузере просто игнорируется */
 if (typeof window !== 'undefined') {
@@ -1621,6 +4357,16 @@ if (typeof window !== 'undefined') {
     joinCmd: joinCmd, describeError: describeError,
     showJoinModal: showJoinModal, closeJoinModal: closeJoinModal,
     login: login, logout: logout, loadMe: loadMe, renderProfile: renderProfile,
+    renderPlayGate: renderPlayGate, updateCreatePreview: updateCreatePreview,
+    gotoDoc: gotoDoc,
+    sideLogin: sideLogin, pfLogin: pfLogin,
+    loadStats: loadStats, renderProfileView: renderProfileView, renderSide: renderSide,
+    openSide: openSide, closeSide: closeSide,
+    loadAdminState: loadAdminState, renderAdmin: renderAdmin,
+    adminLogin: adminLogin, adminLogout: adminLogout, switchAdminTab: switchAdminTab,
+    adminSaveCid: adminSaveCid, adminFilterCid: adminFilterCid,
+    adminLookupBan: adminLookupBan, adminBanNext: adminBanNext, adminBanGo: adminBanGo,
+    adminBanStep: adminBanStep, loadAdminBans: loadAdminBans,
     endRoom: function(n){
       for (var i=0;i<rooms.length;i++) if (rooms[i].n === n) return endRoom(rooms[i]);
     },

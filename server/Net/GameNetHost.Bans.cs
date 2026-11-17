@@ -230,21 +230,36 @@ public sealed partial class GameNetHost
             return;
         }
 
+        var target = ResolveBanTargetById(id);
+        if (target.Error is not null)
+        {
+            reply(target.Error);
+            return;
+        }
+
+        TryBanTarget(reply, target.Nick, target.Address, durationToken, reason, player, id, target.KnownIps);
+    }
+
+    /// <summary>
+    /// Кого банить по серверному id: сначала катка, потом лобби, потом справочник личностей.
+    /// Общий путь для <c>/ban</c> и веб-админки: правила одни и те же.
+    /// </summary>
+    private (string Nick, IPAddress? Address, IReadOnlyList<string>? KnownIps, string? Error)
+        ResolveBanTargetById(int id)
+    {
         // 1) кто сейчас в катке. Коллизия id (два ника → один id) — отказ, а не
         // «баню первого попавшегося»: забанить не того хуже, чем попросить уточнить.
         var inMatch = _match.SnapshotPublicIds().Where(e => e.Id == id).ToList();
         if (inMatch.Count > 1)
         {
-            reply($"id {id} делят {inMatch.Count} игрока: " +
-                  string.Join(", ", inMatch.Select(e => $"'{e.Nick}' (actor {e.ActorNr})")) +
-                  " — совпадение ников, бан по id невозможен");
-            return;
+            return (string.Empty, null, null, $"id {id} делят {inMatch.Count} игрока: " +
+                   string.Join(", ", inMatch.Select(e => $"'{e.Nick}' (actor {e.ActorNr})")) +
+                   " — совпадение ников, бан по id невозможен");
         }
         if (inMatch.Count == 1)
         {
             var entry = inMatch[0];
-            TryBanTarget(reply, entry.Nick, entry.Address, durationToken, reason, player, id);
-            return;
+            return (entry.Nick, entry.Address, null, null);
         }
 
         // 2) кто в лобби (id вычисляется из ника, поэтому его видно и до катки)
@@ -253,40 +268,28 @@ public sealed partial class GameNetHost
             .ToList();
         if (inLobby.Count > 1)
         {
-            reply($"id {id} делят {inLobby.Count} игрока в лобби: " +
-                  string.Join(", ", inLobby.Select(p => $"'{p.Name}'")) +
-                  " — совпадение ников, бан по id невозможен");
-            return;
+            return (string.Empty, null, null, $"id {id} делят {inLobby.Count} игрока в лобби: " +
+                   string.Join(", ", inLobby.Select(p => $"'{p.Name}'")) +
+                   " — совпадение ников, бан по id невозможен");
         }
         if (inLobby.Count == 1)
         {
-            TryBanTarget(
-                reply, ServerConfig.NormalizeNick(inLobby[0].Name), inLobby[0].Peer.Address,
-                durationToken, reason, player, id);
-            return;
+            return (ServerConfig.NormalizeNick(inLobby[0].Name), inLobby[0].Peer.Address, null, null);
         }
 
         // 3) уже вышел: справочник помнит ник и все его IP — бан сработает и без него.
         var seen = _directory.Resolve(id);
         if (seen is null)
-        {
-            reply($"никого с id {id} сервер не помнит — список: /ids");
-            return;
-        }
+            return (string.Empty, null, null, $"никого с id {id} сервер не помнит — список: /ids");
 
         var sharing = _directory.CountById(id);
         if (sharing > 1)
         {
-            reply($"id {id} делят {sharing} ника (коллизия) — чтобы не задеть не того, " +
-                  "бан по id невозможен");
-            return;
+            return (string.Empty, null, null, $"id {id} делят {sharing} ника (коллизия) — " +
+                   "чтобы не задеть не того, бан по id невозможен");
         }
 
-        reply($"id {id} = '{seen.Nick}', известные IP: " +
-              $"{(seen.Ips.Count == 0 ? "—" : string.Join(", ", seen.Ips))}");
-        TryBanTarget(
-            reply, seen.Nick, address: null, durationToken, reason, player,
-            id, knownIps: seen.Ips);
+        return (seen.Nick, null, seen.Ips, null);
     }
 
     private bool BanReady(Action<string> reply)
@@ -309,7 +312,15 @@ public sealed partial class GameNetHost
     /// <summary>
     /// Общее тело <c>/ban</c>: проверки, запись, кик из матча и лобби.
     /// </summary>
-    private void TryBanTarget(
+    /// <summary>
+    /// Общее тело <c>/ban</c>: проверки, запись, кик из матча и лобби. Возвращает запись
+    /// реестра или <c>null</c>, если бан не состоялся (причина — в <c>reply</c>).
+    /// </summary>
+    /// <remarks>
+    /// <paramref name="bannedBy"/> — кто банит из веб-админки (ник из сессии сайта);
+    /// для чат-команд остаётся <c>null</c> — тогда это ник игрока, приславшего команду.
+    /// </remarks>
+    private BanRecord? TryBanTarget(
         Action<string> reply,
         string nick,
         IPAddress? address,
@@ -317,23 +328,24 @@ public sealed partial class GameNetHost
         string reason,
         ConnectedPlayer? player,
         int? matchId,
-        IReadOnlyList<string>? knownIps = null)
+        IReadOnlyList<string>? knownIps = null,
+        string? bannedBy = null)
     {
         if (_bans is null)
-            return;
+            return null;
 
         var settings = _config.Admin.Ban;
         if (nick.Length == 0)
         {
             reply("пустой ник");
-            return;
+            return null;
         }
 
         // Сам сервер не банится ни по нику, ни по id: это не игрок, а хост.
         if (ServerIdentity.IsServerNick(nick))
         {
             reply($"'{ServerIdentity.Nick}' — это сам сервер, его забанить нельзя");
-            return;
+            return null;
         }
 
         // Правило №2: админов не баним (проверка по серверному id).
@@ -342,14 +354,14 @@ public sealed partial class GameNetHost
         {
             reply($"id #{id} — админ (admin.ids), админов банить нельзя");
             Console.WriteLine($"[ban] отказ: id #{id} в admin.ids — админа банить нельзя");
-            return;
+            return null;
         }
 
         if (player is not null
             && string.Equals(ServerConfig.NormalizeNick(player.Name), nick, StringComparison.OrdinalIgnoreCase))
         {
             reply("себя банить нельзя");
-            return;
+            return null;
         }
 
         if (!BanDuration.TryParse(
@@ -360,7 +372,7 @@ public sealed partial class GameNetHost
                 out var durationError))
         {
             reply(durationError);
-            return;
+            return null;
         }
 
         // Цели в лобби: ник нормализованно, устройств с одним ником может быть несколько.
@@ -381,7 +393,7 @@ public sealed partial class GameNetHost
             new BanProbe(nick, ip?.ToString()),
             duration,
             reason,
-            player?.Name ?? LobbySession.ServerPlayerName,
+            bannedBy ?? player?.Name ?? LobbySession.ServerPlayerName,
             DateTime.UtcNow,
             idForRecord,
             knownIps);
@@ -432,6 +444,8 @@ public sealed partial class GameNetHost
             foreach (var line in BanMessages.PublicLines(record))
                 BroadcastServerChat(line);
         }
+
+        return record;
     }
 
     private void HandleUnbanCommand(Action<string> reply, string args)
@@ -471,20 +485,20 @@ public sealed partial class GameNetHost
         BroadcastServerChat($"разбанен {removed.DisplayNick}");
     }
 
-    /// <summary>Снять все баны, выданные под этим серверным id.</summary>
-    private void RemoveBansById(Action<string> reply, int id)
+    /// <summary>Снять все баны, выданные под этим серверным id. Возвращает сколько снято.</summary>
+    private int RemoveBansById(Action<string> reply, int id)
     {
         if (_bans is null)
         {
             reply("баны не инициализированы");
-            return;
+            return 0;
         }
 
         var removed = _bans.RemoveByMatchId(id);
         if (removed.Count == 0)
         {
             reply($"под id {id} активных банов нет");
-            return;
+            return 0;
         }
 
         foreach (var record in removed)
@@ -495,6 +509,7 @@ public sealed partial class GameNetHost
         }
 
         Console.WriteLine($"[ban] /unban {id}: снято {removed.Count} записей");
+        return removed.Count;
     }
 
     private void HandleBansCommand(Action<string> reply)

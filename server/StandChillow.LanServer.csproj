@@ -27,6 +27,14 @@
     </EmbeddedResource>
   </ItemGroup>
 
+  <!-- Медиа панели (видео hero, постер, шрифты) — вкомпилированы, один exe несёт сайт
+       целиком. Read из webmedia/ рядом с exe имеет приоритет (см. MediaAssets.cs).
+       ref/ — рабочие референсы дизайна, на сайт они не едут. -->
+  <ItemGroup>
+    <EmbeddedResource Include="Web\Media\*.mp4;Web\Media\*.jpg;Web\Media\*.png;Web\Media\*.woff2"
+                      LogicalName="web.media.%(Filename)%(Extension)" />
+  </ItemGroup>
+
   <ItemGroup>
     <ProjectReference Include="Plugins\StandChillow.Server.Plugins\StandChillow.Server.Plugins.csproj" />
   </ItemGroup>

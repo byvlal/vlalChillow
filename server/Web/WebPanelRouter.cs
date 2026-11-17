@@ -1,9 +1,11 @@
 using System.Net;
 using System.Text;
 using System.Text.Json;
+using StandChillow.LanServer.Bans;
 using StandChillow.LanServer.Config;
 using StandChillow.LanServer.Net.Lobby;
 using StandChillow.LanServer.Net.Match.Kernel;
+using StandChillow.LanServer.Stats;
 
 namespace StandChillow.LanServer.Web;
 
@@ -79,6 +81,39 @@ public sealed partial class WebPanelRouter
         if (request.Method == "POST" && path == "/api/logout")
             return Logout(request);
 
+        // Статистика профиля: киллы/смерти/KD/время/матчи. Только по сессии.
+        if (request.Method == "GET" && path == "/api/stats/me")
+            return MyStats(request);
+
+        // Админ панель: состояние (аноним видит только «не админ ты»), вход и выход —
+        // по коду этого запуска. Все данные — только после тройного затвора (Admin.cs).
+        if (request.Method == "GET" && path == "/api/admin")
+            return AdminState(request);
+
+        if (request.Method == "POST" && path == "/api/admin/login")
+            return AdminLogin(request);
+
+        if (request.Method == "POST" && path == "/api/admin/logout")
+            return AdminLogout(request);
+
+        if (request.Method == "GET" && path == "/api/admin/lookup")
+            return AdminLookupPlayer(request);
+
+        if (request.Method == "GET" && path == "/api/admin/avatar")
+            return AdminAvatar(request);
+
+        if (request.Method == "POST" && path == "/api/admin/customid")
+            return AdminSetCustomId(request);
+
+        if (request.Method == "GET" && path == "/api/admin/bans")
+            return AdminBansList(request);
+
+        if (request.Method == "POST" && path == "/api/admin/ban")
+            return AdminBan(request);
+
+        if (request.Method == "POST" && path == "/api/admin/unban")
+            return AdminUnban(request);
+
         if (request.Method == "POST" && path == "/api/rooms")
             return CreateRoom(request);
 
@@ -92,12 +127,21 @@ public sealed partial class WebPanelRouter
         if (request.Method == "GET" && path == "/healthz")
             return WebResponse.Text("ok");
 
+        // Медиа сайта: видео hero, постер, шрифты. Только GET, остальное — 405.
+        if (path.StartsWith("/media/", StringComparison.Ordinal))
+            return request.Method == "GET"
+                ? ServeMedia(request, path)
+                : WithAllow("GET", WebResponse.Text("405", 405));
+
         // Метод не тот — это не «нет маршрута», и панель должна сказать честно.
         if (path is "/" or "/index.html" or "/api/status" or "/api/modes"
-            or "/api/me" or "/api/avatar" or "/healthz")
+            or "/api/me" or "/api/avatar" or "/api/stats/me" or "/api/admin"
+            or "/api/admin/lookup" or "/api/admin/avatar" or "/api/admin/bans" or "/healthz")
             return WithAllow("GET", WebResponse.Text("405", 405));
 
-        if (path is "/api/auth" or "/api/logout")
+        if (path is "/api/auth" or "/api/logout"
+            or "/api/admin/login" or "/api/admin/logout"
+            or "/api/admin/customid" or "/api/admin/ban" or "/api/admin/unban")
             return WithAllow("POST", WebResponse.Text("405", 405));
 
         if (path == "/api/rooms")
@@ -502,4 +546,59 @@ public sealed class WebPanelRouterOptions
     /// <c>null</c> — проверка выключена (тесты реестра и режим без хоста).
     /// </remarks>
     public Func<IReadOnlyList<(int Id, string Nick)>>? OnlinePlayers { get; init; }
+
+    /// <summary>
+    /// Статистика игроков на диске. <c>null</c> — эндпоинт статистики отвечает, что
+    /// статистики нет (пустые нули), а не падает.
+    /// </summary>
+    public PlayerStatsStore? Stats { get; init; }
+
+    /// <summary>
+    /// Серверный id → админ? Из конфига <c>admin.ids</c>. <c>null</c> — админов нет.
+    /// </summary>
+    public Func<int, bool>? IsAdminById { get; init; }
+
+    // ── Админ панель ─────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Хранилище админ-сессий панели: «код этого запуска предъявлен». Живёт в памяти,
+    /// рестарт гасит вместе с кодом. <c>null</c> — вход в админку закрыт (503).
+    /// </summary>
+    public AdminSessions? AdminSessionStore { get; init; }
+
+    /// <summary>Сверить код этого запуска (тот же, что auth.txt). <c>null</c> — вход закрыт.</summary>
+    public Func<string?, bool>? AdminCodeMatches { get; init; }
+
+    /// <summary>
+    /// Живая проверка админства: читает <b>текущий</b> конфиг, а не снимок со старта —
+    /// перечитывание <c>admin.ids</c> сразу меняет и кнопку, и доступ.
+    /// </summary>
+    public Func<int, bool>? IsAdminLive { get; init; }
+
+    /// <summary>Кастомный ID игрока (null — показываем обычный числовой).</summary>
+    public Func<int, string?>? CustomIdGet { get; init; }
+
+    /// <summary>
+    /// Поставить/сбросить кастомный ID (пустая строка — сброс). Возвращает текст ошибки
+    /// или <c>null</c> при успехе. <c>null</c>-делегат — функция закрыта (503).
+    /// </summary>
+    public Func<int, string?, string?>? CustomIdSet { get; init; }
+
+    /// <summary>
+    /// Поиск игрока по серверному id для превью в «Банах» (ник, статус, аватар).
+    /// Не нашли — <c>null</c>. <c>null</c>-делегат — вкладка отвечает 503.
+    /// </summary>
+    public Func<int, PlayerLookupResult?>? AdminLookup { get; init; }
+
+    /// <summary>Бан по id: (id, срок, причина, кто банит) → (ошибка, запись реестра).</summary>
+    public Func<int, string, string, string, (string? Error, BanRecord? Record)>? WebBan { get; init; }
+
+    /// <summary>Разбан по id: (id) → (ошибка, сколько записей снято).</summary>
+    public Func<int, (string? Error, int Removed)>? WebUnban { get; init; }
+
+    /// <summary>Активные баны для списка в админке. <c>null</c> — пусто.</summary>
+    public Func<IReadOnlyList<BanRecord>>? ActiveBans { get; init; }
+
+    /// <summary>Настройки банов: включены ли и диапазон сроков. <c>null</c> — выключены.</summary>
+    public Func<(bool Enabled, int MinMinutes, int MaxDays)>? BanSettings { get; init; }
 }

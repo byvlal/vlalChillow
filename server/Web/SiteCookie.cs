@@ -84,7 +84,7 @@ public static class SiteCookie
     /// Путь куки: за прокси панель живёт в подпути, и кука обязана совпадать с ним —
     /// иначе браузер её не пришлёт.
     /// </summary>
-    private static string NormalizePath(string? path)
+    internal static string NormalizePath(string? path)
     {
         if (string.IsNullOrWhiteSpace(path))
             return "/";

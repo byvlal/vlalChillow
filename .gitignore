@@ -22,6 +22,12 @@
 **/banlist.json
 **/banlist.json.tmp
 
+# Runtime player stats / custom admin IDs (local state, never shipped)
+**/stats.json
+**/stats.json.tmp
+**/customids.json
+**/customids.json.tmp
+
 # Reverse-engineering dumps (local only — not shipped)
 decompiled/
 original/

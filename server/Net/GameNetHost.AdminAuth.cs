@@ -52,6 +52,19 @@ public sealed partial class GameNetHost
     internal bool IsUnauthorizedAdmin(int id, IPAddress? ip) =>
         _config.IsAdmin(id) && !_adminAuth.IsAuthorized(ip);
 
+    /// <summary>
+    /// Живая проверка админства для веб-панели: читает текущий <c>_config</c>, поэтому
+    /// перечитывание конфига (admin.ids) сразу меняет ответ — панель не должна
+    /// пользоваться снимком конфига со старта.
+    /// </summary>
+    internal bool IsAdminLive(int id) => _config.IsAdmin(id);
+
+    /// <summary>
+    /// Сверить код этого запуска (тот же, что в auth.txt и в чате лобби). Константное
+    /// сравнение внутри <see cref="AdminAuth.Matches"/> — вызов безопасен и для веба.
+    /// </summary>
+    internal bool AdminCodeMatches(string? code) => _adminAuth.Matches(code);
+
     /// <summary>Id написавшего из ника сессии (никогда из поля пакета клиента).</summary>
     internal static int IdOf(string? nick) => MatchPublicId.ForNick(nick);
 
