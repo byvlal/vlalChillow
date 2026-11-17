@@ -162,7 +162,7 @@ public sealed partial class GameMatchHost
         st.BootstrapTimeoutCts = null;
 
         Console.WriteLine($"[match-host] TX world bootstrap trigger={reason} joiner={joinerActorNr}");
-        SendWorldBootstrap(peer, room, joinerActorNr);
+        SendWorldBootstrap(peer, room, joinerActorNr, reason);
     }
 
     /// <summary>
@@ -174,7 +174,7 @@ public sealed partial class GameMatchHost
     /// Called only after <see cref="BeginAwaitJoinerThenBootstrap"/> gate (or soft timeout).
     /// Late joiners also get a snapshot of living pawns already in the room.
     /// </summary>
-    private void SendWorldBootstrap(NetPeer peer, MatchRoom room, byte joinerActorNr)
+    private void SendWorldBootstrap(NetPeer peer, MatchRoom room, byte joinerActorNr, string reason)
     {
         void SetHostProp(string key, LobbyVariant value)
         {
@@ -306,6 +306,11 @@ public sealed partial class GameMatchHost
         // money) because the client will not re-author the identity batch.
         SendMatchStateSnapshotToPeer(
             peer, room, excludeActorNr: reconnectTrusted ? (byte?)null : joinerActorNr);
+
+        // 6) Авто-галочка: сервер сам решает verified по admin.ids (админ — true,
+        //    остальные — false), даже если клиент этот prop никогда не присылал.
+        //    Подмена на лету уже закрыта релеем; здесь — гарантия при входе.
+        EnsureServerVerifiedProp(room, joinerActorNr, peer, reason);
 
         // Abrupt reconnect into same match: re-force previous Tr/Ct after INIT (spawn path).
         MaybeScheduleReconnectRestore(peer, room, joinerActorNr);

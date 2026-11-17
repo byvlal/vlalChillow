@@ -185,6 +185,7 @@ public sealed partial class GameMatchHost
         Console.WriteLine(
             $"[tdm-death] kills++ killer={killerActorNr} → victim={victim} via {how} " +
             "→ AuthorDeathMatchDeath");
+        NoteStatsKill(room, killerActorNr);
         AuthorDeathMatchDeath(room, victim, killerActorNr, source: $"kills/{how}");
     }
 
@@ -265,6 +266,8 @@ public sealed partial class GameMatchHost
             newDeath = (prev < 0 ? 0 : prev) + 1;
             room.ActorProps[(victimActorNr, MatchRoomPropKeys.Death)] = LobbyVariant.FromInt(newDeath);
         }
+
+        NoteStatsDeath(room, victimActorNr);
 
         Console.WriteLine(
             $"[tdm-death] AuthorDeathMatchDeath PROCEED victim={victimActorNr}/{victimTeam} " +

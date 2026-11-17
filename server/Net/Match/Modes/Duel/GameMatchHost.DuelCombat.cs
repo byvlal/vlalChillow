@@ -227,6 +227,7 @@ public sealed partial class GameMatchHost
         Console.WriteLine(
             $"[duel-ffa] kills++ killer={killerActorNr} → victim={victim} via {how} " +
             "→ AuthorDuelFfaDeath");
+        NoteStatsKill(room, killerActorNr);
         AuthorDuelFfaDeath(room, victim, killerActorNr, source: $"kills/{how}");
     }
 
@@ -294,6 +295,8 @@ public sealed partial class GameMatchHost
             if (killerActorNr is byte killer)
                 room.LastCombatDamage.Remove(killer);
         }
+
+        NoteStatsDeath(room, victimActorNr);
 
         foreach (var id in victimPawnIds)
         {

@@ -240,23 +240,28 @@ public static class ClientProbeMode
                 : " — after Found: Spectator.") +
             " On Play → follow op9 → Handshake → JoinRoom(Dedik).");
         Console.WriteLine("After Found: leave running — capture post-Found match RX. Captures → bin/.../captures/");
-        Console.WriteLine("Commands: status|roster|quit");
-        if (Console.IsInputRedirected)
-        {
-            await Task.Delay(Timeout.Infinite);
-            return;
-        }
+        Console.WriteLine("Commands: status|roster|chat <текст>|quit");
 
-        while (true)
+        // Команды пробы: status/roster/chat/quit. Общая обработка для TTY и пайпа.
+        bool HandleLine(string raw)
         {
-            var line = Console.ReadLine();
-            if (line is null) break;
-            var cmd = line.Trim().ToLowerInvariant();
-            if (cmd is "quit" or "exit") break;
+            var trimmed = raw.Trim();
+            var cmd = trimmed.ToLowerInvariant();
+            if (cmd is "quit" or "exit") return false;
+            // chat <текст> — сообщение в чат лобби: команды сервера, /join, код админа.
+            if (cmd == "chat" || cmd.StartsWith("chat ", StringComparison.Ordinal))
+            {
+                var text = trimmed.Length > 5 ? trimmed[5..].Trim() : "";
+                if (text.Length == 0)
+                    Console.WriteLine("chat <текст>");
+                else
+                    client.SendChat(text);
+                return true;
+            }
             if (cmd is "roster")
             {
                 Console.WriteLine(client.Match?.DescribeRoster() ?? "[roster] match not connected yet");
-                continue;
+                return true;
             }
             if (cmd is "status")
             {
@@ -271,9 +276,40 @@ public static class ClientProbeMode
                     $"roster='{client.Match?.RosterRoom ?? profileName}'");
                 if (client.Match is not null)
                     Console.WriteLine(client.Match.DescribeRoster());
-                continue;
+                return true;
             }
-            Console.WriteLine("status|roster|quit");
+            Console.WriteLine("status|roster|chat <текст>|quit");
+            return true;
+        }
+
+        if (Console.IsInputRedirected)
+        {
+            // Фоновый запуск (pipe от автоматизации): команды читаем, но по EOF не
+            // выходим — канал могут закрыть сразу после записи строки, а проба должна
+            // продолжать снимать трафик до kill/SIGTERM.
+            _ = Task.Run(async () =>
+            {
+                while (true)
+                {
+                    var line = Console.ReadLine();
+                    if (line is null)
+                    {
+                        await Task.Delay(Timeout.Infinite);
+                        return;
+                    }
+                    if (!HandleLine(line))
+                        return;
+                }
+            });
+            await Task.Delay(Timeout.Infinite);
+            return;
+        }
+
+        while (true)
+        {
+            var line = Console.ReadLine();
+            if (line is null) break;
+            if (!HandleLine(line)) break;
         }
     }
 }

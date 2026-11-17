@@ -41,6 +41,7 @@ public sealed class GameNetClient : IDisposable
     private IPEndPoint? _lobbyEndpoint;
     private readonly IPAddress? _forceMatchIp;
     private readonly IPAddress? _bindAddress;
+    private readonly List<string> _pendingChat = new();
     private readonly MatchTeam _probeTeam;
     private string? _lobbyId;
     private string? _gameModeId;
@@ -73,6 +74,7 @@ public sealed class GameNetClient : IDisposable
             _peer = peer;
             Console.WriteLine($"[client-net] CONNECTED to {peer.Address}:{peer.Port}");
             SendJoinRequest(peer);
+            FlushPendingChat(peer);
         };
         _listener.PeerDisconnectedEvent += (peer, info) =>
         {
@@ -151,6 +153,43 @@ public sealed class GameNetClient : IDisposable
             $"[client-lobby] TX OpJoinLobbyRequest name='{_profileName}' avatar=0 " +
             $"ver={LobbyAuth.VersionHash[..8]}… auth={LobbyAuth.AuthHash[..8]}… len={payload.Length}");
         DumpCapture("client_join_req", payload);
+    }
+
+    /// <summary>
+    /// Отправить сообщение в чат лобби (OpSendChatMessageRequest, op2). Так проба
+    /// выполняет серверные команды (/join, /code) и вводит код админа — без этого
+    /// админ-путь (shadow lobby → код → rematch) не протестируешь вовсе.
+    /// </summary>
+    /// <remarks>До коннекта текст кладётся в очередь и уходит сразу после Join.</remarks>
+    public void SendChat(string text)
+    {
+        if (_peer is null)
+        {
+            lock (_pendingChat) _pendingChat.Add(text);
+            Console.WriteLine($"[client-lobby] chat queued until connected: {text}");
+            return;
+        }
+
+        var w = new LobbyWriter();
+        w.WriteByte((byte)LobbyOpcode.OpSendChatMessageRequest);
+        w.WriteString(text);
+        var payload = w.ToArray();
+        _peer.Send(payload, DeliveryMethod.ReliableSequenced);
+        Console.WriteLine($"[client-lobby] TX OpSendChatMessageRequest: {text}");
+    }
+
+    private void FlushPendingChat(NetPeer peer)
+    {
+        string[] pending;
+        lock (_pendingChat)
+        {
+            if (_pendingChat.Count == 0)
+                return;
+            pending = _pendingChat.ToArray();
+            _pendingChat.Clear();
+        }
+        foreach (var text in pending)
+            SendChat(text);
     }
 
     private void OnReceive(NetPeer peer, NetPacketReader reader, byte channel, DeliveryMethod method)

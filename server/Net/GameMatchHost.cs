@@ -329,6 +329,14 @@ public sealed partial class GameMatchHost : IDisposable
     public bool IsListening => _manager.IsRunning;
 
     /// <summary>
+    /// Настоящий провал игрового порта: <see cref="EnsureMatchListening"/> не смог
+    /// перебиндить UDP (порт утащил чужой процесс). Намеренная парковка после
+    /// последней комнаты (<see cref="SuspendMatchListen"/>) — не провал: следующая
+    /// комната с сайта поднимет порт сама, и «комнаты не запустятся» — ложь.
+    /// </summary>
+    public bool ListenFailed { get; private set; }
+
+    /// <summary>
     /// Сколько живых людей сейчас в комнатах (без «серверного» актора №1).
     /// </summary>
     /// <remarks>
@@ -430,6 +438,10 @@ public sealed partial class GameMatchHost : IDisposable
         }
 
         _acceptMatchConnections = false;
+
+        // Паркуем порт сознательно — это не провал. Флаг обязаны снять: иначе панель
+        // после конца последней катки навсегда показывала бы «порт не слушается».
+        ListenFailed = false;
 
         if (_manager.IsRunning)
         {
@@ -575,17 +587,20 @@ public sealed partial class GameMatchHost : IDisposable
         if (_manager.IsRunning)
         {
             _acceptMatchConnections = true;
+            ListenFailed = false;
             return true;
         }
 
         if (!_manager.Start(NetBind.Address, IPAddress.IPv6Any, _listenPort))
         {
+            ListenFailed = true;
             Console.WriteLine(
                 $"[match-host] FATAL: failed to rebind UDP {_listenPort} after suspend");
             return false;
         }
 
         _acceptMatchConnections = true;
+        ListenFailed = false;
         EnsureLanRoom();
         Console.WriteLine(
             $"[match-host] LiteNetLib RESTARTED UDP {_listenPort} key='{ConnectionKey}'");

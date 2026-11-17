@@ -7,6 +7,7 @@ using StandChillow.LanServer.Lan;
 using StandChillow.LanServer.Net;
 using StandChillow.LanServer.Net.Lobby;
 using StandChillow.LanServer.Net.Match.Kernel;
+using StandChillow.LanServer.Stats;
 
 namespace StandChillow.LanServer.Web;
 
@@ -43,6 +44,12 @@ public sealed class WebPanelHost : IDisposable
     /// Сессии сайта. Одни на запуск сервера: перезапуск гасит все сессии и коды (#51).
     /// </summary>
     private readonly SiteSessions _sessions = new();
+
+    /// <summary>
+    /// Админ-сессии панели: «код этого запуска предъявлен». Тоже в памяти — рестарт
+    /// гасит вместе с кодом из auth.txt.
+    /// </summary>
+    private readonly AdminSessions _adminSessions = new();
     private readonly SiteAddressResolver _addresses;
     private readonly WebPanelServer _server_;
     private readonly WebPanelRouter _router;
@@ -52,11 +59,27 @@ public sealed class WebPanelHost : IDisposable
     private GameNetHost? _host;
     private Task? _tickLoop;
 
+    /// <summary>Счётчик секундных тиков: статистика семплируется не каждый.</summary>
+    private int _statsTick;
+
+    /// <summary>Статистика игроков на диске (киллы/смерти/время/матчи).</summary>
+    private readonly PlayerStatsStore _stats;
+
+    /// <summary>Раз в сколько секунд семплируем комнаты для статистики.</summary>
+    private const int StatsSampleSeconds = 15;
+
+    /// <summary>Файл статистики — рядом с исполняемым файлом, как banlist.json.</summary>
+    private const string StatsFileName = "stats.json";
+
     public WebPanelHost(ServerConfig server)
     {
         _server = server;
         _config = server.Web;
         _rooms = new RoomRegistry { MaxRooms = Math.Clamp(_config.MaxRooms, 1, 1024) };
+
+        // Статистика живёт на диске рядом с exe: рестарт ничего не теряет.
+        _stats = new PlayerStatsStore(Path.Combine(AppContext.BaseDirectory, StatsFileName));
+        Console.WriteLine($"[stats] хранилище: {_stats.FilePath} (в памяти {_stats.Count} игроков)");
 
         _indexHtml = LoadEmbeddedIndex;
         _addresses = new SiteAddressResolver
@@ -107,6 +130,29 @@ public sealed class WebPanelHost : IDisposable
                 // Префикс подпути: со слэшем в proxy_pass прокси его срежет, но
                 // конфиг правит владелец — роутер обязан понимать оба варианта.
                 BasePath = _config.BasePath,
+
+                // Статистика для профиля и админ-флаг из конфига (admin.ids).
+                // Живая проверка: перечитывание конфига сразу меняет кнопку и доступ,
+                // а не после рестарта (хост ещё не подключён — старый снимок лучше, чем ничего).
+                Stats = _stats,
+                IsAdminById = id => _host?.IsAdminLive(id) ?? _server.IsAdmin(id),
+
+                // ── Админ панель ──
+                AdminSessionStore = _adminSessions,
+                AdminCodeMatches = code => _host?.AdminCodeMatches(code) ?? false,
+                IsAdminLive = id => _host?.IsAdminLive(id) ?? _server.IsAdmin(id),
+
+                // Кастомизация: только свой ID, проверяет хранилище (цифры+англ., уникальность).
+                CustomIdGet = id => _host?.CustomIdOf(id),
+                CustomIdSet = (id, value) => _host is null ? "хост не подключён" : _host.SetCustomId(id, value),
+
+                // Баны: поиск для превью, бан/разбан — тем же путём, что /ban из чата.
+                AdminLookup = id => _host?.LookupPlayerForAdmin(id),
+                WebBan = (id, durationToken, reason, bannedBy) =>
+                    _host?.TryWebBan(id, durationToken, reason, bannedBy) ?? ("хост не подключён", null),
+                WebUnban = id => _host?.TryWebUnban(id) ?? ("хост не подключён", 0),
+                ActiveBans = () => _host?.ActiveBanRecords() ?? Array.Empty<BanRecord>(),
+                BanSettings = () => _host?.BanRange ?? (false, 10, 14),
             });
 
         _server_ = new WebPanelServer(
@@ -213,6 +259,10 @@ public sealed class WebPanelHost : IDisposable
         host.SiteAddress = _addresses;
         host.Match.Rooms = _rooms;
 
+        // Статистика: боевые пути матча отдают киллы/смерти сюда, семплер панели
+        // раз в 15 секунд забирает «кто и в каких фазах».
+        host.Match.Stats = _stats;
+
         // «Комнат не больше, чем игроков онлайн»: квота реестра спрашивает у хоста,
         // сколько людей сейчас в лобби и в катке. Пока хост не подключён, считаем 0.
         _rooms.OnlinePlayerCount = () => host.JoinedCount + host.Match.HumanActorCount;
@@ -234,6 +284,10 @@ public sealed class WebPanelHost : IDisposable
         try { _tickLoop?.Wait(TimeSpan.FromSeconds(2)); }
         catch { /* отмена — норма */ }
         _server_.Stop();
+
+        // Статистика на диск до выхода — что насчитали, то и сохранили.
+        try { _stats.Flush(); }
+        catch { /* сохранение уже залогировало свою беду */ }
     }
 
     public void Dispose()
@@ -258,6 +312,13 @@ public sealed class WebPanelHost : IDisposable
                 // Протухшие коды выбрасываем, чтобы не копить записи за ушедшими игроками.
                 // Дёшево: активных кодов столько же, сколько людей онлайн.
                 _host?.SiteCodes.Prune(DateTime.UtcNow);
+
+                // Статистика: раз в 15 секунд берём фазы комнат и ники людей.
+                _statsTick++;
+                if (_statsTick % StatsSampleSeconds == 0)
+                    _stats.SampleRooms(
+                        _host?.Match.SnapshotRoomsForStats() ?? Array.Empty<StatsRoomSample>(),
+                        StatsSampleSeconds);
             }
             catch (Exception ex)
             {
@@ -321,6 +382,9 @@ public sealed class WebPanelHost : IDisposable
             writer.WriteNumber("roomsMax", _rooms.MaxRooms);
             writer.WriteNumber("nextNumber", _rooms.NextNumber);
             writer.WriteBoolean("gameListening", host?.Match.IsListening ?? false);
+            // Тревога — только при реальном провале перебинда. gameListening=false после
+            // конца последней катки — норма (порт паркуется до следующей комнаты).
+            writer.WriteBoolean("gamePortFailed", host?.Match.ListenFailed ?? false);
             writer.WriteBoolean("matchRunning", host?.MatchStarted ?? false);
             writer.WriteString("mode", host?.Session.GameModeId ?? "");
             writer.WriteString("levels", string.Join(", ", host?.Session.SelectedLevels

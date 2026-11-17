@@ -37,7 +37,11 @@ public sealed partial class GameNetHost
         var id = MatchPublicId.ForNick(player.Name);
         var code = _siteCodes.Issue(id, player.Name, DateTime.UtcNow);
 
-        var line = $"Ты {player.Name} · ID: {id}";
+        // Кастомный ID админа показываем вместо числа: игроки видят то же, что и в катке.
+        // Оригинальный числовой ID остаётся источником правды для банов и admin.ids.
+        var displayId = _customIds.Get(id) ?? id.ToString();
+
+        var line = $"Ты {player.Name} · ID: {displayId}";
         if (code is not null)
             line += $" · код: {code}";
         line += $" · {BuildOnlineSummary()}";

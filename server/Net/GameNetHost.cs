@@ -106,6 +106,11 @@ public sealed partial class GameNetHost : IDisposable
         LogAdminAuthStartup();
         _match.IsUnauthorizedAdmin = (room, ip) => IsUnauthorizedAdmin(IdOf(room), ip);
 
+        // Веб-админка: сервер сам ставит галочку админам (и снимает у не-админов — защита
+        // от подмены на клиенте), плюс подменяет uid на кастомный ID, если админ его поставил.
+        _match.IsAdminVerifiedFor = (nick, ip) => IsAdminAuthorized(IdOf(nick), ip);
+        _match.CustomIdOf = id => _customIds.Get(id);
+
         _listener = new EventBasedNetListener();
         _manager = new NetManager(_listener)
         {

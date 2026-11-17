@@ -1,4 +1,5 @@
 using System.Net;
+using LiteNetLib;
 using StandChillow.LanServer.Bans;
 using StandChillow.LanServer.Net.Match;
 using StandChillow.LanServer.Net.Match.Host;
@@ -72,6 +73,68 @@ public sealed partial class GameMatchHost
     public bool ExposeServerUid { get; set; } = true;
 
     /// <summary>
+    /// Серверная галочка «аккаунт настоящий»: ник админа → <c>true</c>. Лобби-хост
+    /// подключает свою проверку (<c>admin.ids</c> + код этого запуска). <c>null</c> —
+    /// проверка выключена, свойство остаётся как его прислал клиент.
+    /// </summary>
+    /// <remarks>
+    /// Клиенты сами пишут <c>verified</c> в своей identity-пачке, и до сих пор сервер
+    /// пересылал это как есть: подмена «isVerified = true» на клиенте выглядела бы
+    /// галочкой у всех. Теперь значение перезаписывается: не-админ получает <c>false</c>,
+    /// даже если прислал <c>true</c>, а админ — <c>true</c>, даже если клиент прислал
+    /// <c>false</c>.
+    /// </remarks>
+    public Func<string, IPAddress?, bool>? IsAdminVerifiedFor { get; set; }
+
+    /// <summary>
+    /// Автоматическая галочка <c>verified</c>: сервер сам выставляет значение по
+    /// admin.ids (+ код этого запуска), не дожидаясь клиентского prop — клиент может
+    /// его не прислать вовсе. Админ → <c>true</c>, все остальные → <c>false</c>.
+    /// </summary>
+    /// <remarks>
+    /// Релей свойств уже правит подмену на лету (не-админ с <c>true</c> получает
+    /// <c>false</c>, админ — <c>true</c> при любом присланном значении). Здесь закрыт
+    /// обратный случай: prop не пришёл ни разу (старые клиенты, пробы) — тогда сервер
+    /// досылает своё решение сам, чтобы галочка не зависела от поведения клиента.
+    /// </remarks>
+    private void EnsureServerVerifiedProp(MatchRoom room, byte actorNr, NetPeer authorPeer, string reason)
+    {
+        if (IsAdminVerifiedFor is null || actorNr == MatchHostActor.ActorNr)
+            return;
+        if (!_peers.TryGetValue(authorPeer, out var st))
+            return;
+
+        var nick = ResolveActorNick(actorNr, st, room);
+        var isAdmin = !string.IsNullOrWhiteSpace(nick)
+            && IsAdminVerifiedFor(nick, authorPeer.Address);
+        var want = LobbyVariant.FromBool(isAdmin);
+
+        lock (_roomGate)
+        {
+            if (room.ActorProps.TryGetValue((actorNr, MatchRoomPropKeys.Verified), out var have)
+                && have.Kind == LobbyVariantKind.Bool
+                && have.Bool == want.Bool)
+                return; // уже совпадает с решением сервера — лишний SetProperty не шлём
+            room.ActorProps[(actorNr, MatchRoomPropKeys.Verified)] = want;
+        }
+
+        BroadcastRoom(
+            room,
+            MatchCodec.BuildSetProperty(NextServerTime(), actorNr, MatchRoomPropKeys.Verified, want),
+            tag: "match_tx_SetProperty");
+        Console.WriteLine(
+            $"[match-host] verified actor={actorNr} — сервер выставил " +
+            $"{(isAdmin ? "true (админ)" : "false")} ({reason})");
+    }
+
+    /// <summary>
+    /// Кастомный отображаемый ID: серверный id (число) → строка, которую видят игроки.
+    /// Ставится только админам через веб-панель; оригинальный числовой ID сервер
+    /// продолжает использовать для банов и <c>admin.ids</c>.
+    /// </summary>
+    public Func<int, string?>? CustomIdOf { get; set; }
+
+    /// <summary>
     /// Новое значение <c>uid</c> для автора свойства: постоянный id его ника.
     /// </summary>
     /// <remarks>
@@ -92,22 +155,17 @@ public sealed partial class GameMatchHost
             return true;
         }
 
-        var nick = actorNr == state.ActorNr && ReferenceEquals(state.Room, room)
-            ? state.RosterName
-            : null;
+        var nick = ResolveActorNick(actorNr, state, room);
 
-        if (string.IsNullOrWhiteSpace(nick))
+        // Кастомный ID админа: вместо числа — его строка. Оригинальный id для банов и
+        // admin.ids никуда не девается — подменяется только то, что показывают клиентам.
+        if (!string.IsNullOrWhiteSpace(nick))
         {
-            // Свойства может прислать хост за игрока — тогда его состояния под рукой нет
-            // и ник ищем по сессиям комнаты (после JoinRoom он уже записан).
-            foreach (var other in _peers.Values)
+            var custom = CustomIdOf?.Invoke(MatchPublicId.ForNick(nick));
+            if (!string.IsNullOrWhiteSpace(custom))
             {
-                if (other.ActorNr != actorNr || !ReferenceEquals(other.Room, room))
-                    continue;
-                if (string.IsNullOrWhiteSpace(other.RosterName))
-                    continue;
-                nick = other.RosterName;
-                break;
+                uid = LobbyVariant.FromString(custom);
+                return true;
             }
         }
 
@@ -116,6 +174,33 @@ public sealed partial class GameMatchHost
 
         uid = LobbyVariant.FromString(text);
         return true;
+    }
+
+    /// <summary>
+    /// Ник автора свойства. Ник берём из состояния сессии (<c>RosterName</c> после
+    /// JoinRoom), а не из пакета: свойство может прислать кто угодно и про любого актора.
+    /// Свойства может прислать хост за игрока — тогда его состояния под рукой нет
+    /// и ник ищем по сессиям комнаты (после JoinRoom он уже записан).
+    /// </summary>
+    private string? ResolveActorNick(byte actorNr, MatchPeerState state, MatchRoom room)
+    {
+        var nick = actorNr == state.ActorNr && ReferenceEquals(state.Room, room)
+            ? state.RosterName
+            : null;
+
+        if (!string.IsNullOrWhiteSpace(nick))
+            return nick;
+
+        foreach (var other in _peers.Values)
+        {
+            if (other.ActorNr != actorNr || !ReferenceEquals(other.Room, room))
+                continue;
+            if (string.IsNullOrWhiteSpace(other.RosterName))
+                continue;
+            return other.RosterName;
+        }
+
+        return null;
     }
 
     private IPAddress? AddressOfActorLocked(MatchRoom room, byte actorNr)

@@ -552,7 +552,19 @@ public sealed class WebPanelServer : IDisposable
             .Append(ReasonPhrase(response.Status)).Append("\r\n");
         header.Append("Content-Type: ").Append(response.ContentType).Append("\r\n");
         header.Append("Content-Length: ").Append(response.Body.Length).Append("\r\n");
-        header.Append("Cache-Control: no-store\r\n");
+        // Кэш: у API он не нужен (no-store), но у медиа и шрифтов есть свой честный
+        // Cache-Control — явное правило сильнее дефолта, дубли не пишем.
+        var hasOwnCacheControl = false;
+        foreach (var (name, _) in response.ExtraHeaders)
+        {
+            if (name.Equals("Cache-Control", StringComparison.OrdinalIgnoreCase))
+            {
+                hasOwnCacheControl = true;
+                break;
+            }
+        }
+        if (!hasOwnCacheControl)
+            header.Append("Cache-Control: no-store\r\n");
         header.Append("X-Content-Type-Options: nosniff\r\n");
         header.Append("Referrer-Policy: no-referrer\r\n");
         header.Append("Connection: close\r\n");
@@ -578,11 +590,13 @@ public sealed class WebPanelServer : IDisposable
         200 => "OK",
         201 => "Created",
         204 => "No Content",
+        206 => "Partial Content",
         400 => "Bad Request",
         404 => "Not Found",
         405 => "Method Not Allowed",
         409 => "Conflict",
         413 => "Payload Too Large",
+        416 => "Range Not Satisfiable",
         429 => "Too Many Requests",
         500 => "Internal Server Error",
         503 => "Service Unavailable",
