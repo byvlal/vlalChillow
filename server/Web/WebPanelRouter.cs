@@ -211,6 +211,9 @@ public sealed partial class WebPanelRouter
                 writer.WriteString("name", mode.DisplayName);
                 writer.WriteString("alias", GameModeCatalog.PrimaryAlias(mode));
                 writer.WriteString("defaultLevel", GameModeCatalog.DefaultLevelFor(mode.GameModeId));
+                // Хост уводит в бой только часть каталога: страница приглушает
+                // остальные и не даёт их выбрать (см. GameModeCatalog.IsImplemented).
+                writer.WriteBoolean("implemented", GameModeCatalog.IsImplemented(mode.GameModeId));
 
                 // Размер команды: страница показывает выбор только там, где он есть.
                 var shape = RoomCapacity.ForMode(mode.GameModeId);

@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="dark light">
 <meta name="theme-color" content="#0b141c">
-<title>влалChillow — свой сервер для Standoff 2</title>
+<title>влалChillow — свой сервер для StandChillow</title>
 <link rel="preload" href="/media/Bebasbolt-1.1.4-release.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="/media/roboto-400-cyrillic.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="/media/roboto-400-latin.woff2" as="font" type="font/woff2" crossorigin>
@@ -61,7 +61,7 @@
   --md-sys-typescale-label-small:500 11px/16px;
 }
 
-/* ══ DARK — палитра Standoff 2: тёмный сине-бирюзовый интерфейс игры ══ */
+/* ══ DARK — палитра StandChillow: тёмный сине-бирюзовый интерфейс игры ══ */
 [data-theme="dark"]{
   --md-sys-color-primary:#a9c0de;
   --md-sys-color-on-primary:#0c1721;
@@ -648,12 +648,11 @@ select.md-field__box{
 .md-badge--mine{background:var(--md-sys-color-primary-container);color:var(--md-sys-color-on-primary-container)}
 
 /* ══════════════════════════════════════════════════════════════════
-   ГЛАВНАЯ — стиль Standoff 2 (Cyrillic Bebasbolt + Roboto, как в игре)
+   ГЛАВНАЯ — стиль StandChillow (Cyrillic Bebasbolt + Roboto, как в игре)
    Шрифты отдаёт сам сервер: /media/*.woff2 (вкомпилированы, кэш год).
    ══════════════════════════════════════════════════════════════════ */
 
-/* Bebasbolt — свободный шрифт по мотивам логотипа Standoff 2 (Axlebolt LTD),
-   Wanja01 & Snowy, CC-BY-4.0: https://github.com/Wanja01YT/bebasbolt */
+/* Bebasbolt — свободный шрифт (Wanja01 & Snowy), CC-BY-4.0: https://github.com/Wanja01YT/bebasbolt */
 @font-face{
   font-family:"Bebasbolt";
   src:url("/media/Bebasbolt-1.1.4-release.woff2") format("woff2");
@@ -697,7 +696,7 @@ select.md-field__box{
   font-display:swap;
 }
 
-/* ══ токены главной (якорная палитра — интерфейс Standoff 2) ══ */
+/* ══ токены главной (якорная палитра — интерфейс StandChillow) ══ */
 :root{
   --so-bg:#0b141c;
   --so-bg-2:#0e1d29;
@@ -898,16 +897,7 @@ html[data-title="3"] .so-hero h1 .t3{display:inline}
 }
 .so-step__a:hover{color:#fff}
 
-/* репорты */
-.so-report{
-  margin-top:40px;display:flex;gap:36px;align-items:center;justify-content:space-between;
-  background:var(--so-panel);border:1px solid var(--so-line);border-radius:12px;
-  padding:40px;backdrop-filter:blur(8px);flex-wrap:wrap;
-}
-.so-report__list{margin:0;padding:0;list-style:none;color:var(--so-muted);font-size:15px;line-height:2.05}
-.so-report__list b{color:var(--so-text);font-weight:500}
-.so-report__txt{max-width:560px}
-.so-report__txt p{color:var(--so-muted);font-size:15px;line-height:1.65;margin:14px 0 0}
+
 
 /* «прямо сейчас» — счёт как в табло */
 .so-now{
@@ -988,7 +978,7 @@ html[data-title="3"] .so-hero h1 .t3{display:inline}
 .so-trouble__q{font-family:var(--so-display);font-size:22px;letter-spacing:.04em;color:#fff}
 .so-trouble__a{color:var(--so-muted);font-size:15px;line-height:1.6}
 .so-trouble__a b{color:var(--so-text);font-weight:500}
-.so-howmore{margin-top:38px}
+.so-howmore{margin-top:20px}
 
 /* ══ режим примерки вариантов (?select) ══ */
 .so-select{
@@ -1028,7 +1018,6 @@ html[data-select] .so-select{display:block}
   .so-step{grid-template-columns:64px 1fr;row-gap:4px}
   .so-step__n{font-size:34px;grid-row:span 2}
   .so-step__a{grid-column:2;justify-self:start}
-  .so-report{padding:24px}
   .so-now{grid-template-columns:repeat(2,1fr)}
   .so-now__v{font-size:44px}
   .so-foot__inner{padding:44px 20px 36px}
@@ -1339,6 +1328,9 @@ body.so-side-open .so-side{transform:none}
 }
 .so-mode[aria-checked="true"]{border-color:var(--so-acc);background:rgba(255,255,255,.05)}
 .so-mode[aria-checked="true"]::after{color:var(--so-acc)}
+/* Нереализованный режим: в клиенте есть, хост его не ведёт — приглушаем. */
+.so-mode--off{opacity:.42}
+.so-mode--off:hover{border-color:var(--so-line)}
 .so-mode__wm{
   position:absolute;right:-4px;bottom:-11px;pointer-events:none;
   font-family:var(--so-display);font-size:46px;line-height:1;letter-spacing:.02em;
@@ -1614,6 +1606,114 @@ body.so-side-open .so-side{transform:none}
 .so-admban__n{font-family:var(--so-display);font-size:18px;color:#fff;letter-spacing:.05em}
 .so-admban__m{font-size:12.5px;color:var(--so-muted);margin-top:4px;line-height:1.5}
 .so-admban__x{margin-left:auto;flex:0 0 auto}
+
+/* ══════════════════════════════════════════════════════════════════
+   МОБИЛЬНАЯ ВЕРСИЯ
+   ПК-версию не трогаем: все правила ниже живут только в медиазапросах
+   и на широком экране не применяются вовсе.
+   ══════════════════════════════════════════════════════════════════ */
+@media (max-width:760px){
+  .so-view{overflow-x:clip}
+  .so-top{padding:14px 16px;gap:10px 12px;flex-wrap:wrap}
+  .so-top__logo{font-size:20px}
+  .so-top nav{gap:13px}
+  .so-top nav a{font-size:13px;letter-spacing:.05em}
+  .so-sidebtn{padding:7px 12px 5px;font-size:12px}
+  .so-hero__inner{padding:0 18px 84px}
+  .so-hero__sub{font-size:14.5px}
+  .so-cta .so-btn{width:100%;justify-content:center}
+  .so-howlink{margin-top:16px}
+  .so-sec{padding:64px 18px 0}
+  .so-manifesto{margin-top:26px}
+  .so-steps{margin-top:34px}
+  .so-step{grid-template-columns:52px 1fr;column-gap:14px}
+  .so-step__n{font-size:30px}
+  .so-step__t{font-size:22px}
+  .so-now{margin-top:34px}
+  .so-now__cell{padding:22px 20px 18px}
+  .so-now__v{font-size:40px}
+  .so-foot{margin-top:72px}
+  .so-foot__inner{padding:40px 18px 32px}
+  .so-foot__links{gap:18px 26px}
+  .so-howmore{margin-top:18px}
+  /* комнаты */
+  .so-playhead__h{font-size:clamp(38px,10.5vw,78px)}
+  .so-pills{gap:8px}
+  .so-pill{min-width:calc(50% - 4px);flex:1 1 calc(50% - 4px);padding:12px 14px 9px}
+  .so-pill__v{font-size:26px}
+  .so-pill--big .so-pill__v{font-size:34px}
+  .so-tabs--mini{gap:8px}
+  .so-tabs--mini .so-tab{flex:1 1 auto;justify-content:center}
+  .so-create{padding:20px 16px 18px}
+  .so-modes{grid-template-columns:repeat(auto-fill,minmax(106px,1fr));gap:7px}
+  .so-maps{grid-template-columns:repeat(auto-fill,minmax(112px,1fr));gap:7px}
+  .so-list__head{flex-wrap:wrap;gap:8px}
+  .so-list__count{margin-left:0}
+  .so-room{padding:14px 12px}
+  .so-room__score{font-size:17px}
+  .so-gate__card{padding:26px 20px 24px}
+  .so-gate__t{font-size:42px}
+  .so-dlg{padding:22px 18px}
+  .so-result{padding:16px}
+  /* инструкция */
+  .so-docs .so-sec{padding-top:36px}
+  .so-doc__fig{margin-top:20px}
+  .so-doc__fig img,.so-doc__fig video{max-width:100%;height:auto}
+  .so-trouble__row{padding:18px 0}
+  /* профиль и админка */
+  .so-pfwho{flex-wrap:wrap;gap:14px}
+  .so-kd{width:172px;height:172px}
+  .so-admwho{flex-wrap:wrap}
+  .so-admwho__out{margin-left:0;width:100%}
+  .so-admban{flex-wrap:wrap}
+  .so-admban__x{margin-left:0}
+  .md-dialog{padding:20px 16px}
+  .md-dialog__cmd{font-size:13.5px}
+}
+@media (max-width:560px){
+  .so-top nav{gap:10px}
+  .so-top nav a{font-size:12px;letter-spacing:.03em}
+  /* живой онлайн дублируется в hero и в блоке «прямо сейчас» */
+  .so-top .so-online{display:none}
+  .so-sec{padding:52px 16px 0}
+  .so-step{grid-template-columns:44px 1fr;column-gap:12px}
+  .so-step__n{font-size:26px}
+  .so-step__t{font-size:20px}
+  .so-step__d{font-size:14px}
+  .so-now{gap:8px}
+  .so-now__cell{padding:18px 16px 14px}
+  .so-now__v{font-size:34px}
+  .so-now__hint{font-size:12px}
+  .so-modes{grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:6px}
+  .so-mode{padding:10px 10px 8px}
+  .so-mode__n{font-size:15px}
+  .so-mode__wm{font-size:38px}
+  .so-maps{grid-template-columns:repeat(auto-fill,minmax(100px,1fr));gap:6px}
+  .so-pill{padding:11px 12px 8px}
+  .so-pill__v{font-size:23px}
+  .so-pill--big .so-pill__v{font-size:28px}
+  .so-gate__t{font-size:36px}
+  .so-gate__cta{gap:10px}
+  .so-list__t{font-size:20px}
+  .so-room{grid-template-columns:auto minmax(0,1fr)}
+  .so-room__side{grid-column:1 / -1;justify-content:space-between;gap:10px}
+  .so-room__score{font-size:16px}
+  .so-kdcard{padding:20px 16px}
+  .so-pfcells{gap:10px}
+  .so-docnav{margin:22px -16px 8px;padding:10px 16px}
+  .so-doc__head{grid-template-columns:44px 1fr;gap:12px}
+  .so-doc__n{font-size:30px}
+  .so-doc__t{font-size:20px}
+  .so-trouble__q{font-size:17px}
+  .so-trouble__a{font-size:14px}
+  .so-foot__links{gap:14px 20px}
+  .so-foot__credit{font-size:11.5px}
+  .so-admstep{font-size:10.5px;padding:7px 12px 6px}
+  .md-page{padding:0 14px 40px}
+  /* узкие экраны: длинные кнопки в строке с полем ввода не помещаются,
+     поэтому полную ширину даём всем, кроме компактных .so-btn--sm */
+  .so-btn:not(.so-btn--sm){width:100%;justify-content:center}
+}
 </style>
 </head>
 <body>
@@ -1635,7 +1735,6 @@ body.so-side-open .so-side{transform:none}
       <a class="so-top__logo" href="#/">ВЛАЛ<b>CHILLOW</b></a>
       <nav>
         <a href="#/docs">ИНСТРУКЦИЯ</a>
-        <a href="#/reports">РЕПОРТЫ</a>
         <a href="#/play">КОМНАТЫ</a>
         <span class="so-online"><i class="so-online__dot" id="so-dot"></i></span>
         <button class="so-sidebtn" type="button" data-side-open>ПАНЕЛЬ</button>
@@ -1658,7 +1757,6 @@ body.so-side-open .so-side{transform:none}
           НАЧАТЬ ИГРУ
           <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
         </a>
-        <a class="so-btn so-btn--ghost" href="#/reports">РЕПОРТЫ</a>
       </div>
       <a class="so-howlink" href="#/docs">
         КАК НАЧАТЬ ИГРУ
@@ -1685,7 +1783,7 @@ body.so-side-open .so-side{transform:none}
     <h2>СВОЙ СЕРВЕР,<br><em>КОТОРЫЙ ВСЕГДА ОНЛАЙН</em></h2>
     <div class="so-manifesto">
       <p>Не официальный матчмейкинг и не аренда чужого хостинга. <b>Один ПК в квартире</b>,
-         который держит комнаты для друзей — с тем же Standoff 2, что у тебя на телефоне.</p>
+         который держит комнаты для друзей — с тем же StandChillow, что у тебя на телефоне.</p>
       <p>Подключение — по <b>IP и порту 7778</b>: работает и из домашней сети, и извне.
          Ввёл адрес в лобби, взял код в чате — и уже стоишь в очереди на катку.</p>
     </div>
@@ -1705,11 +1803,6 @@ body.so-side-open .so-side{transform:none}
         <span class="so-facts__d">те же, что в лобби сервера — каталог подтягивается сам</span>
         <span class="so-facts__v">ВСЕ</span>
       </div>
-      <div class="so-facts__row">
-        <span class="so-facts__k">РЕПОРТЫ</span>
-        <span class="so-facts__d">читаков разбирает живой админ, а не бот</span>
-        <span class="so-facts__v">24/7</span>
-      </div>
     </div>
   </section>
 
@@ -1717,13 +1810,19 @@ body.so-side-open .so-side{transform:none}
   <section class="so-sec" id="sec-how">
     <p class="so-sec__label">Как начать</p>
     <h2>ВОСЕМЬ ШАГОВ ДО КАТКИ</h2>
+    <p class="so-howmore">
+      <a class="so-btn so-btn--ghost" href="#/docs">
+        ПОЛНАЯ ИНСТРУКЦИЯ СО СКРИНШОТАМИ
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
+      </a>
+    </p>
     <div class="so-steps">
-      <div class="so-how-group"><i>◆</i> В ИГРЕ — STANDOFF 2</div>
+      <div class="so-how-group"><i>◆</i> В ИГРЕ — STANDCHILLOW</div>
       <div class="so-step">
         <span class="so-step__n">01</span>
         <div>
           <div class="so-step__t">ОТКРОЙ «LAN МУЛЬТИПЛЕЕР»</div>
-          <p class="so-step__d">Запусти <b>Standoff 2</b> и в главном меню выбери вкладку
+          <p class="so-step__d">Запусти <b>StandChillow</b> и в главном меню выбери вкладку
              «LAN Мультиплеер» — через неё заходят на сторонние серверы.</p>
         </div>
         <span class="so-step__a"></span>
@@ -1749,7 +1848,7 @@ body.so-side-open .so-side{transform:none}
         <div>
           <div class="so-step__t">ВПИШИ АДРЕС И ПОРТ</div>
           <p class="so-step__d">Например <b>1.2.3.4 : 7778</b>. Порт всегда <b>7778</b>.
-             IP может смениться — свежий всегда в Telegram.</p>
+             Актуальный IP — в <a href="https://t.me/senatorbiop/328" target="_blank" rel="noopener">этом посте</a> в Telegram.</p>
         </div>
         <a class="so-step__a" href="https://t.me/vlalikoffcChillow" target="_blank" rel="noopener">В ТЕЛЕГРАМ →</a>
       </div>
@@ -1789,32 +1888,6 @@ body.so-side-open .so-side{transform:none}
         <span class="so-step__a"></span>
       </div>
     </div>
-    <p class="so-howmore">
-      <a class="so-btn so-btn--ghost" href="#/docs">
-        ПОЛНАЯ ИНСТРУКЦИЯ СО СКРИНШОТАМИ
-        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
-      </a>
-    </p>
-  </section>
-
-  <!-- ══ репорты ══ -->
-  <section class="so-sec" id="sec-reports">
-    <p class="so-sec__label">Репорты</p>
-    <h2>ЧИТАКОВ ОТЛОВИМ <em>БЫСТРО</em></h2>
-    <div class="so-report">
-      <ul class="so-report__list">
-        <li><b>Кому:</b> живой админ сервера — репорт приходит лично ему</li>
-        <li><b>Что писать:</b> ник нарушителя, режим и что случилось</li>
-        <li><b>Куда:</b> в Telegram — так быстрее всего</li>
-      </ul>
-      <div class="so-report__txt">
-        <a class="so-btn so-btn--ghost" href="https://t.me/vlalikoffcChillow" target="_blank" rel="noopener">
-          НАПИСАТЬ В ТЕЛЕГРАМ
-        </a>
-        <p>Наш сервер — маленькое комьюнити. Тут не нужны bans-роботы на три тысячи
-           строк: админ видит каждый репорт и разбирает его лично.</p>
-      </div>
-    </div>
   </section>
 
   <!-- ══ прямо сейчас ══ -->
@@ -1845,10 +1918,10 @@ body.so-side-open .so-side{transform:none}
       </div>
       <div class="so-foot__brand">ВЛАЛCHILLOW — СВОЙ СЕРВЕР, СВОИ КАТКИ</div>
       <p class="so-foot__credit">
-        © 2026 vlalChillow. Standoff 2 — торговая марка Axlebolt LTD; это фан-проект
-        для игры на своём сервере и он не связан с разработчиком. Шрифт
+        © 2026 vlalChillow — фан-проект для игры на своём сервере, не связан
+        с правообладателями игры. Шрифт
         <a href="https://github.com/Wanja01YT/bebasbolt" target="_blank" rel="noopener">Bebasbolt</a>
-        — Wanja01 &amp; Snowy, по мотивам логотипа Standoff 2 (Axlebolt LTD), лицензия CC-BY-4.0.
+        — Wanja01 &amp; Snowy, лицензия CC-BY-4.0.
       </p>
     </div>
   </footer>
@@ -1921,27 +1994,26 @@ body.so-side-open .so-side{transform:none}
       <a href="#" data-goto="doc-b"><i>B</i>Зайти в чужую</a>
       <div class="so-docnav__k">ПОМОЩЬ</div>
       <a href="#" data-goto="doc-trouble"><i>◆</i>Если что-то не так</a>
-      <a href="#" data-goto="doc-reports"><i>◆</i>Репорты</a>
     </nav>
     <div class="so-docs__col">
 
   <!-- ══ шаги 1-6: в игре ══ -->
   <section class="so-sec">
-    <div class="so-how-group"><i>◆</i> В ИГРЕ — STANDOFF 2</div>
+    <div class="so-how-group"><i>◆</i> В ИГРЕ — STANDCHILLOW</div>
 
     <article class="so-doc" id="doc-1" data-docsec>
       <div class="so-doc__head">
         <span class="so-doc__n">01</span>
         <div>
           <div class="so-doc__t">ОТКРОЙ «LAN МУЛЬТИПЛЕЕР»</div>
-          <p class="so-doc__d">Запусти <b>Standoff 2</b>. В главном меню есть вкладка
+          <p class="so-doc__d">Запусти <b>StandChillow</b>. В главном меню есть вкладка
              <b>«LAN Мультиплеер»</b> — через неё заходят на сторонние серверы, как наш.
              Жми на неё.</p>
         </div>
       </div>
       <figure class="so-doc__fig">
         <img src="/media/doc-1.jpg" width="1280" height="582" loading="lazy"
-             alt="Главное меню Standoff 2, выделена вкладка LAN Мультиплеер">
+             alt="Главное меню StandChillow, выделена вкладка LAN Мультиплеер">
         <figcaption>Главное меню игры. Вкладка «LAN Мультиплеер» — наш вход на сервер.</figcaption>
       </figure>
     </article>
@@ -1985,8 +2057,8 @@ body.so-side-open .so-side{transform:none}
           <div class="so-doc__t">ВПИШИ АДРЕС И ПОРТ</div>
           <p class="so-doc__d">В поле вводи <b>IP сервера</b>, рядом — порт. Порт всегда один:
              <b>7778</b>. Выглядит это так: <b>1.2.3.4 : 7778</b>.
-             IP может смениться после перезапуска сервера — свежий адрес всегда закреплён
-             в <a href="https://t.me/vlalikoffcChillow" target="_blank" rel="noopener">Telegram</a>.</p>
+             Актуальный IP всегда в этом посте в Telegram:
+             <a href="https://t.me/senatorbiop/328" target="_blank" rel="noopener">https://t.me/senatorbiop/328</a>.</p>
         </div>
       </div>
       <figure class="so-doc__fig">
@@ -2151,25 +2223,6 @@ body.so-side-open .so-side{transform:none}
     </div>
   </section>
 
-  <!-- ══ репорт ══ -->
-  <section class="so-sec" id="doc-reports" data-docsec>
-    <p class="so-sec__label">Репорты</p>
-    <h2>ЗАМЁТ ЧИТАКА — <em>СООБЩИ</em></h2>
-    <div class="so-report">
-      <ul class="so-report__list">
-        <li><b>Кому:</b> живой админ сервера — репорт приходит лично ему</li>
-        <li><b>Что писать:</b> ник нарушителя, режим и что случилось</li>
-        <li><b>Куда:</b> в Telegram — так быстрее всего</li>
-      </ul>
-      <div class="so-report__txt">
-        <a class="so-btn so-btn--ghost" href="https://t.me/vlalikoffcChillow" target="_blank" rel="noopener">
-          НАПИСАТЬ В ТЕЛЕГРАМ
-        </a>
-        <p>Сервер маленький и живой: админ видит каждый репорт и разбирает его лично.</p>
-      </div>
-    </div>
-  </section>
-
   </div><!-- /so-docs__col -->
   </div><!-- /so-docs -->
 
@@ -2188,10 +2241,10 @@ body.so-side-open .so-side{transform:none}
       </div>
       <div class="so-foot__brand">ВЛАЛCHILLOW — СВОЙ СЕРВЕР, СВОИ КАТКИ</div>
       <p class="so-foot__credit">
-        © 2026 vlalChillow. Standoff 2 — торговая марка Axlebolt LTD; это фан-проект
-        для игры на своём сервере и он не связан с разработчиком. Шрифт
+        © 2026 vlalChillow — фан-проект для игры на своём сервере, не связан
+        с правообладателями игры. Шрифт
         <a href="https://github.com/Wanja01YT/bebasbolt" target="_blank" rel="noopener">Bebasbolt</a>
-        — Wanja01 &amp; Snowy, по мотивам логотипа Standoff 2 (Axlebolt LTD), лицензия CC-BY-4.0.
+        — Wanja01 &amp; Snowy, лицензия CC-BY-4.0.
       </p>
     </div>
   </footer>
@@ -2304,7 +2357,7 @@ body.so-side-open .so-side{transform:none}
             <div class="so-result__t">Комната открыта — осталось войти</div>
             <ol class="so-steps">
               <li><b>Команда входа уже скопирована</b> — она ниже; потерялась — жми «Скопировать»</li>
-              <li>Открой <b>чат лобби</b> в Standoff 2</li>
+              <li>Открой <b>чат лобби</b> в StandChillow</li>
               <li>Вставь команду и отправь — <b>сервер сам закинет тебя в комнату</b></li>
             </ol>
             <div class="so-formrow" style="margin-top:14px">
@@ -2346,7 +2399,7 @@ body.so-side-open .so-side{transform:none}
     <h2 class="so-dlg__t" id="join-dialog-title">Команда скопирована</h2>
     <ol class="so-steps so-steps--dlg">
       <li>Команда уже в буфере — нет так нет, жми «Скопировать ещё раз»</li>
-      <li>Открой <b>чат лобби</b> в Standoff 2</li>
+      <li>Открой <b>чат лобби</b> в StandChillow</li>
       <li>Вставь и отправь — <b>сервер сам закинет тебя в комнату</b></li>
     </ol>
     <input class="so-cmd" id="join-cmd" readonly aria-label="Команда входа в комнату">
@@ -2611,10 +2664,6 @@ body.so-side-open .so-side{transform:none}
         <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M8 5v14l11-7z"/></svg>
         <span>Играть</span>
       </a>
-      <a class="so-navbtn" href="#/reports" id="side-reports" data-side-nav>
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M1 21h22L12 2 1 21zm12-3h-2v-2h2v2zm0-4h-2v-4h2v4z"/></svg>
-        <span>Репорты</span>
-      </a>
     </div>
 
     <!-- без кода -->
@@ -2706,24 +2755,40 @@ function renderModes(){
   box.innerHTML = '';
   if (!MODES.length){ curMode = ''; updateCreatePreview(); return; }
 
-  /* Прошлый выбор живёт, пока страница открыта; по умолчанию — первый из каталога. */
-  if (!modeById(curMode)) curMode = MODES[0].id;
+  /* Прошлый выбор живёт, пока страница открыта; по умолчанию — первый
+     РЕАЛИЗОВАННЫЙ из каталога: нерабочий режим выбрать нельзя, значит и
+     показывать его выбранным незачем. */
+  var cur = modeById(curMode);
+  if (!cur || !cur.implemented){
+    curMode = '';
+    for (var i = 0; i < MODES.length; i++){
+      if (MODES[i].implemented){ curMode = MODES[i].id; break; }
+    }
+  }
 
   MODES.forEach(function(m){
     var b = document.createElement('button');
     b.type = 'button';
-    b.className = 'so-mode';
+    b.className = 'so-mode' + (m.implemented ? '' : ' so-mode--off');
     b.setAttribute('role', 'radio');
     b.setAttribute('aria-checked', m.id === curMode ? 'true' : 'false');
     /* Карточка, а не чип: имя крупно, водяной знак — алиас команды входа,
-       снизу честное «сколько карт». Выбранная подсвечена ромбом-акцентом. */
+       снизу честное «сколько карт». Выбранная подсвечена ромбом-акцентом.
+       Нереализованный режим приглушён: он есть в клиенте, но хост его не ведёт. */
     b.innerHTML =
       '<span class="so-mode__wm" aria-hidden="true">' + esc(String(m.alias || m.id).toUpperCase()) + '</span>' +
       '<span class="so-mode__n">' + esc(m.name) + '</span>' +
       '<span class="so-mode__d">' + (m.levels ? m.levels.length : 0) + ' карт</span>';
     b.addEventListener('click', function(){
+      if (!m.implemented){
+        var n = $('mode-note');
+        if (n){ n.textContent = (m.alias || m.id) + ' not implemented'; n.hidden = false; }
+        return;
+      }
       if (curMode === m.id) return;
       curMode = m.id;
+      var on = $('mode-note');
+      if (on) on.textContent = '';
       Array.prototype.forEach.call(box.children, function(k){
         k.setAttribute('aria-checked', k === b ? 'true' : 'false');
       });
@@ -3862,7 +3927,9 @@ function loadModes(){
         levels: m.levels || [], note: '',
         defaultLevel: m.defaultLevel,
         /* Размер команды приходит с сервера: пустой список — режим не выбирает. */
-        teamSizes: m.teamSizes || []
+        teamSizes: m.teamSizes || [],
+        /* Хост ведёт только часть каталога: страница приглушает остальное. */
+        implemented: m.implemented === true
       };
     });
     buildSelects();
@@ -4095,7 +4162,7 @@ setInterval(function(){
 
 /* ══════════════════════════════════════════════════════════════════
    ГЛАВНАЯ (#/): роутер, видео hero, параллакс, бегущая строка, примерка.
-   Хэш-маршруты: #/ — лендинг, #/how и #/reports — якоря лендинга,
+   Хэш-маршруты: #/ — лендинг, #/how — якорь лендинга,
    #/docs — страница инструкции, #/play — страницы комнат.
    Всё остальное считается лендингом.
    ══════════════════════════════════════════════════════════════════ */
@@ -4170,7 +4237,6 @@ function currentRoute(){
   if (h === 'admin' || h.indexOf('admin/') === 0) return 'admin';
   if (h === 'docs' || h.indexOf('docs/') === 0) return 'docs';
   if (h === 'how' || h.indexOf('how/') === 0) return 'how';
-  if (h === 'reports' || h.indexOf('reports/') === 0) return 'reports';
   return 'home';
 }
 
@@ -4203,7 +4269,7 @@ function applyRoute(){
     });
   }
   if (!onPlay && !onDocs && !onProfile && !onAdmin){
-    var anchor = (route === 'how' || route === 'reports') ? $('sec-' + route) : null;
+    var anchor = route === 'how' ? $('sec-how') : null;
     if (anchor){
       /* ждём кадр: hidden только что снялся, размеры ещё считаются */
       requestAnimationFrame(function(){

@@ -37,11 +37,11 @@ const MODES = {
   modes: [
     { id: 'Ranked2v2', name: 'Союзники', alias: '2v2', defaultLevel: 'Sandstone 2x2',
       levels: ['Prison 2x2', 'Sandstone 2x2'], aliases: ['2v2', 'союзники'],
-      teamSizes: [1, 2] },
+      teamSizes: [1, 2], implemented: true },
     { id: 'Duel', name: 'Дуэль', alias: 'duel', defaultLevel: 'Yard',
-      levels: ['Block', 'Yard'], aliases: ['duel'], teamSizes: [1, 2] },
+      levels: ['Block', 'Yard'], aliases: ['duel'], teamSizes: [1, 2], implemented: false },
     { id: 'DeathMatch', name: 'Командный бой', alias: 'tdm', defaultLevel: 'Arena',
-      levels: ['Arena'], aliases: ['tdm'], teamSizes: [] },
+      levels: ['Arena'], aliases: ['tdm'], teamSizes: [], implemented: true },
   ],
 };
 
@@ -257,6 +257,25 @@ function toPage(list) {
   check('фильтр по карте работает', $('rooms').children.length === 1);
   $('f-map').value = '';
   $('f-map').dispatchEvent(new window.Event('change'));
+
+  /* ── нереализованные режимы: приглушены, выбрать нельзя ── */
+  var modeCards = Array.prototype.slice.call($('mode-chips').children);
+  check('карточек режимов столько же, сколько в каталоге', modeCards.length === 3,
+    'cards=' + modeCards.length);
+  var offCards = modeCards.filter(function(b){ return /so-mode--off/.test(b.className); });
+  check('ровно один режим помечен как недоступный', offCards.length === 1,
+    'off=' + offCards.length);
+  check('у недоступного режима aria-checked=false',
+    offCards[0].getAttribute('aria-checked') === 'false');
+  check('по умолчанию выбран реализованный режим',
+    modeCards.filter(function(b){ return b.getAttribute('aria-checked') === 'true'; }).length === 1 &&
+    !/so-mode--off/.test(modeCards.filter(function(b){ return b.getAttribute('aria-checked') === 'true'; })[0].className));
+  offCards[0].dispatchEvent(new window.Event('click'));
+  check('клик по недоступному режиму не выбирает его',
+    offCards[0].getAttribute('aria-checked') === 'false');
+  check('показывается текст «<mode> not implemented»',
+    $('mode-note').textContent === 'duel not implemented', $('mode-note').textContent);
+  check('кнопка «Создать комнату» остаётся активной', $('create-btn').disabled === false);
 
   /* ── создание комнаты: один POST, номер от сервера ── */
   P.setRooms([]);
