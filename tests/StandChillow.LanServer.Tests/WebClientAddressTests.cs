@@ -117,7 +117,7 @@ public sealed class WebClientAddressTests
     [InlineData("10.0.0.5")]
     [InlineData("172.16.0.5")]
     [InlineData("172.31.255.255")]
-    [InlineData("192.168.0.30")]
+    [InlineData("192.168.7.30")]
     [InlineData("169.254.1.5")]
     public void Trusted_peers(string peer)
     {
