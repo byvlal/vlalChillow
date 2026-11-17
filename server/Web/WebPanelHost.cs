@@ -74,6 +74,7 @@ public sealed class WebPanelHost : IDisposable
             MaxBodyBytes = Math.Clamp(_config.Limits.MaxBodyBytes, 256, 64 * 1024),
             RequestTimeoutSec = Math.Clamp(_config.Limits.RequestTimeoutSec, 1, 120),
             MaxConnectionsPerIp = Math.Clamp(_config.Limits.MaxConnectionsPerIp, 1, 64),
+            MaxConnectionsTotal = Math.Clamp(_config.Limits.MaxConnectionsTotal, 16, 4096),
         };
 
         _router = new WebPanelRouter(
