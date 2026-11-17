@@ -169,6 +169,35 @@ public sealed class WebClientAddressTests
     }
 
     [Fact]
+    public void A_crowd_behind_one_proxy_gets_one_bucket_each()
+    {
+        // Сквозной сценарий #62: один прокси, много людей, у каждого свой лимит.
+        // Общий бакет на всех — это и был массовый 429.
+        var limiter = new WebRateLimiter
+        {
+            RequestsPerSecond = 30,
+            RefusalsBeforeBlock = 5,
+            RefusalWindowSec = 10,
+            BlockDurationSec = 60,
+        };
+
+        var visitors = new[] { "198.51.100.7", "198.51.100.8", "203.0.113.9", "203.0.113.10" };
+        foreach (var visitor in visitors)
+        {
+            var address = WebClientAddress.Resolve(
+                ProxyOnLan, With("X-Forwarded-For", visitor));
+            Assert.NotNull(address);
+
+            // Страница гостя: запрос + четыре её параллельных запроса.
+            for (var i = 0; i < 5; i++)
+                Assert.True(limiter.Check(address).Allowed, $"гость {visitor} отказан на {i + 1}-м запросе");
+        }
+
+        // Адрес прокси в лимитах вообще не участвует.
+        Assert.Equal(4, limiter.TrackedCount);
+    }
+
+    [Fact]
     public void Null_peer_stays_null()
     {
         // Тесты роутера вызывают контекст без сокета — «улучшать» нечего.

@@ -36,6 +36,8 @@ public sealed class WebPanelServer : IDisposable
     private readonly object _connGate = new();
     private readonly Dictionary<IPAddress, int> _activeByIp = new();
     private int _activeTotal;
+    private readonly Dictionary<IPAddress, DateTime> _lastRefusalLog = new();
+    private readonly Func<DateTime> _clock;
 
     private TcpListener? _listener;
     private Task? _acceptLoop;
@@ -44,10 +46,12 @@ public sealed class WebPanelServer : IDisposable
 
     public WebPanelServer(
         WebPanelOptions options,
-        Func<WebRequestContext, WebResponse> router)
+        Func<WebRequestContext, WebResponse> router,
+        Func<DateTime>? clock = null)
     {
         _options = options;
         _router = router;
+        _clock = clock ?? (() => DateTime.UtcNow);
         _limiter = new WebRateLimiter
         {
             RequestsPerSecond = options.Limits.RequestsPerSecond,
@@ -190,8 +194,7 @@ public sealed class WebPanelServer : IDisposable
                 if (!decision.Allowed)
                 {
                     Interlocked.Increment(ref _requestsRejected);
-                    Console.WriteLine(
-                        $"[web] {remote} отказ ({decision.Reason}) — Retry-After {decision.RetryAfterSec}s");
+                    LogRefusal(remote, decision);
                     await WriteRawAsync(client, WebResponse.Throttled(decision.RetryAfterSec), token)
                         .ConfigureAwait(false);
                     return;
@@ -277,6 +280,41 @@ public sealed class WebPanelServer : IDisposable
             try { client.Close(); }
             catch { /* уже закрыт */ }
         }
+    }
+
+    /// <summary>
+    /// Строка об отказе — не чаще раза в секунду на адрес.
+    /// </summary>
+    /// <remarks>
+    /// Флуд — это именно тот момент, когда писать в консоль на каждый запрос нельзя:
+    /// синхронная запись превращает защиту от нагрузки в её источник. Один адрес виден
+    /// в журнале раз в секунду, а первое попадание в паузу пишется всегда — по нему и
+    /// видно, что блокировка сработала.
+    /// </remarks>
+    private void LogRefusal(IPAddress? address, WebRateLimiter.Decision decision)
+    {
+        var now = _clock();
+        lock (_connGate)
+        {
+            if (address is not null
+                && _lastRefusalLog.TryGetValue(address, out var last)
+                && now - last < TimeSpan.FromSeconds(1))
+                return;
+            if (address is not null)
+                _lastRefusalLog[address] = now;
+
+            // Чистим редко и дёшево: словарь не должен расти до размера интернета.
+            if (_lastRefusalLog.Count > 4096)
+            {
+                foreach (var stale in _lastRefusalLog
+                             .Where(kv => now - kv.Value > TimeSpan.FromSeconds(60))
+                             .Select(kv => kv.Key).ToList())
+                    _lastRefusalLog.Remove(stale);
+            }
+        }
+
+        Console.WriteLine(
+            $"[web] {address} отказ ({decision.Reason}) — Retry-After {decision.RetryAfterSec}s");
     }
 
     private bool TryAddConnection(IPAddress? address)
