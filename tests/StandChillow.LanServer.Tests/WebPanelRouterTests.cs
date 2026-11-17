@@ -441,13 +441,17 @@ public sealed class WebPanelRouterTests
         Assert.Contains("<base href=\"/vlalchillow/\">", html);
     }
 
+    /// <summary>
+    /// В корне базовый адрес — <c>/</c>: страница должна объявлять его явно, иначе
+    /// открытая по адресу без слеша на конце отдаст медиа мимо своего каталога.
+    /// </summary>
     [Fact]
-    public void PageWithoutBasePathHasNoBaseTag()
+    public void PageInRootStillDeclaresItsBase()
     {
         var router = NewRouter(out _);
         var html = Body(router.Route(Get("/")));
 
-        Assert.DoesNotContain("<base", html);
+        Assert.Contains("<base href=\"/\">", html);
     }
 
     [Fact]

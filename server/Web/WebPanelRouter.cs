@@ -157,29 +157,39 @@ public sealed partial class WebPanelRouter
     }
 
     /// <summary>
-    /// HTML страницы. Панель под подпутём (<c>example.com/vlalchillow/</c>) отдаёт её с
-    /// <c>&lt;base href="/vlalchillow/"&gt;</c>: иначе относительные ссылки на медиа
-    /// (<c>media/hero.mp4</c>, шрифты) поехали бы в корень домена и мимо прокси.
+    /// HTML страницы, всегда с явным <c>&lt;base&gt;</c>.
     /// </summary>
+    /// <remarks>
+    /// Панель под подпутём (<c>example.com/vlalchillow/</c>) отдаёт <c>/vlalchillow/</c>,
+    /// в корне — <c>/</c>. Без этого относительные ссылки на медиа (<c>media/hero.mp4</c>,
+    /// шрифты, скриншоты) разрешались бы от адреса страницы, и при открытии
+    /// <c>example.com/vlalchillow</c> без слеша уехали бы в корень домена — мимо прокси.
+    /// Явный базовый адрес делает поведение одинаковым во всех конфигурациях.
+    /// </remarks>
     private string IndexHtml()
     {
-        var html = _indexHtml();
-        var basePath = _options.BasePath;
-        if (string.IsNullOrEmpty(basePath)) return html;
-        if (_indexWithBase is null) _indexWithBase = InjectBase(html, basePath);
+        if (_indexWithBase is null)
+        {
+            var basePath = _options.BasePath;
+            var href = string.IsNullOrEmpty(basePath)
+                ? "/"
+                : "/" + basePath.Trim().Trim('/') + "/";
+            _indexWithBase = InjectBase(_indexHtml(), href);
+        }
+
         return _indexWithBase;
     }
 
     /// <summary>
-    /// Вставить <c>&lt;base&gt;</c> сразу после <c>&lt;head&gt;</c>. Пробелы в адресе уже
-    /// недопустимы (см. <c>WebPanelHost</c>), но на всякий случай экранируем кавычку.
+    /// Вставить <c>&lt;base&gt;</c> сразу после <c>&lt;head&gt;</c>. Адрес приходит только
+    /// из <c>config.json</c> (без пробелов и кавычек), но экранируем на всякий случай.
     /// </summary>
-    private static string InjectBase(string html, string basePath)
+    private static string InjectBase(string html, string href)
     {
         var at = html.IndexOf("<head>", StringComparison.Ordinal);
         if (at < 0) return html;
-        var href = "/" + basePath.Trim().Trim('/') + "/";
-        return html.Insert(at + "<head>".Length, "\n<base href=\"" + href.Replace("\"", "&quot;") + "\">");
+        return html.Insert(at + "<head>".Length,
+            "\n<base href=\"" + href.Replace("\"", "&quot;") + "\">");
     }
 
     /// <summary>
