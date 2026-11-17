@@ -92,7 +92,10 @@ public sealed class WebPanelRouterTests
 
         Assert.Equal(200, response.Status);
         Assert.Contains("text/html", response.ContentType);
-        Assert.Equal(IndexHtml, Body(response));
+        // страница всегда с явным <base> — см. PageInRootStillDeclaresItsBase.
+        var html = Body(response);
+        Assert.Contains("<base href=\"/\">", html);
+        Assert.Contains("<title>тест</title>", html);
     }
 
     [Fact]
