@@ -143,8 +143,9 @@ public sealed class WebPanelServer : IDisposable
             client.ReceiveTimeout = _options.Limits.RequestTimeoutSec * 1000;
             client.SendTimeout = _options.Limits.RequestTimeoutSec * 1000;
 
-            // Предохранитель на весь сайт: сколько сокетов панель держит одновременно,
-            // что бы люди ни открывали. Адресный кап — ниже, когда уже ясно, чей запрос.
+            // Предохранитель на весь сайт: сколько сокетов панель держит одновременно.
+            // Адрес клиента станет известен только после чтения заголовков, а память
+            // надо защищать раньше — поэтому этот кап первый и самый широкий.
             if (!TryAddConnectionTotal())
             {
                 Interlocked.Increment(ref _requestsRejected);
@@ -155,11 +156,11 @@ public sealed class WebPanelServer : IDisposable
 
             try
             {
-                var request = await ReadRequestAsync(client, token).ConfigureAwait(false);
-                if (request is null)
+                var head = await ReadHeadAsync(client, token).ConfigureAwait(false);
+                if (head is null)
                 {
-                    // Разобрать не удалось — чей это запрос, не знает никто, включая
-                    // прокси. Отказ засчитывается прямому отправителю.
+                    // Заголовки разобрать не удалось: чей это запрос, не знает никто,
+                    // включая прокси. Отказ засчитываем прямому отправителю.
                     _limiter.NoteRefusal(peer);
                     Interlocked.Increment(ref _requestsRejected);
                     await WriteRawAsync(client, WebResponse.Text("400", 400), token)
@@ -171,10 +172,34 @@ public sealed class WebPanelServer : IDisposable
                 // их одним клиентом нельзя — толпа выжигает общий лимит, и 429 получают
                 // все, даже те, кто только открыл сайт. Прокси ставит реальный адрес в
                 // X-Forwarded-For; WebClientAddress решает, когда ему можно верить.
-                var remote = WebClientAddress.Resolve(peer, request.Headers);
+                var remote = WebClientAddress.Resolve(peer, head.Headers);
 
-                // Соединений с одного клиента — не больше лимита: браузеру хватает
-                // пары параллельных (страница + JSON), а скрипту с сотней сокетов — нет.
+                // Тело больше лимита: это 413 «слишком большое», а не 400. В счётчик
+                // отказов не идёт — панель просто так не принимает ничего крупного.
+                if (head.TooLarge)
+                {
+                    Interlocked.Increment(ref _requestsRejected);
+                    await WriteRawAsync(client, WebResponse.TooLarge(), token)
+                        .ConfigureAwait(false);
+                    return;
+                }
+
+                // Лимит частоты — до всего остального: он про людей, а не про сокеты, и
+                // проверять его надо даже тогда, когда соединения с адреса уже заняты.
+                var decision = _limiter.Check(remote);
+                if (!decision.Allowed)
+                {
+                    Interlocked.Increment(ref _requestsRejected);
+                    Console.WriteLine(
+                        $"[web] {remote} отказ ({decision.Reason}) — Retry-After {decision.RetryAfterSec}s");
+                    await WriteRawAsync(client, WebResponse.Throttled(decision.RetryAfterSec), token)
+                        .ConfigureAwait(false);
+                    return;
+                }
+
+                // Соединений с одного клиента — не больше лимита. Браузер открывает
+                // несколько параллельно (страница + её JSON), поэтому запас нужен;
+                // скрипт с сотней сокетов в лимит не пролезет.
                 if (!TryAddConnection(remote))
                 {
                     Interlocked.Increment(ref _requestsRejected);
@@ -185,13 +210,15 @@ public sealed class WebPanelServer : IDisposable
 
                 try
                 {
-                    var decision = _limiter.Check(remote);
-                    if (!decision.Allowed)
+                    var body = await ReadBodyAsync(client, head, token).ConfigureAwait(false);
+                    if (body is null)
                     {
+                        // Тело не пришло целиком (обрыв или таймаут) — виноват не сервер,
+                        // поэтому это идёт в счётчик отказов. «Больше лимита» отсекается
+                        // раньше, в ReadHeadAsync, и туда же пишет NoteRefusal.
+                        _limiter.NoteRefusal(remote);
                         Interlocked.Increment(ref _requestsRejected);
-                        Console.WriteLine(
-                            $"[web] {remote} отказ ({decision.Reason}) — Retry-After {decision.RetryAfterSec}s");
-                        await WriteRawAsync(client, WebResponse.Throttled(decision.RetryAfterSec), token)
+                        await WriteRawAsync(client, WebResponse.Text("400", 400), token)
                             .ConfigureAwait(false);
                         return;
                     }
@@ -200,21 +227,27 @@ public sealed class WebPanelServer : IDisposable
                     try
                     {
                         response = _router(new WebRequestContext(
-                            request.Method,
-                            request.Path,
-                            request.Query,
-                            request.Body,
+                            head.Method,
+                            head.Path,
+                            head.Query,
+                            body,
                             remote,
-                            request.Headers));
+                            head.Headers));
                     }
                     catch (Exception ex)
                     {
-                        Console.WriteLine($"[web] {request.Method} {request.Path} упал: {ex}");
+                        Console.WriteLine($"[web] {head.Method} {head.Path} упал: {ex}");
                         response = WebResponse.Text("500", 500);
                     }
 
                     Interlocked.Increment(ref _requestsServed);
-                    if (response.Status >= 400)
+
+                    // Отказом засчитываем только решение самого лимита (уже сделано выше).
+                    // Ответы API — 401 «нет входа», 404 «нет такой комнаты», 409 «уже есть
+                    // комната» — штатные: аноним открывает страницу и сразу получает 401
+                    // от /api/me и /api/avatar. Считать их упорством значило бы банить
+                    // гостя за обычный заход, а именно это и давало массовые 429.
+                    if (response.Status >= 500)
                         _limiter.NoteRefusal(remote);
 
                     await WriteRawAsync(client, response, token).ConfigureAwait(false);
@@ -304,14 +337,18 @@ public sealed class WebPanelServer : IDisposable
         }
     }
 
-    private sealed record RawRequest(
+    /// <summary>Заголовки и первая строка запроса: всё, что нужно до проверки адреса.</summary>
+    /// <param name="TooLarge">Тело больше лимита — это 413, а не 400.</param>
+    private sealed record RawHead(
         string Method,
         string Path,
         string Query,
-        byte[] Body,
-        Dictionary<string, string> Headers);
+        Dictionary<string, string> Headers,
+        int BodyLength,
+        byte[] BodyPrefix,
+        bool TooLarge = false);
 
-    private async Task<RawRequest?> ReadRequestAsync(TcpClient client, CancellationToken token)
+    private async Task<RawHead?> ReadHeadAsync(TcpClient client, CancellationToken token)
     {
         var stream = client.GetStream();
         var headerLimit = Math.Max(1024, _options.Limits.MaxHeaderBytes);
@@ -396,29 +433,58 @@ public sealed class WebPanelServer : IDisposable
             if (!int.TryParse(rawLength, out bodyLength) || bodyLength < 0)
                 return null;
             if (bodyLength > _options.Limits.MaxBodyBytes)
-                return null;
+            {
+                return new RawHead(method, path, query, headers, bodyLength,
+                    Array.Empty<byte>(), TooLarge: true);
+            }
         }
 
-        var body = new byte[bodyLength];
-        var bodyFilled = Math.Max(0, filled - (headerEnd + 4));
-        if (bodyFilled > 0)
-        {
-            var copy = Math.Min(bodyFilled, bodyLength);
-            Array.Copy(buffer, headerEnd + 4, body, 0, copy);
-        }
+        // Тело, дочитанное вместе с заголовками, отдаём дальше — из сокета оно уже ушло.
+        var prefixLength = Math.Clamp(filled - (headerEnd + 4), 0, bodyLength);
+        var prefix = prefixLength == 0 ? Array.Empty<byte>() : new byte[prefixLength];
+        if (prefixLength > 0)
+            Array.Copy(buffer, headerEnd + 4, prefix, 0, prefixLength);
 
-        while (bodyFilled < bodyLength)
+        return new RawHead(method, path, query, headers, bodyLength, prefix);
+    }
+
+    /// <summary>
+    /// Дочитать тело. <c>null</c> — тело не пришло целиком (клиент ушёл/таймаут);
+    /// «больше лимита» отсекается ещё в <see cref="ReadHeadAsync"/>.
+    /// </summary>
+    private async Task<byte[]?> ReadBodyAsync(
+        TcpClient client, RawHead head, CancellationToken token)
+    {
+        if (head.BodyLength == 0)
+            return Array.Empty<byte>();
+
+        var body = new byte[head.BodyLength];
+        var have = head.BodyPrefix.Length;
+        if (have > 0)
+            Array.Copy(head.BodyPrefix, body, have);
+
+        var stream = client.GetStream();
+        while (have < body.Length)
         {
             using var timeout = CancellationTokenSource.CreateLinkedTokenSource(token);
             timeout.CancelAfter(TimeSpan.FromSeconds(_options.Limits.RequestTimeoutSec));
-            var read = await stream.ReadAsync(body.AsMemory(bodyFilled), timeout.Token)
-                .ConfigureAwait(false);
+            int read;
+            try
+            {
+                read = await stream.ReadAsync(body.AsMemory(have), timeout.Token)
+                    .ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                return null;
+            }
+
             if (read <= 0)
                 return null;
-            bodyFilled += read;
+            have += read;
         }
 
-        return new RawRequest(method, path, query, body, headers);
+        return body;
     }
 
     private static int FindHeaderEnd(byte[] buffer, int length)
@@ -528,14 +594,19 @@ public sealed class WebPanelOptions
     /// <summary>Копия лимитов с уже применёнными ограничениями конфига.</summary>
     public sealed class WebLimits
     {
-        public int RequestsPerSecond { get; init; } = 10;
+        public int RequestsPerSecond { get; init; } = 30;
         public int RefusalsBeforeBlock { get; init; } = 5;
         public int RefusalWindowSec { get; init; } = 10;
         public int BlockDurationSec { get; init; } = 60;
         public int MaxHeaderBytes { get; init; } = 8 * 1024;
         public int MaxBodyBytes { get; init; } = 4 * 1024;
         public int RequestTimeoutSec { get; init; } = 5;
-        public int MaxConnectionsPerIp { get; init; } = 4;
+
+        /// <summary>
+        /// Не меньше числа параллельных запросов одной загрузки страницы
+        /// (каталог, профиль, комнаты, сводка): иначе 429 получает первый же гость.
+        /// </summary>
+        public int MaxConnectionsPerIp { get; init; } = 8;
         public int MaxConnectionsTotal { get; init; } = 256;
     }
 }
@@ -580,5 +651,16 @@ public sealed record WebResponse(
         "text/plain; charset=utf-8",
         Encoding.UTF8.GetBytes("429"),
         Math.Max(1, retryAfterSec),
+        Array.Empty<(string, string)>());
+
+    /// <summary>
+    /// Тело больше лимита. <c>Retry-After</c> тоже отдаём: страница не должна повторять
+    /// тот же запрос сразу, иначе она просто повторит ошибку.
+    /// </summary>
+    public static WebResponse TooLarge() => new(
+        413,
+        "text/plain; charset=utf-8",
+        Encoding.UTF8.GetBytes("413"),
+        2,
         Array.Empty<(string, string)>());
 }

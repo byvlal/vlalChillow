@@ -297,8 +297,15 @@ public sealed class WebConfig
 /// </summary>
 public sealed class WebLimitsConfig
 {
-    /// <summary>Запросов в секунду с одного IP; больше — 429 с Retry-After.</summary>
-    public int RequestsPerSecond { get; set; } = 10;
+    /// <summary>Запросов в секунду с одного адреса; больше — 429 с Retry-After.</summary>
+    /// <remarks>
+    /// Бакет — на адрес, а не на человека: за одним NAT (мобильный оператор, клуб,
+    /// общежитие) сидят несколько игроков сразу, и каждому нужно своё обновление раз в
+    /// две секунды. 30 — это примерно дюжина человек за одним адресом с запасом на
+    /// одновременную загрузку страниц (она открывает четыре соединения сразу); одиночный
+    /// гость до него не дотянется (два запроса в секунду).
+    /// </remarks>
+    public int RequestsPerSecond { get; set; } = 30;
 
     /// <summary>После стольких отказов за окно адрес получает паузу.</summary>
     public int RefusalsBeforeBlock { get; set; } = 5;
@@ -323,7 +330,12 @@ public sealed class WebLimitsConfig
     /// адрес из <c>X-Forwarded-For</c> (см. <see cref="Web.WebClientAddress"/>),
     /// а не адрес машины с прокси, иначе кап делили бы все посетители сайта.
     /// </summary>
-    public int MaxConnectionsPerIp { get; set; } = 4;
+    /// <remarks>
+    /// Значение не может быть меньше, чем число запросов одной загрузки страницы:
+    /// страница открывает каталог, профиль, комнаты и сводку параллельно, и кап в 2
+    /// отдавал 429 уже первому гостю. 8 — это две вкладки разом плюс запас.
+    /// </remarks>
+    public int MaxConnectionsPerIp { get; set; } = 8;
 
     /// <summary>
     /// Одновременных соединений на весь сайт — предохранитель, чтобы наплыв людей
@@ -886,7 +898,7 @@ public sealed class ServerConfig
         Web.PublicBaseUrl = (Web.PublicBaseUrl ?? string.Empty).Trim();
 
         Web.Limits.RequestsPerSecond = Check(
-            Web.Limits.RequestsPerSecond, 1, 1000, 10, "web.limits.requestsPerSecond");
+            Web.Limits.RequestsPerSecond, 1, 1000, 30, "web.limits.requestsPerSecond");
         Web.Limits.RefusalsBeforeBlock = Check(
             Web.Limits.RefusalsBeforeBlock, 1, 1000, 5, "web.limits.refusalsBeforeBlock");
         Web.Limits.RefusalWindowSec = Check(
@@ -900,7 +912,7 @@ public sealed class ServerConfig
         Web.Limits.RequestTimeoutSec = Check(
             Web.Limits.RequestTimeoutSec, 1, 120, 5, "web.limits.requestTimeoutSec");
         Web.Limits.MaxConnectionsPerIp = Check(
-            Web.Limits.MaxConnectionsPerIp, 1, 64, 4, "web.limits.maxConnectionsPerIp");
+            Web.Limits.MaxConnectionsPerIp, 1, 64, 8, "web.limits.maxConnectionsPerIp");
         Web.Limits.MaxConnectionsTotal = Check(
             Web.Limits.MaxConnectionsTotal, 16, 4096, 256, "web.limits.maxConnectionsTotal");
     }
@@ -1239,11 +1251,11 @@ public sealed class ServerConfig
     "codeTtlSec": 1800,          // сколько живёт код входа из лобби (30 минут)
 
     "limits": {
-      "requestsPerSecond": 10,   // больше — 429 с Retry-After
+      "requestsPerSecond": 30,   // больше — 429 с Retry-After (на адрес, а не на человека)
       "refusalsBeforeBlock": 5,
       "refusalWindowSec": 10,
       "blockDurationSec": 60,    // пауза для адреса, который долбит
-      "maxConnectionsPerIp": 4,  // одновременных сокетов с одного клиента
+      "maxConnectionsPerIp": 8,  // одновременных сокетов с одного клиента (страница шлёт 5)
       "maxConnectionsTotal": 256 // одновременных сокетов на весь сайт (наплыв людей)
     }
   }

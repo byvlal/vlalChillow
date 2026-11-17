@@ -38,8 +38,20 @@ location /vlalchillow/ {
     # но честный Host нужен для логов и будущих абсолютных ссылок.
     proxy_set_header Host $host;
     proxy_set_header X-Real-IP $remote_addr;
+
+    # X-Forwarded-For ОБЯЗАТЕЛЕН и обязан перезаписываться ($remote_addr).
+    # Без него панель видит одним клиентом саму машину с прокси: у всех
+    # посетителей общий лимит частоты и общий кап соединений, и первый же
+    # поток людей получает 429 — все сразу, включая тех, кто только открыл
+    # страницу. Не заменяй на $proxy_add_x_forwarded_for: тогда первый адрес
+    # в списке сможет подставить сам клиент.
     proxy_set_header X-Forwarded-For $remote_addr;
     proxy_set_header X-Forwarded-Proto $scheme;
+
+    # Если перед этим прокси стоит ещё и CDN (Cloudflare, туннель), $remote_addr
+    # — это адрес CDN, и все посетители снова сливаются в один адрес. Включай
+    # ngx_http_realip_module в http{}: set_real_ip_from <диапазоны CDN>;
+    # real_ip_header CF-Connecting-IP; — тогда $remote_addr станет настоящим.
 
     # Тело запроса — только JSON на одну комнату. 16k с запасом;
     # сам сервер всё равно режет на 4 KB и отвечает 413.

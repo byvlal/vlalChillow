@@ -147,6 +147,27 @@ public sealed class WebClientAddressTests
     }
 
     [Fact]
+    public void Mapped_ipv6_forwarded_address_is_normalised()
+    {
+        // Прокси на dual-mode сокете может прислать «::ffff:198.51.100.7».
+        // Тот же человек должен получить один бакет, а не два.
+        var resolved = WebClientAddress.Resolve(
+            ProxyOnHost, With("X-Forwarded-For", "::ffff:198.51.100.7"));
+
+        Assert.Equal(Visitor, resolved);
+        Assert.Equal(AddressFamily.InterNetwork, resolved!.AddressFamily);
+    }
+
+    [Fact]
+    public void Real_ip_is_trimmed()
+    {
+        var resolved = WebClientAddress.Resolve(
+            ProxyOnHost, With("X-Real-IP", "  198.51.100.7  "));
+
+        Assert.Equal(Visitor, resolved);
+    }
+
+    [Fact]
     public void Null_peer_stays_null()
     {
         // Тесты роутера вызывают контекст без сокета — «улучшать» нечего.

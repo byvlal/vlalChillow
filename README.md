@@ -187,6 +187,15 @@ client sent, and puts **your room** at the top of the list with a «Заверш
 (the same end-of-match path as `/end`; the server re-checks the owner, so nobody else's
 room can be closed).
 
+The page can also be published on the internet behind a reverse proxy. Limits are then
+counted **per real visitor**, not per proxy: the panel takes the client address from
+`X-Forwarded-For`, and only for a request that came from loopback or a private network, so
+a stranger on the internet cannot name himself somebody else. The proxy must **overwrite**
+that header (`$remote_addr`), and the panel must not be exposed directly — without the
+header every visitor shares one bucket, which is exactly how a crowd used to get `429`
+all at once. Behind a CDN, configure real-IP on the proxy first. Details and numbers:
+[`docs/WEB_PANEL.md`](docs/WEB_PANEL.md).
+
 ### Starting a match
 
 Two steps matter:
@@ -240,7 +249,12 @@ The console command `config reload` forces a re-read.
   "debug":   { "verbose": false, "captures": false, "capturesDir": null,
                "capturesMaxFiles": 4000, "capturesMaxBytesMb": 64,
                "matchChat": false, "health": true,
-               "logPackets": false, "logDiscovery": false }
+               "logPackets": false, "logDiscovery": false },
+  "web":     { "enabled": true, "bindAddress": "0.0.0.0", "port": 8080,
+               "basePath": "", "secureCookies": false,
+               "limits": { "requestsPerSecond": 30, "refusalsBeforeBlock": 5,
+                           "refusalWindowSec": 10, "blockDurationSec": 60,
+                           "maxConnectionsPerIp": 8, "maxConnectionsTotal": 256 } }
 }
 ```
 

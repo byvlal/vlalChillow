@@ -34,18 +34,26 @@ public static class WebClientAddress
         IReadOnlyDictionary<string, string>? headers)
     {
         if (directPeer is null || headers is null || !IsTrustedProxyPeer(directPeer))
-            return directPeer;
+            return Normalize(directPeer);
 
         if (headers.TryGetValue("X-Forwarded-For", out var forwarded)
             && TryParseClientIp(forwarded, out var client))
-            return client;
+            return Normalize(client);
 
         if (headers.TryGetValue("X-Real-IP", out var real)
-            && IPAddress.TryParse(real, out var realIp))
-            return realIp;
+            && IPAddress.TryParse(real.Trim(), out var realIp))
+            return Normalize(realIp);
 
-        return directPeer;
+        return Normalize(directPeer);
     }
+
+    /// <summary>
+    /// Один адрес — одно написание. Dual-mode сокет отдаёт IPv4-клиента как
+    /// <c>::ffff:a.b.c.d</c>: без схлопывания тот же человек получил бы два разных бакета
+    /// в лимитах и две разные записи в банах.
+    /// </summary>
+    internal static IPAddress? Normalize(IPAddress? address) =>
+        address is { IsIPv4MappedToIPv6: true } ? address.MapToIPv4() : address;
 
     /// <summary>Первый валидный адрес в списке X-Forwarded-For («client, proxy1, …»).</summary>
     internal static bool TryParseClientIp(string? forwarded, out IPAddress address)
@@ -55,7 +63,8 @@ public static class WebClientAddress
             return false;
         foreach (var raw in forwarded.Split(','))
         {
-            if (IPAddress.TryParse(raw.Trim(), out var parsed))
+            if (IPAddress.TryParse(raw.Trim(), out var parsed) && parsed.AddressFamily is
+                    AddressFamily.InterNetwork or AddressFamily.InterNetworkV6)
             {
                 address = parsed;
                 return true;

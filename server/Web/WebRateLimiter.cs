@@ -28,6 +28,9 @@ public sealed class WebRateLimiter
         public DateTime? BlockedUntilUtc;
         public readonly List<DateTime> Refusals = new();
         public DateTime LastSeenUtc;
+
+        /// <summary>Когда за эту серию отказов уже начислен «штраф».</summary>
+        public DateTime? RefusalChargedAtUtc;
     }
 
     private readonly object _gate = new();
@@ -54,6 +57,12 @@ public sealed class WebRateLimiter
 
     /// <summary>Сколько помнить адрес без активности.</summary>
     public int IdleEvictionSec { get; init; } = 600;
+
+    /// <summary>
+    /// Как часто засчитывается новый штраф за отказы. Параллельный залп запросов одной
+    /// страницы приходит в пределах этой секунды — значит это один штраф, а не пять.
+    /// </summary>
+    public static readonly TimeSpan RefusalChargeInterval = TimeSpan.FromSeconds(1);
 
     /// <summary>
     /// Результат проверки запроса.
@@ -113,11 +122,20 @@ public sealed class WebRateLimiter
             // Успешный проход сбрасывает серию отказов: человек, который пару раз
             // обновил страницу, не должен копить «штраф» всю минуту.
             bucket.Refusals.Clear();
+            bucket.RefusalChargedAtUtc = null;
             return Decision.Allow();
         }
     }
 
-    /// <summary>Записать отказ другого рода (плохой запрос, таймаут) в тот же счётчик.</summary>
+    /// <summary>
+    /// Записать отказ от инфраструктуры (400, 413, таймаут чтения) в тот же счётчик.
+    /// </summary>
+    /// <remarks>
+    /// Сюда попадают только случаи, где виноват сам запрос, а не решение сервера: обычный
+    /// посетитель их не создаёт. Ответы API (401 «нет входа», 404 «нет такого») сюда не
+    /// идут — это штатные ответы, и считать их «упорством» значило бы блокировать
+    /// анонимного гостя за то, что он просто открыл страницу (см. <see cref="ServeAsync"/>).
+    /// </remarks>
     public void NoteRefusal(IPAddress? address)
     {
         if (address is null)
@@ -147,16 +165,37 @@ public sealed class WebRateLimiter
         }
     }
 
+    /// <summary>
+    /// Засчитать один отказ за серию, а не за каждый запрос.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Браузер открывает несколько соединений сразу (страница опрашивает статус, список и
+    /// профиль параллельно), поэтому одна загрузка страницы может дать несколько ответов
+    /// 401/404 одновременно. Считать каждый из них отдельным «упорством» нельзя: пять
+    /// таких ответов — это один заход одного человека, а не пять попыток подряд.
+    /// </para>
+    /// <para>
+    /// Поэтому штраф начисляется не чаще одного раза в секунду: параллельный залп одной
+    /// загрузки — это один штраф, а скрипт, который долбит непрерывно, набирает пять
+    /// штрафов за пять секунд и всё равно получает паузу.
+    /// </para>
+    /// </remarks>
     private void RegisterRefusalLocked(Bucket bucket, DateTime now)
     {
         var window = TimeSpan.FromSeconds(Math.Max(1, RefusalWindowSec));
         bucket.Refusals.RemoveAll(t => now - t > window);
         bucket.Refusals.Add(now);
 
+        if (bucket.RefusalChargedAtUtc is { } charged && now - charged < RefusalChargeInterval)
+            return;
+        bucket.RefusalChargedAtUtc = now;
+
         if (bucket.Refusals.Count >= Math.Max(1, RefusalsBeforeBlock))
         {
             bucket.BlockedUntilUtc = now.AddSeconds(Math.Max(1, BlockDurationSec));
             bucket.Refusals.Clear();
+            bucket.RefusalChargedAtUtc = null;
         }
     }
 
