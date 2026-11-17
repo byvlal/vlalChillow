@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="color-scheme" content="dark light">
 <meta name="theme-color" content="#0b141c">
-<title>влалChillow — свой сервер для Standoff 2</title>
+<title>влалChillow — свой сервер для StandChillow</title>
 <link rel="preload" href="/media/Bebasbolt-1.1.4-release.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="/media/roboto-400-cyrillic.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="preload" href="/media/roboto-400-latin.woff2" as="font" type="font/woff2" crossorigin>
@@ -61,7 +61,7 @@
   --md-sys-typescale-label-small:500 11px/16px;
 }
 
-/* ══ DARK — палитра Standoff 2: тёмный сине-бирюзовый интерфейс игры ══ */
+/* ══ DARK — палитра StandChillow: тёмный сине-бирюзовый интерфейс игры ══ */
 [data-theme="dark"]{
   --md-sys-color-primary:#a9c0de;
   --md-sys-color-on-primary:#0c1721;
@@ -648,12 +648,11 @@ select.md-field__box{
 .md-badge--mine{background:var(--md-sys-color-primary-container);color:var(--md-sys-color-on-primary-container)}
 
 /* ══════════════════════════════════════════════════════════════════
-   ГЛАВНАЯ — стиль Standoff 2 (Cyrillic Bebasbolt + Roboto, как в игре)
+   ГЛАВНАЯ — стиль StandChillow (Cyrillic Bebasbolt + Roboto, как в игре)
    Шрифты отдаёт сам сервер: /media/*.woff2 (вкомпилированы, кэш год).
    ══════════════════════════════════════════════════════════════════ */
 
-/* Bebasbolt — свободный шрифт по мотивам логотипа Standoff 2 (Axlebolt LTD),
-   Wanja01 & Snowy, CC-BY-4.0: https://github.com/Wanja01YT/bebasbolt */
+/* Bebasbolt — свободный шрифт (Wanja01 & Snowy), CC-BY-4.0: https://github.com/Wanja01YT/bebasbolt */
 @font-face{
   font-family:"Bebasbolt";
   src:url("/media/Bebasbolt-1.1.4-release.woff2") format("woff2");
@@ -697,7 +696,7 @@ select.md-field__box{
   font-display:swap;
 }
 
-/* ══ токены главной (якорная палитра — интерфейс Standoff 2) ══ */
+/* ══ токены главной (якорная палитра — интерфейс StandChillow) ══ */
 :root{
   --so-bg:#0b141c;
   --so-bg-2:#0e1d29;
@@ -1685,7 +1684,7 @@ body.so-side-open .so-side{transform:none}
     <h2>СВОЙ СЕРВЕР,<br><em>КОТОРЫЙ ВСЕГДА ОНЛАЙН</em></h2>
     <div class="so-manifesto">
       <p>Не официальный матчмейкинг и не аренда чужого хостинга. <b>Один ПК в квартире</b>,
-         который держит комнаты для друзей — с тем же Standoff 2, что у тебя на телефоне.</p>
+         который держит комнаты для друзей — с тем же StandChillow, что у тебя на телефоне.</p>
       <p>Подключение — по <b>IP и порту 7778</b>: работает и из домашней сети, и извне.
          Ввёл адрес в лобби, взял код в чате — и уже стоишь в очереди на катку.</p>
     </div>
@@ -1723,7 +1722,7 @@ body.so-side-open .so-side{transform:none}
         <span class="so-step__n">01</span>
         <div>
           <div class="so-step__t">ОТКРОЙ «LAN МУЛЬТИПЛЕЕР»</div>
-          <p class="so-step__d">Запусти <b>Standoff 2</b> и в главном меню выбери вкладку
+          <p class="so-step__d">Запусти <b>StandChillow</b> и в главном меню выбери вкладку
              «LAN Мультиплеер» — через неё заходят на сторонние серверы.</p>
         </div>
         <span class="so-step__a"></span>
@@ -1749,7 +1748,7 @@ body.so-side-open .so-side{transform:none}
         <div>
           <div class="so-step__t">ВПИШИ АДРЕС И ПОРТ</div>
           <p class="so-step__d">Например <b>1.2.3.4 : 7778</b>. Порт всегда <b>7778</b>.
-             IP может смениться — свежий всегда в Telegram.</p>
+             Актуальный IP — в <a href="https://t.me/senatorbiop/328" target="_blank" rel="noopener">этом посте</a> в Telegram.</p>
         </div>
         <a class="so-step__a" href="https://t.me/vlalikoffcChillow" target="_blank" rel="noopener">В ТЕЛЕГРАМ →</a>
       </div>
@@ -1845,10 +1844,10 @@ body.so-side-open .so-side{transform:none}
       </div>
       <div class="so-foot__brand">ВЛАЛCHILLOW — СВОЙ СЕРВЕР, СВОИ КАТКИ</div>
       <p class="so-foot__credit">
-        © 2026 vlalChillow. Standoff 2 — торговая марка Axlebolt LTD; это фан-проект
-        для игры на своём сервере и он не связан с разработчиком. Шрифт
+        © 2026 vlalChillow — фан-проект для игры на своём сервере, не связан
+        с правообладателями игры. Шрифт
         <a href="https://github.com/Wanja01YT/bebasbolt" target="_blank" rel="noopener">Bebasbolt</a>
-        — Wanja01 &amp; Snowy, по мотивам логотипа Standoff 2 (Axlebolt LTD), лицензия CC-BY-4.0.
+        — Wanja01 &amp; Snowy, лицензия CC-BY-4.0.
       </p>
     </div>
   </footer>
@@ -1934,14 +1933,14 @@ body.so-side-open .so-side{transform:none}
         <span class="so-doc__n">01</span>
         <div>
           <div class="so-doc__t">ОТКРОЙ «LAN МУЛЬТИПЛЕЕР»</div>
-          <p class="so-doc__d">Запусти <b>Standoff 2</b>. В главном меню есть вкладка
+          <p class="so-doc__d">Запусти <b>StandChillow</b>. В главном меню есть вкладка
              <b>«LAN Мультиплеер»</b> — через неё заходят на сторонние серверы, как наш.
              Жми на неё.</p>
         </div>
       </div>
       <figure class="so-doc__fig">
         <img src="/media/doc-1.jpg" width="1280" height="582" loading="lazy"
-             alt="Главное меню Standoff 2, выделена вкладка LAN Мультиплеер">
+             alt="Главное меню StandChillow, выделена вкладка LAN Мультиплеер">
         <figcaption>Главное меню игры. Вкладка «LAN Мультиплеер» — наш вход на сервер.</figcaption>
       </figure>
     </article>
@@ -1985,8 +1984,8 @@ body.so-side-open .so-side{transform:none}
           <div class="so-doc__t">ВПИШИ АДРЕС И ПОРТ</div>
           <p class="so-doc__d">В поле вводи <b>IP сервера</b>, рядом — порт. Порт всегда один:
              <b>7778</b>. Выглядит это так: <b>1.2.3.4 : 7778</b>.
-             IP может смениться после перезапуска сервера — свежий адрес всегда закреплён
-             в <a href="https://t.me/vlalikoffcChillow" target="_blank" rel="noopener">Telegram</a>.</p>
+             Актуальный IP всегда в этом посте в Telegram:
+             <a href="https://t.me/senatorbiop/328" target="_blank" rel="noopener">https://t.me/senatorbiop/328</a>.</p>
         </div>
       </div>
       <figure class="so-doc__fig">
@@ -2188,10 +2187,10 @@ body.so-side-open .so-side{transform:none}
       </div>
       <div class="so-foot__brand">ВЛАЛCHILLOW — СВОЙ СЕРВЕР, СВОИ КАТКИ</div>
       <p class="so-foot__credit">
-        © 2026 vlalChillow. Standoff 2 — торговая марка Axlebolt LTD; это фан-проект
-        для игры на своём сервере и он не связан с разработчиком. Шрифт
+        © 2026 vlalChillow — фан-проект для игры на своём сервере, не связан
+        с правообладателями игры. Шрифт
         <a href="https://github.com/Wanja01YT/bebasbolt" target="_blank" rel="noopener">Bebasbolt</a>
-        — Wanja01 &amp; Snowy, по мотивам логотипа Standoff 2 (Axlebolt LTD), лицензия CC-BY-4.0.
+        — Wanja01 &amp; Snowy, лицензия CC-BY-4.0.
       </p>
     </div>
   </footer>
@@ -2304,7 +2303,7 @@ body.so-side-open .so-side{transform:none}
             <div class="so-result__t">Комната открыта — осталось войти</div>
             <ol class="so-steps">
               <li><b>Команда входа уже скопирована</b> — она ниже; потерялась — жми «Скопировать»</li>
-              <li>Открой <b>чат лобби</b> в Standoff 2</li>
+              <li>Открой <b>чат лобби</b> в StandChillow</li>
               <li>Вставь команду и отправь — <b>сервер сам закинет тебя в комнату</b></li>
             </ol>
             <div class="so-formrow" style="margin-top:14px">
@@ -2346,7 +2345,7 @@ body.so-side-open .so-side{transform:none}
     <h2 class="so-dlg__t" id="join-dialog-title">Команда скопирована</h2>
     <ol class="so-steps so-steps--dlg">
       <li>Команда уже в буфере — нет так нет, жми «Скопировать ещё раз»</li>
-      <li>Открой <b>чат лобби</b> в Standoff 2</li>
+      <li>Открой <b>чат лобби</b> в StandChillow</li>
       <li>Вставь и отправь — <b>сервер сам закинет тебя в комнату</b></li>
     </ol>
     <input class="so-cmd" id="join-cmd" readonly aria-label="Команда входа в комнату">
