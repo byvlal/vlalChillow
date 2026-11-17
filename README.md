@@ -187,6 +187,17 @@ client sent, and puts **your room** at the top of the list with a «Заверш
 (the same end-of-match path as `/end`; the server re-checks the owner, so nobody else's
 room can be closed).
 
+The page can also be published on the internet behind a reverse proxy. Limits are then
+counted **per real visitor**, not per proxy: the panel takes the client address from
+`X-Forwarded-For`, and only for a request that came from loopback or a private network, so
+a stranger on the internet cannot name himself somebody else. Without the header (panel
+exposed directly, or a proxy that does not send it) every visitor shares one bucket, so the
+limits count the proxy instead of the person; such a shared bucket is deliberately **never**
+put on the long pause, only on the one-second rate limit, so no single flood can take the
+site down for everyone. The proxy should **overwrite** the header (`$remote_addr`); behind a
+CDN, configure real-IP on the proxy so `$remote_addr` is the person, not the edge. Details
+and numbers: [`docs/WEB_PANEL.md`](docs/WEB_PANEL.md).
+
 ### Starting a match
 
 Two steps matter:
@@ -240,7 +251,12 @@ The console command `config reload` forces a re-read.
   "debug":   { "verbose": false, "captures": false, "capturesDir": null,
                "capturesMaxFiles": 4000, "capturesMaxBytesMb": 64,
                "matchChat": false, "health": true,
-               "logPackets": false, "logDiscovery": false }
+               "logPackets": false, "logDiscovery": false },
+  "web":     { "enabled": true, "bindAddress": "0.0.0.0", "port": 8080,
+               "basePath": "", "secureCookies": false,
+               "limits": { "requestsPerSecond": 30, "refusalsBeforeBlock": 5,
+                           "refusalWindowSec": 10, "blockDurationSec": 60,
+                           "maxConnectionsPerIp": 8, "maxConnectionsTotal": 256 } }
 }
 ```
 

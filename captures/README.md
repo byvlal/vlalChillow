@@ -7,6 +7,7 @@
 | `captures.zip` | gold-набор, сессия `20261112_0351..0404` | доказательство, из которого построен декодер матча (RoundEnd `C2=101`, WeaponDrop) |
 | `chat.zip` | пробный клиент у телефон-хоста, `20261114_0444..0445`, 4326 кадров | байт автора ChatManager и `field=1/2` — на это ссылаются README и `MatchChatWireTests` |
 | `grenades.zip` | одна телефонная сессия `20261115_0821..0824`, 11218 кадров | `GrenadeManager` в `CreateWorldObject` + 145 `CustomEvent`: сырьё для гранат |
+| `duel.zip` | пробы дуэли `20261116_0330..0338`, 13588 файлов | id режима `RankedDuel` на проводе (`op7`, `JoinRoomResponse`) — на него ссылается `MatchModeIdWireTests` |
 
 Всё остальное под `captures/` и любые `*.log` остаются вне git (`.gitignore`), а CI
 (`hygiene guard`) падает, если в дереве появится незаявленный дамп. Новый набор

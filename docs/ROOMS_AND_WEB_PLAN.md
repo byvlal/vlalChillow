@@ -120,7 +120,7 @@
 - `WebServer.cs` — приём соединений, лимиты, статика из embedded resource.
 - `WebRouter.cs` — `GET /`, `GET /api/status`, `GET /api/rooms`, `POST /api/rooms`.
 - `WebLimits.cs` — **защита от флуда без авторизации**: >10 rps с IP → 429; >5 отказов
-  за 10 с → пауза 60 с; заголовки ≤ 8 КБ, тело ≤ 4 КБ, таймаут 5 с, ≤ 2 соединений с IP.
+  за 10 с → пауза 60 с; заголовки ≤ 8 КБ, тело ≤ 4 КБ, таймаут 5 с, ≤ 8 соединений с клиента.
 - `StatusSnapshotCache.cs` — снимок раз в секунду с тика; HTTP **никогда** не берёт
   блокировки горячего пути (тот же приём, что `MatchPerf`).
 - `wwwroot/index.html` — макет из `.panel-mock/` (Material You, tonal-spot палитра),

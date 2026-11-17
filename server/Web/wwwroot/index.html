@@ -1411,7 +1411,24 @@ function describeError(data, status){
 }
 
 /* ═══════════ запросы к серверу ═══════════ */
+
+/* «Не сейчас» по мнению сервера: 429 приходит с Retry-After. Пауза касается только
+   фоновых GET: иначе обновление раз в 2 секунды само себя загоняет в блокировку и
+   сайт надолго выглядит мёртвым. Действия человека (вход, создание комнаты) уходят
+   всегда — на них человек ждёт ответа, и соврём ему молчанием нельзя. */
+var quietUntil = 0;
+function quietLeftMs(){ return Math.max(0, quietUntil - Date.now()); }
+function noteRetryAfter(res){
+  if (!res || res.status !== 429) return;
+  var sec = parseInt(res.retryAfter, 10);
+  if (!isFinite(sec) || sec <= 0) sec = 2;
+  quietUntil = Date.now() + Math.min(sec, 120) * 1000;
+}
+
 function api(method, path, body){
+  if (method === 'GET' && quietLeftMs() > 0){
+    return Promise.resolve({ ok: false, status: 429, data: null, retryAfter: null, quiet: true });
+  }
   var opts = { method: method, headers: {}, cache: 'no-store' };
   if (body !== undefined){
     opts.headers['Content-Type'] = 'application/json';
@@ -1421,7 +1438,9 @@ function api(method, path, body){
     return r.text().then(function(text){
       var data = null;
       try { data = text ? JSON.parse(text) : null; } catch (e) { data = null; }
-      return { ok: r.ok, status: r.status, data: data, retryAfter: r.headers.get('Retry-After') };
+      var res = { ok: r.ok, status: r.status, data: data, retryAfter: r.headers.get('Retry-After') };
+      if (method === 'GET') noteRetryAfter(res);
+      return res;
     });
   });
 }
@@ -1581,6 +1600,7 @@ else init();
    никакой случайной генерации: цифры на экране должны совпадать с реальностью. */
 setInterval(function(){
   if (document.hidden) return;
+  if (quietLeftMs() > 0) return;  /* сервер попросил паузу — не долбим */
   loadRooms().then(function(){
     loadStatus().then(function(){
       renderStats();

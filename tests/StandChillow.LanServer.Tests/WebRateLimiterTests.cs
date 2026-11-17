@@ -69,23 +69,20 @@ public sealed class WebRateLimiterTests
     }
 
     [Fact]
-    public void FiveRefusalsTriggerBlock()
+    public void FiveRefusalBurstsTriggerBlock()
     {
+        // Пять секунд подряд, в каждой по залпу отказов. Один отказ в секунду — это
+        // долбящий клиент, и он получает паузу; параллельный залп внутри секунды
+        // считается одним штрафом (см. ParallelRefusalsAreOneStrike).
         var clock = new Clock();
         var limiter = NewLimiter(clock);
 
-        // Пять «лишних» запросов подряд — каждый следующий отказ копит счётчик.
-        for (var i = 0; i < 10; i++)
-            limiter.Check(A);
-
-        WebRateLimiter.Decision last = default;
         for (var i = 0; i < 5; i++)
-            last = limiter.Check(A);
+        {
+            limiter.NoteRefusal(A);
+            clock.Advance(1);
+        }
 
-        Assert.False(last.Allowed);
-
-        // Теперь даже через секунду — пауза.
-        clock.Advance(1);
         var blocked = limiter.Check(A);
         Assert.False(blocked.Allowed);
         Assert.Equal("blocked", blocked.Reason);
@@ -98,10 +95,11 @@ public sealed class WebRateLimiterTests
         var clock = new Clock();
         var limiter = NewLimiter(clock);
 
-        for (var i = 0; i < 10; i++)
-            limiter.Check(A);
         for (var i = 0; i < 5; i++)
-            limiter.Check(A);
+        {
+            limiter.NoteRefusal(A);
+            clock.Advance(1);
+        }
         Assert.Equal("blocked", limiter.Check(A).Reason);
 
         clock.Advance(61);
@@ -115,13 +113,11 @@ public sealed class WebRateLimiterTests
         var clock = new Clock();
         var limiter = NewLimiter(clock);
 
-        // Каждую секунду по одному лишнему запросу: окно 10 с чистит старые.
+        // Один отказ на окно и пауза больше окна: серии не набегает.
         for (var i = 0; i < 30; i++)
         {
-            for (var j = 0; j < 10; j++)
-                limiter.Check(A);
-            limiter.Check(A); // отказ
-            clock.Advance(11); // уходим за окно отказов
+            limiter.NoteRefusal(A); // отказ
+            clock.Advance(11);      // уходим за окно отказов
         }
 
         // Никакого «накопленного штрафа» — следующий запрос проходит.
@@ -158,8 +154,12 @@ public sealed class WebRateLimiterTests
         for (var i = 0; i < 10; i++)
             limiter.Check(A);
 
-        // После сброса нужно снова 5 отказов, а не 1.
-        Assert.Equal("rate", limiter.Check(A).Reason);
+        // После сброса нужно снова 5 отказов, а не 1: один лишний запрос — только «rate»,
+        // и адрес по-прежнему не заблокирован.
+        var afterReset = limiter.Check(A);
+        Assert.Equal("rate", afterReset.Reason);
+        clock.Advance(1);
+        Assert.True(limiter.Check(A).Allowed);
     }
 
     [Fact]
@@ -168,8 +168,99 @@ public sealed class WebRateLimiterTests
         var clock = new Clock();
         var limiter = NewLimiter(clock);
 
+        // Упорный мусорный поток: по отказу в секунду — это долбящий клиент.
+        for (var i = 0; i < 5; i++)
+        {
+            limiter.NoteRefusal(A);
+            clock.Advance(1);
+        }
+
+        Assert.Equal("blocked", limiter.Check(A).Reason);
+    }
+
+    [Fact]
+    public void ParallelRefusalsAreOneStrike()
+    {
+        // Одна загрузка страницы даёт несколько ответов сразу (аноним получает 401 от
+        // /api/me и /api/avatar, плюс 404 от кривого пути). Это один человек и один
+        // заход, а не пять попыток подряд: штраф за серию — один.
+        var clock = new Clock();
+        var limiter = NewLimiter(clock);
+
+        for (var i = 0; i < 12; i++)
+            limiter.NoteRefusal(A);
+
+        Assert.True(limiter.Check(A).Allowed);
+        Assert.NotEqual("blocked", limiter.Check(A).Reason);
+    }
+
+    [Fact]
+    public void NeighboursBehindOneNatDoNotBlockEachOther()
+    {
+        // Пять человек из одного дома (один NAT) открыли сайт одновременно — каждый
+        // получил 401 от профиля. Никто не должен попасть в блокировку из-за соседей.
+        var clock = new Clock();
+        var limiter = NewLimiter(clock);
+
         for (var i = 0; i < 5; i++)
             limiter.NoteRefusal(A);
+
+        for (var i = 0; i < 10; i++)
+            Assert.True(limiter.Check(A).Allowed);
+
+        clock.Advance(1);
+        Assert.True(limiter.Check(A).Allowed);
+    }
+
+    [Fact]
+    public void SharedBucketNeverGetsTheLongPause()
+    {
+        // Панель открыта наружу мимо прокси: адрес у всех один, посетителей не различить.
+        // Пусть его долбят непрерывно — остальные всё равно проходят: долгой паузы нет,
+        // есть только посекундный лимит, который снимается через секунду.
+        var clock = new Clock();
+        var limiter = NewLimiter(clock);
+
+        for (var second = 0; second < 10; second++)
+        {
+            for (var i = 0; i < 40; i++)
+                limiter.Check(A, sharedBucket: true);
+            clock.Advance(1);
+        }
+
+        var decision = limiter.Check(A, sharedBucket: true);
+        Assert.True(decision.Allowed);
+        Assert.NotEqual("blocked", decision.Reason);
+    }
+
+    [Fact]
+    public void SharedBucketStillGetsThePerSecondLimit()
+    {
+        // Гарантия «сайт не залипнет» не значит «флуд бесплатен»: в пределах секунды
+        // лишние запросы с общего адреса всё равно получают 429 и Retry-After 1.
+        var clock = new Clock();
+        var limiter = NewLimiter(clock);
+        for (var i = 0; i < 10; i++)
+            limiter.Check(A, sharedBucket: true);
+
+        var decision = limiter.Check(A, sharedBucket: true);
+        Assert.False(decision.Allowed);
+        Assert.Equal("rate", decision.Reason);
+        Assert.Equal(1, decision.RetryAfterSec);
+    }
+
+    [Fact]
+    public void KnownVisitorStillGetsTheFullProtection()
+    {
+        // А вот когда посетитель известен (заголовок от своего прокси), долбящий адрес
+        // получает обычную паузу — защита не ослабла.
+        var clock = new Clock();
+        var limiter = NewLimiter(clock);
+        for (var i = 0; i < 5; i++)
+        {
+            limiter.NoteRefusal(A);
+            clock.Advance(1);
+        }
 
         Assert.Equal("blocked", limiter.Check(A).Reason);
     }
