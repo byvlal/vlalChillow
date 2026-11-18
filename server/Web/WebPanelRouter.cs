@@ -5,6 +5,7 @@ using StandChillow.LanServer.Bans;
 using StandChillow.LanServer.Config;
 using StandChillow.LanServer.Net.Lobby;
 using StandChillow.LanServer.Net.Match.Kernel;
+using StandChillow.LanServer.Reports;
 using StandChillow.LanServer.Stats;
 
 namespace StandChillow.LanServer.Web;
@@ -85,6 +86,19 @@ public sealed partial class WebPanelRouter
         if (request.Method == "GET" && path == "/api/stats/me")
             return MyStats(request);
 
+        // Публичный профиль и список администрации. Жалобы — только по сессии.
+        if (request.Method == "GET" && path == "/api/player")
+            return PublicPlayer(request);
+
+        if (request.Method == "GET" && path == "/api/administration")
+            return Administration(request);
+
+        if (request.Method == "POST" && path == "/api/reports")
+            return SubmitReport(request);
+
+        if (request.Method == "GET" && path == "/api/reports/mine")
+            return MyReports(request);
+
         // Админ панель: состояние (аноним видит только «не админ ты»), вход и выход —
         // по коду этого запуска. Все данные — только после тройного затвора (Admin.cs).
         if (request.Method == "GET" && path == "/api/admin")
@@ -114,6 +128,13 @@ public sealed partial class WebPanelRouter
         if (request.Method == "POST" && path == "/api/admin/unban")
             return AdminUnban(request);
 
+        // Модерация жалоб — тот же тройной затвор, что у банов.
+        if (request.Method == "GET" && path == "/api/admin/reports")
+            return AdminReports(request);
+
+        if (request.Method == "POST" && path == "/api/admin/reports/status")
+            return AdminReportStatus(request);
+
         if (request.Method == "POST" && path == "/api/rooms")
             return CreateRoom(request);
 
@@ -136,12 +157,15 @@ public sealed partial class WebPanelRouter
         // Метод не тот — это не «нет маршрута», и панель должна сказать честно.
         if (path is "/" or "/index.html" or "/api/status" or "/api/modes"
             or "/api/me" or "/api/avatar" or "/api/stats/me" or "/api/admin"
-            or "/api/admin/lookup" or "/api/admin/avatar" or "/api/admin/bans" or "/healthz")
+            or "/api/admin/lookup" or "/api/admin/avatar" or "/api/admin/bans"
+            or "/api/player" or "/api/administration" or "/api/reports/mine"
+            or "/api/admin/reports" or "/healthz")
             return WithAllow("GET", WebResponse.Text("405", 405));
 
-        if (path is "/api/auth" or "/api/logout"
+        if (path is "/api/auth" or "/api/logout" or "/api/reports"
             or "/api/admin/login" or "/api/admin/logout"
-            or "/api/admin/customid" or "/api/admin/ban" or "/api/admin/unban")
+            or "/api/admin/customid" or "/api/admin/ban" or "/api/admin/unban"
+            or "/api/admin/reports/status")
             return WithAllow("POST", WebResponse.Text("405", 405));
 
         if (path == "/api/rooms")
@@ -560,6 +584,23 @@ public sealed class WebPanelRouterOptions
     /// Серверный id → админ? Из конфига <c>admin.ids</c>. <c>null</c> — админов нет.
     /// </summary>
     public Func<int, bool>? IsAdminById { get; init; }
+
+    // ── Жалобы и публичные профили ──────────────────────────────────────────────
+
+    /// <summary>Хранилище жалоб. <c>null</c> — вкладка «Репорты» отвечает 503.</summary>
+    public ReportStore? Reports { get; init; }
+
+    /// <summary>
+    /// Поиск игрока по числовому или кастомному ID для превью жалобы и публичного
+    /// профиля. <c>null</c> — хост ещё не подключён.
+    /// </summary>
+    public Func<string, ReportTarget?>? ReportPlayerLookup { get; init; }
+
+    /// <summary>
+    /// Список администрации из живого <c>admin.ids</c>. <c>null</c> — хост ещё не
+    /// подключён, страница не должна показывать пустоту как «админов нет».
+    /// </summary>
+    public Func<IReadOnlyList<ReportTarget>?>? AdministrationList { get; init; }
 
     // ── Админ панель ─────────────────────────────────────────────────────────────
 

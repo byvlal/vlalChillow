@@ -7,6 +7,7 @@ using StandChillow.LanServer.Lan;
 using StandChillow.LanServer.Net;
 using StandChillow.LanServer.Net.Lobby;
 using StandChillow.LanServer.Net.Match.Kernel;
+using StandChillow.LanServer.Reports;
 using StandChillow.LanServer.Stats;
 
 namespace StandChillow.LanServer.Web;
@@ -65,11 +66,17 @@ public sealed class WebPanelHost : IDisposable
     /// <summary>Статистика игроков на диске (киллы/смерти/время/матчи).</summary>
     private readonly PlayerStatsStore _stats;
 
+    /// <summary>Жалобы игроков на диске — переживают рестарт.</summary>
+    private readonly ReportStore _reports;
+
     /// <summary>Раз в сколько секунд семплируем комнаты для статистики.</summary>
     private const int StatsSampleSeconds = 15;
 
     /// <summary>Файл статистики — рядом с исполняемым файлом, как banlist.json.</summary>
     private const string StatsFileName = "stats.json";
+
+    /// <summary>Файл жалоб — рядом с остальными данными сервера.</summary>
+    private const string ReportsFileName = "reports.json";
 
     public WebPanelHost(ServerConfig server)
     {
@@ -80,6 +87,9 @@ public sealed class WebPanelHost : IDisposable
         // Статистика живёт на диске рядом с exe: рестарт ничего не теряет.
         _stats = new PlayerStatsStore(Path.Combine(AppContext.BaseDirectory, StatsFileName));
         Console.WriteLine($"[stats] хранилище: {_stats.FilePath} (в памяти {_stats.Count} игроков)");
+
+        _reports = new ReportStore(Path.Combine(AppContext.BaseDirectory, ReportsFileName));
+        Console.WriteLine($"[report] хранилище: {_reports.FilePath} (в памяти {_reports.Count} жалоб)");
 
         _indexHtml = LoadEmbeddedIndex;
         _addresses = new SiteAddressResolver
@@ -136,6 +146,11 @@ public sealed class WebPanelHost : IDisposable
                 // а не после рестарта (хост ещё не подключён — старый снимок лучше, чем ничего).
                 Stats = _stats,
                 IsAdminById = id => _host?.IsAdminLive(id) ?? _server.IsAdmin(id),
+
+                // Жалобы: хранилище общее с игровым хостом, поиск цели — серверный.
+                Reports = _reports,
+                ReportPlayerLookup = q => _host?.LookupReportTarget(q),
+                AdministrationList = () => _host?.AdministrationForWeb(),
 
                 // ── Админ панель ──
                 AdminSessionStore = _adminSessions,
@@ -268,6 +283,31 @@ public sealed class WebPanelHost : IDisposable
         _rooms.OnlinePlayerCount = () => host.JoinedCount + host.Match.HumanActorCount;
         host.Match.PendingRooms.Warning += msg => Console.WriteLine(msg);
 
+        // Жалобы учатся устройствам: как только сервер увидел устройство игрока,
+        // старые жалобы начинают находиться и по нему — смена ника не обнуляет.
+        host.PlayerDevicesSeen += (id, devices) =>
+        {
+            try
+            {
+                _reports.LearnDevices(id, devices, DateTime.UtcNow);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[report] WARN устройства ID {id}: {ex.Message}");
+            }
+        };
+
+        // Разовый догон: устройства, которые справочник уже знал до появления жалоб.
+        try
+        {
+            foreach (var player in host.Directory.Export())
+                _reports.LearnDevices(player.Id, player.Devices, DateTime.UtcNow);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[report] WARN догон устройств: {ex.Message}");
+        }
+
         // Срок кода — из конфига (горячая перезагрузка подхватит при следующей выдаче).
         host.SiteCodes.Ttl = TimeSpan.FromSeconds(_config.CodeTtlSec);
 
@@ -285,8 +325,10 @@ public sealed class WebPanelHost : IDisposable
         catch { /* отмена — норма */ }
         _server_.Stop();
 
-        // Статистика на диск до выхода — что насчитали, то и сохранили.
+        // Статистика и жалобы на диск до выхода — что насчитали, то и сохранили.
         try { _stats.Flush(); }
+        catch { /* сохранение уже залогировало свою беду */ }
+        try { _reports.Flush(); }
         catch { /* сохранение уже залогировало свою беду */ }
     }
 
