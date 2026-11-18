@@ -34,6 +34,12 @@ public sealed partial class WebPanelRouter
     private readonly StatusSnapshotCache _status;
     private readonly WebPanelRouterOptions _options;
 
+    /// <summary>
+    /// Страница с вставленным <c>&lt;base&gt;</c> — считается один раз, дальше отдаётся
+    /// готовая строка (правка 208 КБ на каждый запрос не нужна).
+    /// </summary>
+    private string? _indexWithBase;
+
     public WebPanelRouter(
         RoomRegistry rooms,
         Func<string> indexHtml,
@@ -53,7 +59,7 @@ public sealed partial class WebPanelRouter
 
         // Страница и её данные — только чтение, доступны всем.
         if (request.Method == "GET" && (path == "/" || path == "/index.html"))
-            return WebResponse.Html(_indexHtml());
+            return WebResponse.Html(IndexHtml());
 
         if (request.Method == "GET" && path == "/api/status")
             return WebResponse.Json(_status.Current);
@@ -148,6 +154,41 @@ public sealed partial class WebPanelRouter
             return WithAllow("GET, POST", WebResponse.Text("405", 405));
 
         return WebResponse.Text("404", status: 404);
+    }
+
+    /// <summary>
+    /// HTML страницы. Панель под подпутём (<c>example.com/vlalchillow/</c>) отдаёт её с
+    /// <c>&lt;base href="/vlalchillow/"&gt;</c>.
+    /// </summary>
+    /// <remarks>
+    /// Ссылки на медиа относительные (<c>media/hero.mp4</c>, шрифты, скриншоты), и без
+    /// <c>&lt;base&gt;</c> они разрешаются от адреса страницы — этого достаточно, когда
+    /// панель открыта по адресу со слешем на конце. <c>&lt;base&gt;</c> нужен для случая
+    /// <c>example.com/vlalchillow</c> без слеша: тогда относительный путь уехал бы в
+    /// корень домена, мимо прокси. В корне (<c>basePath</c> пуст) <c>&lt;base&gt;</c> не
+    /// ставим: документ и так разрешает ссылки правильно, а подпути без <c>basePath</c>
+    /// панель не видит и угадывать его не должна.
+    /// </remarks>
+    private string IndexHtml()
+    {
+        var html = _indexHtml();
+        var basePath = _options.BasePath;
+        if (string.IsNullOrEmpty(basePath)) return html;
+        if (_indexWithBase is null)
+            _indexWithBase = InjectBase(html, "/" + basePath.Trim().Trim('/') + "/");
+        return _indexWithBase;
+    }
+
+    /// <summary>
+    /// Вставить <c>&lt;base&gt;</c> сразу после <c>&lt;head&gt;</c>. Адрес приходит только
+    /// из <c>config.json</c> (без пробелов и кавычек), но экранируем на всякий случай.
+    /// </summary>
+    private static string InjectBase(string html, string href)
+    {
+        var at = html.IndexOf("<head>", StringComparison.Ordinal);
+        if (at < 0) return html;
+        return html.Insert(at + "<head>".Length,
+            "\n<base href=\"" + href.Replace("\"", "&quot;") + "\">");
     }
 
     /// <summary>

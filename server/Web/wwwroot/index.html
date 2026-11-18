@@ -6,11 +6,11 @@
 <meta name="color-scheme" content="dark light">
 <meta name="theme-color" content="#0b141c">
 <title>влалChillow — свой сервер для StandChillow</title>
-<link rel="preload" href="/media/Bebasbolt-1.1.4-release.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="preload" href="/media/roboto-400-cyrillic.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="preload" href="/media/roboto-400-latin.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="preload" href="/media/roboto-700-cyrillic.woff2" as="font" type="font/woff2" crossorigin>
-<link rel="preload" href="/media/roboto-700-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="media/Bebasbolt-1.1.4-release.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="media/roboto-400-cyrillic.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="media/roboto-400-latin.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="media/roboto-700-cyrillic.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="preload" href="media/roboto-700-latin.woff2" as="font" type="font/woff2" crossorigin>
 <style>
 /* ══════════════════════════════════════════════════════════════════
    Material Design 3 (Material You)
@@ -649,49 +649,49 @@ select.md-field__box{
 
 /* ══════════════════════════════════════════════════════════════════
    ГЛАВНАЯ — стиль StandChillow (Cyrillic Bebasbolt + Roboto, как в игре)
-   Шрифты отдаёт сам сервер: /media/*.woff2 (вкомпилированы, кэш год).
+   Шрифты отдаёт сам сервер: media/*.woff2 (вкомпилированы, кэш год).
    ══════════════════════════════════════════════════════════════════ */
 
 /* Bebasbolt — свободный шрифт (Wanja01 & Snowy), CC-BY-4.0: https://github.com/Wanja01YT/bebasbolt */
 @font-face{
   font-family:"Bebasbolt";
-  src:url("/media/Bebasbolt-1.1.4-release.woff2") format("woff2");
+  src:url("media/Bebasbolt-1.1.4-release.woff2") format("woff2");
   font-weight:400;font-style:normal;font-display:swap;
 }
 /* Roboto — тот самый шрифт игры (Android). Кириллица и латиница отдельными файлами. */
 @font-face{
   font-family:"RobotoV";
-  src:url("/media/roboto-400-cyrillic.woff2") format("woff2");
+  src:url("media/roboto-400-cyrillic.woff2") format("woff2");
   font-weight:400;unicode-range:U+0301,U+0400-045F,U+0490-0491,U+04B0-04B1,U+2116;
   font-display:swap;
 }
 @font-face{
   font-family:"RobotoV";
-  src:url("/media/roboto-400-latin.woff2") format("woff2");
+  src:url("media/roboto-400-latin.woff2") format("woff2");
   font-weight:400;unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;
   font-display:swap;
 }
 @font-face{
   font-family:"RobotoV";
-  src:url("/media/roboto-500-cyrillic.woff2") format("woff2");
+  src:url("media/roboto-500-cyrillic.woff2") format("woff2");
   font-weight:500;unicode-range:U+0301,U+0400-045F,U+0490-0491,U+04B0-04B1,U+2116;
   font-display:swap;
 }
 @font-face{
   font-family:"RobotoV";
-  src:url("/media/roboto-500-latin.woff2") format("woff2");
+  src:url("media/roboto-500-latin.woff2") format("woff2");
   font-weight:500;unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;
   font-display:swap;
 }
 @font-face{
   font-family:"RobotoV";
-  src:url("/media/roboto-700-cyrillic.woff2") format("woff2");
+  src:url("media/roboto-700-cyrillic.woff2") format("woff2");
   font-weight:700;unicode-range:U+0301,U+0400-045F,U+0490-0491,U+04B0-04B1,U+2116;
   font-display:swap;
 }
 @font-face{
   font-family:"RobotoV";
-  src:url("/media/roboto-700-latin.woff2") format("woff2");
+  src:url("media/roboto-700-latin.woff2") format("woff2");
   font-weight:700;unicode-range:U+0000-00FF,U+0131,U+0152-0153,U+02BB-02BC,U+02C6,U+02DA,U+02DC,U+0304,U+0308,U+0329,U+2000-206F,U+20AC,U+2122,U+2191,U+2193,U+2212,U+2215,U+FEFF,U+FFFD;
   font-display:swap;
 }
@@ -1725,8 +1725,8 @@ body.so-side-open .so-side{transform:none}
     <div class="so-hero__media">
       <!-- Видео — реальный геймплей с сервера. Без постера на слабых машинах мигнёт чёрным. -->
       <video class="so-hero__video" id="hero-video" autoplay muted loop playsinline preload="auto"
-             poster="/media/poster.jpg">
-        <source src="/media/hero.mp4" type="video/mp4">
+             poster="media/poster.jpg">
+        <source src="media/hero.mp4" type="video/mp4">
       </video>
       <div class="so-hero__scrim"></div>
     </div>
@@ -2012,7 +2012,7 @@ body.so-side-open .so-side{transform:none}
         </div>
       </div>
       <figure class="so-doc__fig">
-        <img src="/media/doc-1.jpg" width="1280" height="582" loading="lazy"
+        <img src="media/doc-1.jpg" width="1280" height="582" loading="lazy"
              alt="Главное меню StandChillow, выделена вкладка LAN Мультиплеер">
         <figcaption>Главное меню игры. Вкладка «LAN Мультиплеер» — наш вход на сервер.</figcaption>
       </figure>
@@ -2028,7 +2028,7 @@ body.so-side-open .so-side{transform:none}
         </div>
       </div>
       <figure class="so-doc__fig">
-        <img src="/media/doc-2.jpg" width="1280" height="582" loading="lazy"
+        <img src="media/doc-2.jpg" width="1280" height="582" loading="lazy"
              alt="Окно серверов, выделена кнопка Присоединиться">
         <figcaption>Окно подключения. Кнопка «Присоединиться» — следующий шаг.</figcaption>
       </figure>
@@ -2044,7 +2044,7 @@ body.so-side-open .so-side{transform:none}
         </div>
       </div>
       <figure class="so-doc__fig">
-        <img src="/media/doc-3.jpg" width="1280" height="582" loading="lazy"
+        <img src="media/doc-3.jpg" width="1280" height="582" loading="lazy"
              alt="Строка Ввести IP Адрес выделена">
         <figcaption>Нажми на «Ввести IP Адрес» — появится поле ввода.</figcaption>
       </figure>
@@ -2062,7 +2062,7 @@ body.so-side-open .so-side{transform:none}
         </div>
       </div>
       <figure class="so-doc__fig">
-        <img src="/media/doc-45.jpg" width="1280" height="582" loading="lazy"
+        <img src="media/doc-45.jpg" width="1280" height="582" loading="lazy"
              alt="Поле IP и порта 7778 и кнопка Подключиться">
         <figcaption>Адрес и порт 7778. Справа — кнопка «Подключиться», она нужна на шаге 05.</figcaption>
       </figure>
@@ -2092,7 +2092,7 @@ body.so-side-open .so-side{transform:none}
         </div>
       </div>
       <figure class="so-doc__fig">
-        <img src="/media/doc-6.jpg" width="1280" height="582" loading="lazy"
+        <img src="media/doc-6.jpg" width="1280" height="582" loading="lazy"
              alt="Чат лобби с сообщением кода 550877">
         <figcaption>Чат лобби. В сообщении — твой код: 550877. Бери цифры после «код:».</figcaption>
       </figure>
@@ -2114,7 +2114,7 @@ body.so-side-open .so-side{transform:none}
         </div>
       </div>
       <figure class="so-doc__fig">
-        <img src="/media/doc-7.jpg" width="1280" height="886" loading="lazy"
+        <img src="media/doc-7.jpg" width="1280" height="886" loading="lazy"
              alt="Главная страница сайта с кнопкой Начать игру">
         <figcaption>Главная сайта. Кнопка «НАЧАТЬ ИГРУ» ведёт на страницу комнат.</figcaption>
       </figure>
@@ -2131,7 +2131,7 @@ body.so-side-open .so-side{transform:none}
         </div>
       </div>
       <figure class="so-doc__fig">
-        <img src="/media/doc-8.jpg" width="1280" height="886" loading="lazy"
+        <img src="media/doc-8.jpg" width="1280" height="886" loading="lazy"
              alt="Форма входа с полем Код из лобби">
         <figcaption>Форма входа. Поле «Код из лобби» — сюда цифры из чата, потом «Войти».</figcaption>
       </figure>
@@ -2157,7 +2157,7 @@ body.so-side-open .so-side{transform:none}
         </div>
       </div>
       <figure class="so-doc__fig">
-        <img src="/media/doc-create.jpg" width="1280" height="886" loading="lazy"
+        <img src="media/doc-create.jpg" width="1280" height="886" loading="lazy"
              alt="Вкладка Создать комнату: режим, название, карта">
         <figcaption>Вкладка «Создать комнату»: режим → карта → название — и кнопка внизу.</figcaption>
       </figure>
@@ -2175,12 +2175,12 @@ body.so-side-open .so-side{transform:none}
         </div>
       </div>
       <figure class="so-doc__fig">
-        <img src="/media/doc-rooms.jpg" width="1280" height="886" loading="lazy"
+        <img src="media/doc-rooms.jpg" width="1280" height="886" loading="lazy"
              alt="Список публичных комнат с кнопкой Войти">
         <figcaption>Список публичных комнат. «Войти» — справа от комнаты.</figcaption>
       </figure>
       <figure class="so-doc__fig">
-        <img src="/media/doc-join.jpg" width="1280" height="886" loading="lazy"
+        <img src="media/doc-join.jpg" width="1280" height="886" loading="lazy"
              alt="Окно с командой входа /join">
         <figcaption>Команда уже скопирована — вставь её в чат лобби игры и отправь.</figcaption>
       </figure>

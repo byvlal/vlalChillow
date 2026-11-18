@@ -13,7 +13,8 @@ namespace StandChillow.LanServer.Tests;
 /// </summary>
 public sealed class WebPanelRouterTests
 {
-    private static readonly string IndexHtml = "<!doctype html><title>тест</title>";
+    private static readonly string IndexHtml =
+        "<!doctype html><html><head><title>тест</title></head><body></body></html>";
 
     /// <summary>
     /// Сессии панели. Создание комнаты доступно только авторизованному (#51), поэтому
@@ -91,6 +92,7 @@ public sealed class WebPanelRouterTests
 
         Assert.Equal(200, response.Status);
         Assert.Contains("text/html", response.ContentType);
+        // в корне <base> не ставится — см. PageInRootHasNoBaseTag.
         Assert.Equal(IndexHtml, Body(response));
     }
 
@@ -423,6 +425,35 @@ public sealed class WebPanelRouterTests
         var router = NewRouter(out _, basePath: "/vlalchillow");
         Assert.Equal(200, router.Route(Get("/vlalchillow/")).Status);
         Assert.Equal(200, router.Route(Get("/vlalchillow/api/rooms")).Status);
+    }
+
+    /// <summary>
+    /// Панель под подпутём (example.com/vlalchillow/): страница обязана нести
+    /// <c>&lt;base href="/vlalchillow/"&gt;</c>, иначе относительные <c>media/…</c>
+    /// (видео, шрифты, скриншоты) уезжают в корень домена — мимо прокси, и сайт
+    /// приходит без видео и без шрифта.
+    /// </summary>
+    [Fact]
+    public void PageCarriesBasePathSoMediaStaysBehindTheProxy()
+    {
+        var router = NewRouter(out _, basePath: "vlalchillow");
+        var html = Body(router.Route(Get("/vlalchillow/")));
+
+        Assert.Contains("<base href=\"/vlalchillow/\">", html);
+    }
+
+    /// <summary>
+    /// В корне <c>basePath</c> пуст, и <c>&lt;base&gt;</c> ставить нельзя: панель не знает,
+    /// открыта ли она по подпути без настройки <c>basePath</c>, а ошибившись, увела бы
+    /// медиа в корень домена. Относительные ссылки разрешит сам документ.
+    /// </summary>
+    [Fact]
+    public void PageInRootHasNoBaseTag()
+    {
+        var router = NewRouter(out _);
+        var html = Body(router.Route(Get("/")));
+
+        Assert.DoesNotContain("<base", html);
     }
 
     [Fact]
