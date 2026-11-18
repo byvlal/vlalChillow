@@ -17,6 +17,12 @@ internal sealed class MatchPeerState
     /// поэтому «тот же игрок» и память о команде ищутся по этому ключу.
     /// </summary>
     public string? IdentityKey { get; set; }
+
+    /// <summary>
+    /// Стабильный ключ 2.07-установки (<c>LB&lt;md5&gt;</c>) для device-бана. Пусто для
+    /// legacy-handshake: там <see cref="IdentityKey"/> — это userId, а не устройство.
+    /// </summary>
+    public string? DeviceKey { get; set; }
     public string? AppId { get; set; }
     public MatchRoom? Room { get; set; }
     public byte ActorNr { get; set; }

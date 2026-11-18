@@ -95,6 +95,22 @@ public sealed partial class GameNetHost : IDisposable
             _deferred.Enqueue(() => NotifyMatchPlayerJoined(name));
         _match.OnMatchPlayerLeft = name =>
             _deferred.Enqueue(() => NotifyMatchPlayerLeft(name));
+        // Ник ↔ устройство для /ban по id: живёт в том же справочнике, что и IP.
+        // Через очередь: Remember может писать banlist.json, а колбэк приходит из
+        // poll-цикла матча — диск в hot path сокета не нужен.
+        _match.OnMatchPlayerSeen = (nick, ip, device) =>
+        {
+            var ipText = ip?.ToString();
+            var deviceKey = BanRecord.NormalizeDevice(device);
+            _deferred.Enqueue(() =>
+            {
+                var seen = _directory.Remember(nick, ipText, DateTime.UtcNow, deviceKey);
+                // Жалобы учатся устройствам здесь: смена ника не должна обнулять
+                // историю, а device-ключ переживает и ник, и VPN.
+                if (seen is not null && deviceKey.Length > 0)
+                    PlayerDevicesSeen?.Invoke(seen.Id, new[] { deviceKey });
+            });
+        };
 
         // Баны: реестр читается с диска до первого пакета, иначе первый вошедший
         // забаненный успел бы проскочить. Матч получает тот же реестр.
@@ -1041,6 +1057,7 @@ public sealed partial class GameNetHost : IDisposable
         if (_bans is not null)
         {
             _bans.LearnAliases = _config.Admin.Ban.BindAliases;
+            _bans.ByDevice = _config.Admin.Ban.ByDevice;
             _match.ExposeServerUid = _config.Admin.Ban.ExposeIds;
             var wanted = ResolveBanPath(_config.Admin.Ban.File);
             if (_banStore is not null

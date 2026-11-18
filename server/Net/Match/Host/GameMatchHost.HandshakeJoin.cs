@@ -65,6 +65,16 @@ public sealed partial class GameMatchHost
             $"[match-host] Handshake207Request appId='{req.AppId}' userId='{req.UserId}' " +
             $"proto={req.ProtocolVersion} authTokenLen={req.AuthToken.Length} " +
             $"remaining={body.Remaining}");
+        // Install identity evidence: the token exists only on 7777. Verbose keeps the
+        // full value (per-session tail included) so a reconnect can be compared by eye;
+        // the stable part is what MatchIdentity uses for «same player», and the validated
+        // LB<md5> part is the device-ban key.
+        var deviceKey = MatchIdentity.DeviceKeyFrom207Token(req.AuthToken);
+        if (Diag.LogVerbose)
+            Console.WriteLine(
+                $"[match-host] Handshake207 token='{req.AuthToken}' " +
+                $"identity='{MatchIdentity.StableKeyFrom207Token(req.AuthToken)}' " +
+                $"device='{(deviceKey.Length == 0 ? "—" : deviceKey)}'");
 
         if (!_peers.TryGetValue(peer, out var st))
             st = _peers[peer] = new MatchPeerState();
@@ -90,6 +100,9 @@ public sealed partial class GameMatchHost
             st.UserId = req.AuthToken.Length > 0 ? req.AuthToken[1..] : req.AuthToken;
             // Session-independent key: CLB<md5(userId)>_<guid> → LB<md5(userId)>.
             st.IdentityKey = MatchIdentity.StableKeyFrom207Token(req.AuthToken);
+            // Device-ban key is the same stable part, but only when it really is the
+            // 2.07 CLB…_… shape. Legacy/odd values stay null and are not ban keys.
+            st.DeviceKey = deviceKey;
             st.AppId = req.AppId;
         }
 
@@ -234,11 +247,13 @@ public sealed partial class GameMatchHost
 
         // Гейт входа и реконнекта — до EnsureRoom и до TryFindRejoinActor: иначе
         // забаненный «усыновлял» старый актор и возвращался в катку после смены сети.
-        var banDecision = InspectBanJoin(req.Room, peer.Address);
+        // Устройство берём из handshake: оно не зависит от ника и IP.
+        var banDecision = InspectBanJoin(req.Room, peer.Address, st.DeviceKey);
         if (banDecision.Banned)
         {
             Console.WriteLine(
-                $"[ban] JoinRoom отклонён: '{req.Room}' {peer.Address} — совпало по " +
+                $"[ban] JoinRoom отклонён: '{req.Room}' {peer.Address} " +
+                $"device='{(st.DeviceKey ?? "—")}' — совпало: " +
                 banDecision.MatchedBy + (banDecision.LearnedAlias ? ", алиас записан" : ""));
             try { peer.Disconnect(); }
             catch { /* уже мёртв */ }
@@ -455,6 +470,13 @@ public sealed partial class GameMatchHost
             // Dynamic roster: peers who already Found only knew actors-at-entry.
             // Push ActorJoinedEvent (fup) so early humans learn about this joiner.
             var joinName = st.RosterName ?? $"actor{joinerNr}";
+            // Справочник должен знать устройство даже для реконнекта: иначе /ban по id
+            // вышедшего игрока не закроет его установку. Ошибку колбэка не роняем.
+            try { OnMatchPlayerSeen?.Invoke(joinName, peer.Address, st.DeviceKey); }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[match-host] OnMatchPlayerSeen: {ex.Message}");
+            }
             if (adoptedReconnect)
             {
                 // Issue #39: the actor never left the room. Re-announcing it would make peers

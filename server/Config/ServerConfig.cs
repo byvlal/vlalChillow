@@ -93,6 +93,12 @@ public sealed class BanConfig
     /// </summary>
     public bool BindAliases { get; set; } = true;
 
+    /// <summary>
+    /// Банить по стабильному ключу 2.07-установки (<c>LB&lt;md5&gt;</c>): смена ника и VPN
+    /// не помогают. Устройство учится при бане и при совпадении по нику, но не по IP.
+    /// </summary>
+    public bool ByDevice { get; set; } = true;
+
     /// <summary>Сообщать всем в лобби, что кого-то забанили.</summary>
     public bool NotifyEveryone { get; set; } = true;
 
@@ -1162,6 +1168,7 @@ public sealed class ServerConfig
       "minMinutes": 10,
       "maxDays": 14,
       "bindAliases": true,        // новый ник/новый IP дописываются в ту же запись
+      "byDevice": true,           // банить по стабильному ключу 2.07-установки (VPN/ник не спасают)
       "notifyEveryone": true,     // всем в лобби: «X забанен на 30м (причина)»
       "shadowRefreshSec": 60,     // как часто обновлять «Разбан через: …»
       "sweepSec": 5,              // как часто проверять, у кого вышел срок

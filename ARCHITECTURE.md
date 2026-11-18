@@ -61,8 +61,11 @@ admin id gets a shadow lobby until the address enters the per-run code printed t
 The code is 24 random alphanumerics, regenerated on every start, authorized IPs live in memory
 only; the match host and the command dispatcher both consult `IsUnauthorizedAdmin`, so a
 shadowed admin cannot drop or sneak into 7777 either. `PlayerDirectory` persists
-`nick ↔ id ↔ IP` in `banlist.json` so `/ban` still resolves a player who already left.
-`banlist.json` lives beside `config.json` and is git-ignored.
+`nick ↔ id ↔ IP ↔ device` in `banlist.json` so `/ban` still resolves a player who already left.
+The device is the stable `LB<md5>` part of the 2.07 handshake token; it survives a nick change
+and VPN, and it is learned on an explicit ban or a nick/device match, never on an IP-only match.
+`banlist.json` lives beside `config.json` and is git-ignored; v1 is backed up to
+`banlist.json.v1.bak` and rewritten as v2 on first start.
 
 ## Match host split (was 2568-line god-file)
 

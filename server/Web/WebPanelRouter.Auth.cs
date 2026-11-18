@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 using System.Text.Json;
 using StandChillow.LanServer.Net.Lobby;
@@ -177,12 +178,17 @@ public sealed partial class WebPanelRouter
 
     private string BuildProfileJson(SiteSession session)
     {
+        var custom = _options.CustomIdGet?.Invoke(session.PlayerId);
+        var display = custom ?? session.PlayerId.ToString(CultureInfo.InvariantCulture);
+
         using var stream = new MemoryStream();
         using (var writer = new Utf8JsonWriter(stream, JsonText.WriterOptions))
         {
             writer.WriteStartObject();
             writer.WriteNumber("id", session.PlayerId);
             writer.WriteString("nick", session.Nick);
+            writer.WriteString("customId", custom);
+            writer.WriteString("displayId", display);
             writer.WriteString("since", session.IssuedUtc.ToString("O"));
             writer.WriteBoolean("admin", _options.IsAdminById?.Invoke(session.PlayerId) ?? false);
             writer.WriteEndObject();

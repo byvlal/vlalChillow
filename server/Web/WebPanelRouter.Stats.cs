@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Text;
 using System.Text.Json;
 
@@ -44,6 +45,10 @@ public sealed partial class WebPanelRouter
             writer.WriteStartObject();
             writer.WriteNumber("id", session.PlayerId);
             writer.WriteString("nick", session.Nick);
+            var custom = _options.CustomIdGet?.Invoke(session.PlayerId);
+            writer.WriteString("customId", custom);
+            writer.WriteString("displayId",
+                custom ?? session.PlayerId.ToString(CultureInfo.InvariantCulture));
             writer.WriteNumber("kills", kills);
             writer.WriteNumber("deaths", deaths);
             writer.WriteNumber("kd", kd);
