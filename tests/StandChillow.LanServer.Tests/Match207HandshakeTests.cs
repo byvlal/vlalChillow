@@ -42,4 +42,22 @@ public sealed class Match207HandshakeTests
             HandshakeResult.Success,
             MatchCodec.ParseHandshakeResponseBody(new LobbyReader(body)));
     }
+
+    [Fact]
+    public void DeviceKeyIsOnlyTheStable207Prefix()
+    {
+        const string token = "CLB143C7D41FAE30EB14F49B1678E3933C9_dac2313f130647fcb10c980fe6136cdc";
+
+        Assert.Equal(
+            "LB143C7D41FAE30EB14F49B1678E3933C9",
+            MatchIdentity.DeviceKeyFrom207Token(token));
+        Assert.Equal(
+            "LB143C7D41FAE30EB14F49B1678E3933C9",
+            MatchIdentity.DeviceKeyFrom207Token(token.ToLowerInvariant()));
+
+        // Legacy userId и мусор устройством не считаются: иначе можно забанить случайный id.
+        Assert.Equal("", MatchIdentity.DeviceKeyFrom207Token("legacy-user-42"));
+        Assert.Equal("", MatchIdentity.DeviceKeyFrom207Token(""));
+        Assert.Equal("", MatchIdentity.DeviceKeyFrom207Token("CLBnothex_dac2313f"));
+    }
 }

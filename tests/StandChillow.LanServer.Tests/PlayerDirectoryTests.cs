@@ -4,12 +4,13 @@ using Xunit;
 namespace StandChillow.LanServer.Tests;
 
 /// <summary>
-/// Справочник «ник ↔ id ↔ IP»: нужен, чтобы <c>/ban</c> работал для ушедшего игрока
-/// и после рестарта, и чтобы 200 банов не путали личности между собой.
+/// Справочник «ник ↔ id ↔ IP ↔ устройство»: нужен, чтобы <c>/ban</c> работал для ушедшего
+/// игрока и после рестарта, и чтобы 200 банов не путали личности между собой.
 /// </summary>
 public sealed class PlayerDirectoryTests
 {
     private static readonly DateTime Now = new(2026, 11, 13, 12, 0, 0, DateTimeKind.Utc);
+    private const string Device = "LB143C7D41FAE30EB14F49B1678E3933C9";
 
     [Fact]
     public void RememberStoresDeterministicIdAndIps()
@@ -91,5 +92,48 @@ public sealed class PlayerDirectoryTests
         var directory = new PlayerDirectory();
         Assert.Null(directory.Remember("   ", "10.0.0.1", Now));
         Assert.Equal(0, directory.Count);
+    }
+
+    [Fact]
+    public void RememberStoresDeviceAndNormalizesIt()
+    {
+        var directory = new PlayerDirectory();
+        var player = directory.Remember("Ktulxy", "203.0.113.9", Now, Device.ToLowerInvariant());
+
+        Assert.NotNull(player);
+        Assert.Contains(Device, player!.Devices);
+        Assert.Contains(Device, directory.DevicesForNick("ktulxy"));
+    }
+
+    [Fact]
+    public void InvalidDeviceIsIgnored()
+    {
+        var directory = new PlayerDirectory();
+        var player = directory.Remember("Ktulxy", "203.0.113.9", Now, "not-a-device");
+
+        Assert.NotNull(player);
+        Assert.Empty(player!.Devices);
+        Assert.Empty(directory.DevicesForNick("Ktulxy"));
+    }
+
+    [Fact]
+    public void LoadKeepsDevicesAndDropsJunk()
+    {
+        var directory = new PlayerDirectory();
+        directory.Load(new[]
+        {
+            new SeenPlayer
+            {
+                Nick = "Ktulxy",
+                Ips = new List<string> { "203.0.113.9" },
+                Devices = new List<string> { Device.ToLowerInvariant(), "legacy-user-id" },
+            },
+        });
+
+        var found = directory.Resolve(MatchPublicId.ForNick("Ktulxy"));
+        Assert.NotNull(found);
+        Assert.Single(found!.Devices);
+        Assert.Contains(Device, found.Devices);
+        Assert.Contains(Device, directory.DevicesForNick("Ktulxy"));
     }
 }

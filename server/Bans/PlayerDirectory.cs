@@ -2,7 +2,7 @@ using StandChillow.LanServer.Config;
 
 namespace StandChillow.LanServer.Bans;
 
-/// <summary>Кого сервер когда-либо видел: id (из ника), ник, адреса, когда заходил.</summary>
+/// <summary>Кого сервер когда-либо видел: id (из ника), ник, адреса, устройства, когда заходил.</summary>
 /// <remarks>
 /// Это память, а не бан: нужна, чтобы <c>/ban</c> находил человека, который уже вышел
 /// из катки или вообще отключился. Хранится в <c>banlist.json</c> рядом с банами.
@@ -12,6 +12,7 @@ public sealed class SeenPlayer
     public int Id { get; set; }
     public string Nick { get; set; } = "";
     public List<string> Ips { get; set; } = new();
+    public List<string> Devices { get; set; } = new();
     public long LastSeenUtcMs { get; set; }
 }
 
@@ -45,8 +46,8 @@ public sealed class PlayerDirectory
         get { lock (_gate) return _players.Count; }
     }
 
-    /// <summary>Запомнить вход: ник, его id и адрес. Возвращает запись или null для пустого ника.</summary>
-    public SeenPlayer? Remember(string? nick, string? ip, DateTime nowUtc)
+    /// <summary>Запомнить вход: ник, его id, адрес и (если известен) ключ устройства.</summary>
+    public SeenPlayer? Remember(string? nick, string? ip, DateTime nowUtc, string? device = null)
     {
         var id = MatchPublicId.ForNick(nick);
         if (id == 0)
@@ -71,6 +72,15 @@ public sealed class PlayerDirectory
                 changed = true;
             }
 
+            var normalizedDevice = BanRecord.NormalizeDevice(device);
+            if (normalizedDevice.Length > 0
+                && !player.Devices.Any(d => string.Equals(
+                    d, normalizedDevice, StringComparison.OrdinalIgnoreCase)))
+            {
+                player.Devices.Add(normalizedDevice);
+                changed = true;
+            }
+
             // LastSeen обновляем только в памяти: писать файл на каждый вход — это I/O
             // в пути подключения. На диск попадёт при ближайшем бане/разбане.
             player.LastSeenUtcMs = BanRecord.ToUnixMs(nowUtc);
@@ -78,6 +88,64 @@ public sealed class PlayerDirectory
             if (changed)
                 NotifyChanged();
             return player;
+        }
+    }
+
+    /// <summary>Все устройства, которые сервер видел под этим ником (для бана по id).</summary>
+    public IReadOnlyList<string> DevicesForNick(string? nick)
+    {
+        var normalized = ServerConfig.NormalizeNick(nick);
+        if (normalized.Length == 0)
+            return Array.Empty<string>();
+
+        lock (_gate)
+        {
+            // Скан, а не словарь: ник в справочнике хранится как пришёл, а сравнение
+            // ников у банов регистронезависимое. Вызывается только при бане, не на входе.
+            var devices = new List<string>();
+            foreach (var player in _players)
+            {
+                if (!string.Equals(player.Nick, normalized, StringComparison.OrdinalIgnoreCase))
+                    continue;
+
+                foreach (var device in player.Devices)
+                {
+                    if (!devices.Any(d => string.Equals(
+                        d, device, StringComparison.OrdinalIgnoreCase)))
+                        devices.Add(device);
+                }
+            }
+
+            return devices;
+        }
+    }
+
+    /// <summary>
+    /// Все устройства, которые сервер видел под этим id. Нужно жалобам: при смене
+    /// ника старые репорты должны находиться по устройству, а не только по числу.
+    /// </summary>
+    public IReadOnlyList<string> DevicesForId(int id)
+    {
+        if (id <= 0)
+            return Array.Empty<string>();
+
+        lock (_gate)
+        {
+            var devices = new List<string>();
+            foreach (var player in _players)
+            {
+                if (player.Id != id)
+                    continue;
+
+                foreach (var device in player.Devices)
+                {
+                    if (!devices.Any(d => string.Equals(
+                            d, device, StringComparison.OrdinalIgnoreCase)))
+                        devices.Add(device);
+                }
+            }
+
+            return devices;
         }
     }
 
@@ -131,9 +199,16 @@ public sealed class PlayerDirectory
                     continue;
 
                 player.Ips ??= new List<string>();
+                player.Devices ??= new List<string>();
                 player.Nick = ServerConfig.NormalizeNick(player.Nick);
                 if (player.Nick.Length == 0)
                     continue;
+
+                player.Devices = player.Devices
+                    .Select(BanRecord.NormalizeDevice)
+                    .Where(device => device.Length > 0)
+                    .Distinct(StringComparer.OrdinalIgnoreCase)
+                    .ToList();
 
                 var id = MatchPublicId.ForNick(player.Nick);
                 if (id != 0)

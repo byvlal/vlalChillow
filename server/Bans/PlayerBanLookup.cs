@@ -1,13 +1,13 @@
 namespace StandChillow.LanServer.Bans;
 
 /// <summary>
-/// Бан по серверному ID игрока: ID → ник и все известные адреса → решение реестра банов.
+/// Бан по серверному ID игрока: ID → ник, известные адреса и устройства → решение реестра.
 /// </summary>
 /// <remarks>
 /// <para>
 /// Сайт знает про человека только его ID — тот самый, что показывается в лобби строкой
 /// «Ты … · ID: …» и в катке как <c>uid</c>. Справочник игроков (<see cref="PlayerDirectory"/>)
-/// помнит по этому ID и ник, и все адреса, с которых человек заходил, — их и проверяем.
+/// помнит по этому ID ник, адреса и устройства, с которых человек заходил, — их и проверяем.
 /// </para>
 /// <para>
 /// Адрес браузера в расчёт не берётся: он не совпадает с адресом игры (NAT, мобильная
@@ -62,6 +62,17 @@ public sealed class PlayerBanLookup
                 continue;
 
             if (_bans.Inspect(new BanProbe(seen.Nick, ip), nowUtc, _isExempt).Banned)
+                return true;
+        }
+
+        // И устройства: device-бан не зависит от ника и IP, поэтому именно он ловит
+        // «сменил ник и включил VPN». У legacy-записей список пуст — шаг ничего не стоит.
+        foreach (var device in seen.Devices)
+        {
+            if (string.IsNullOrWhiteSpace(device))
+                continue;
+
+            if (_bans.Inspect(new BanProbe(seen.Nick, null, device), nowUtc, _isExempt).Banned)
                 return true;
         }
 

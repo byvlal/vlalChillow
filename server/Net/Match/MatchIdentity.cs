@@ -1,3 +1,5 @@
+using StandChillow.LanServer.Bans;
+
 namespace StandChillow.LanServer.Net.Match;
 
 /// <summary>
@@ -37,6 +39,14 @@ public static class MatchIdentity
     /// <summary>Устойчивый ключ для legacy handshake (2.06-style userId) — сам userId.</summary>
     public static string StableKeyFromUserId(string? userId) =>
         string.IsNullOrWhiteSpace(userId) ? "" : userId.Trim();
+
+    /// <summary>
+    /// Ключ устройства из 2.07-токена: <c>CLB&lt;md5&gt;_&lt;guid&gt;</c> → <c>LB&lt;md5&gt;</c>.
+    /// Возвращает пустую строку для legacy userId и любых строк не формата 2.07:
+    /// такие значения нельзя использовать как device-бан.
+    /// </summary>
+    public static string DeviceKeyFrom207Token(string? authToken) =>
+        BanRecord.NormalizeDevice(StableKeyFrom207Token(authToken));
 
     /// <summary>Один и тот же игрок? Регистр hex-части не должен решать.</summary>
     public static bool SamePlayer(string? a, string? b) =>

@@ -75,6 +75,28 @@ public sealed class CustomIdStore
     }
 
     /// <summary>
+    /// Владелец кастомного ID по его значению (без учёта регистра). Нужно поиску
+    /// игрока на сайте: игроки видят в игре именно кастомный ID, а не число.
+    /// </summary>
+    public int? FindPlayerByCustomId(string? customId)
+    {
+        if (string.IsNullOrWhiteSpace(customId))
+            return null;
+
+        var value = customId.Trim();
+        lock (_gate)
+        {
+            foreach (var (id, entry) in _byId)
+            {
+                if (string.Equals(entry.CustomId, value, StringComparison.OrdinalIgnoreCase))
+                    return id;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
     /// Поставить кастомный ID. <paramref name="customId"/> пустой/_null — сброс к числовому.
     /// Возвращает текст ошибки или <c>null</c> при успехе.
     /// </summary>

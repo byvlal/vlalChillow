@@ -5,13 +5,13 @@ using StandChillow.LanServer.Config;
 namespace StandChillow.LanServer.Bans;
 
 /// <summary>
-/// Одна личность в <c>banlist.json</c>: ник(и), IP(и), время бана и причина.
+/// Одна личность в <c>banlist.json</c>: ник(и), IP(и), устройства, время бана и причина.
 /// </summary>
 /// <remarks>
 /// <para>
-/// Записей ровно столько, сколько людей забанили: алиасы и адреса одного нарушителя
-/// дописываются в <b>его</b> запись, а не размножаются на новых. Поэтому 200 банов
-/// читаются как 200 личностей, без «склеивания» и без путаницы.
+/// Записей ровно столько, сколько людей забанили: алиасы, адреса и устройства одного
+/// нарушителя дописываются в <b>его</b> запись, а не размножаются на новых. Поэтому 200
+/// банов читаются как 200 личностей, без «склеивания» и без путаницы.
 /// </para>
 /// <para>
 /// Время хранится в unix-миллисекундах (UTC) — это единственный формат, который не
@@ -29,6 +29,12 @@ public sealed class BanRecord
 
     /// <summary>Все IP этой личности: LAN, Hamachi, VPN, публичный — без разницы.</summary>
     public List<string> Ips { get; set; } = new();
+
+    /// <summary>
+    /// Стабильные ключи установок (<c>LB&lt;md5&gt;</c>) из 2.07-handshake. В отличие от ника
+    /// и IP, не меняются при смене ника и включении VPN — это главный якорь device-бана.
+    /// </summary>
+    public List<string> Devices { get; set; } = new();
 
     /// <summary>
     /// Серверные id матча (100…1 000 000), под которыми личность попала в бан.
@@ -91,6 +97,42 @@ public sealed class BanRecord
     public bool HasIp(string? ip) =>
         !string.IsNullOrWhiteSpace(ip)
         && Ips.Any(i => string.Equals(i, ip, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>Есть ли это устройство в записи. Регистр hex-части не важен.</summary>
+    public bool HasDevice(string? device)
+    {
+        var normalized = NormalizeDevice(device);
+        return normalized.Length > 0
+               && Devices is not null
+               && Devices.Any(d => string.Equals(
+                   NormalizeDevice(d), normalized, StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>
+    /// Привести ключ устройства к виду <c>LB&lt;32 hex&gt;</c>. Принимает и полный
+    /// <c>CLB…_…</c> из лога (лишний хвост отбрасывается вызывающим), и готовый
+    /// <c>LB…</c>. Всё, что не похоже на 2.07-токен, — пустая строка: legacy userId
+    /// устройством не считается.
+    /// </summary>
+    public static string NormalizeDevice(string? device)
+    {
+        var value = (device ?? string.Empty).Trim();
+        if (value.Length == 35 && (value[0] == 'C' || value[0] == 'c'))
+            value = value[1..];
+
+        if (value.Length != 34
+            || (value[0] != 'L' && value[0] != 'l')
+            || (value[1] != 'B' && value[1] != 'b'))
+            return "";
+
+        for (var i = 2; i < value.Length; i++)
+        {
+            if (!Uri.IsHexDigit(value[i]))
+                return "";
+        }
+
+        return value.ToUpperInvariant();
+    }
 
     public bool HasNick(string? nick)
     {

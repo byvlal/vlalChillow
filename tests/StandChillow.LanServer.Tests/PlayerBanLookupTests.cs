@@ -94,4 +94,46 @@ public sealed class PlayerBanLookupTests
 
         Assert.False(lookup.IsBanned(id, Now));
     }
+
+    [Fact]
+    public void BanByKnownDeviceIsVisibleById()
+    {
+        const string device = "LB143C7D41FAE30EB14F49B1678E3933C9";
+        var directory = new PlayerDirectory();
+        var bans = new BanRegistry();
+        var seen = directory.Remember("A", "192.0.2.10", Now, device);
+        Assert.NotNull(seen);
+
+        // Бан выдан другому нику, но с того же устройства: по ID владельца устройства
+        // это тот же человек, даже если ник и IP уже сменились.
+        bans.Add(
+            new BanProbe("B", null, device),
+            TimeSpan.FromHours(1),
+            "тест",
+            "админ",
+            Now);
+
+        var lookup = new PlayerBanLookup(directory, bans);
+        Assert.True(lookup.IsBanned(seen!.Id, Now));
+    }
+
+    [Fact]
+    public void DeviceBanDoesNotCatchAnotherDevice()
+    {
+        const string device = "LB143C7D41FAE30EB14F49B1678E3933C9";
+        var directory = new PlayerDirectory();
+        var bans = new BanRegistry();
+        var seen = directory.Remember("A", "192.0.2.10", Now, device);
+        Assert.NotNull(seen);
+
+        bans.Add(
+            new BanProbe("B", null, "LB4B7BA14444774A9D4FBBEC23F4519998"),
+            TimeSpan.FromHours(1),
+            "тест",
+            "админ",
+            Now);
+
+        var lookup = new PlayerBanLookup(directory, bans);
+        Assert.False(lookup.IsBanned(seen!.Id, Now));
+    }
 }

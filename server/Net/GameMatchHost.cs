@@ -148,6 +148,14 @@ public sealed partial class GameMatchHost : IDisposable
     public Action<string>? OnMatchPlayerJoined { get; set; }
 
     /// <summary>
+    /// Fired on every successful JoinRoom (including reconnect takeover). Arguments: roster
+    /// nick, peer address, stable 2.07 device key (null for legacy). Lobby host uses this to
+    /// link nick ↔ device in the persistent directory, so <c>/ban</c> by id also closes the
+    /// install after the player has already left.
+    /// </summary>
+    public Action<string, IPAddress?, string?>? OnMatchPlayerSeen { get; set; }
+
+    /// <summary>
     /// Fired when a human leaves the Dedik room (disconnect / remove). Name = roster nick.
     /// </summary>
     public Action<string>? OnMatchPlayerLeft { get; set; }

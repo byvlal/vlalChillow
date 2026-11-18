@@ -36,7 +36,11 @@ public sealed partial class GameNetHost
         var path = ResolveBanPath(settings.File);
 
         _banStore = new BanStore(path);
-        _bans = new BanRegistry { LearnAliases = settings.BindAliases };
+        _bans = new BanRegistry
+        {
+            LearnAliases = settings.BindAliases,
+            ByDevice = settings.ByDevice,
+        };
 
         var stored = _banStore.Load();
         _bans.Load(stored.Bans);
@@ -53,7 +57,7 @@ public sealed partial class GameNetHost
         Console.WriteLine(
             $"[ban] реестр: {_bans.Count} банов, {_directory.Count} личностей в справочнике, файл {path}, срок " +
             $"{settings.MinMinutes}м..{settings.MaxDays}д, проверка каждые {settings.SweepSec}с, " +
-            "админов банить нельзя");
+            $"device-бан {(settings.ByDevice ? "вкл" : "выкл")}, админов банить нельзя");
     }
 
     private static string ResolveBanPath(string? configured)
@@ -147,13 +151,13 @@ public sealed partial class GameNetHost
             _shadowPeers[peer] = nick;
 
         Console.WriteLine(
-            $"[ban] теневой вход '{req.Profile.Name}' {peer.Address} — совпало по {decision.MatchedBy}, " +
+            $"[ban] теневой вход '{req.Profile.Name}' {peer.Address} — совпало: {decision.MatchedBy}, " +
             $"осталось {BanDuration.FormatRemaining(record.Remaining(DateTime.UtcNow))}" +
             (decision.LearnedAlias ? ", алиас записан" : ""));
 
         DashboardHub.PostChat(
             LobbySession.ServerPlayerName,
-            $"[бан] {req.Profile.Name} ({peer.Address}) — вход закрыт по {decision.MatchedBy}",
+            $"[бан] {req.Profile.Name} ({peer.Address}) — вход закрыт: {decision.MatchedBy}",
             fromServer: true);
 
         // Четыре строки по порядку: ReliableOrdered доставит их так же, как приветствие.
@@ -383,6 +387,20 @@ public sealed partial class GameNetHost
 
         var ip = address ?? targets.Select(t => t.Peer.Address).FirstOrDefault(a => a is not null);
 
+        // Устройства: живые сокеты матча + всё, что справочник уже связал с этим ником.
+        // Живой сокет важнее: он подтверждает, что человек сейчас реально в катке.
+        var devices = new List<string>();
+        foreach (var liveDevice in _match.DevicesForNick(nick))
+        {
+            if (!devices.Any(d => string.Equals(d, liveDevice, StringComparison.OrdinalIgnoreCase)))
+                devices.Add(liveDevice);
+        }
+        foreach (var knownDevice in _directory.DevicesForNick(nick))
+        {
+            if (!devices.Any(d => string.Equals(d, knownDevice, StringComparison.OrdinalIgnoreCase)))
+                devices.Add(knownDevice);
+        }
+
         // Id детерминирован от ника: запись всегда тегируется id, чтобы /unban потом
         // нашёл её без отдельной истории.
         var idForRecord = matchId is { } requested && requested != 0
@@ -390,16 +408,17 @@ public sealed partial class GameNetHost
             : MatchPublicId.ForNick(nick);
 
         var record = _bans.Add(
-            new BanProbe(nick, ip?.ToString()),
+            new BanProbe(nick, ip?.ToString(), devices.FirstOrDefault()),
             duration,
             reason,
             bannedBy ?? player?.Name ?? LobbySession.ServerPlayerName,
             DateTime.UtcNow,
             idForRecord,
-            knownIps);
+            knownIps,
+            devices);
 
         // Кик из матча (7777) и из лобби (7778) — разные сокеты, нужны оба.
-        var matchKicked = _match.DisconnectBanned(nick, ip);
+        var matchKicked = _match.DisconnectBanned(nick, ip, devices);
         var lobbyKicked = 0;
         foreach (var target in targets)
         {
@@ -431,10 +450,14 @@ public sealed partial class GameNetHost
         reply($"забанен {record.DisplayNick} на {BanDuration.FormatShort(duration)}: {DescribeReason(record)}");
         reply($"IP: {ips} · до {record.ExpiresUtc.ToLocalTime():dd.MM.yyyy HH:mm:ss}" +
               (record.MatchIds.Count == 0 ? "" : $" · id {string.Join(", ", record.MatchIds)}"));
+        reply(record.Devices.Count == 0
+            ? "устройство: пока неизвестно (игрок ещё не заходил в матч по 2.07)"
+            : $"устройство: {string.Join(", ", record.Devices)}");
 
         Console.WriteLine(
             $"[ban] {record.DisplayNick} на {BanDuration.FormatShort(duration)} причиной " +
             $"'{DescribeReason(record)}' (кто: {record.BannedBy}); IP=[{string.Join(", ", record.Ips)}] " +
+            $"devices=[{string.Join(", ", record.Devices)}] " +
             $"ids=[{string.Join(", ", record.MatchIds)}]; кик матч={matchKicked}, лобби={lobbyKicked}; " +
             $"выдан {record.CreatedLocalIso} (UTC{BanRecord.CurrentUtcOffsetMinutes() / 60.0:+0.#;-0.#})");
 
