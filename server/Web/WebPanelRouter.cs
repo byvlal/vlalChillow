@@ -96,6 +96,13 @@ public sealed partial class WebPanelRouter
         if (request.Method == "GET" && path == "/api/player")
             return PublicPlayer(request);
 
+        // История матчей: список для профиля и одна катка целиком.
+        if (request.Method == "GET" && path == "/api/matches")
+            return MatchesList(request);
+
+        if (request.Method == "GET" && TryParseMatchPath(path, out _))
+            return MatchById(request, path);
+
         if (request.Method == "GET" && path == "/api/administration")
             return Administration(request);
 
@@ -164,8 +171,12 @@ public sealed partial class WebPanelRouter
         if (path is "/" or "/index.html" or "/api/status" or "/api/modes"
             or "/api/me" or "/api/avatar" or "/api/stats/me" or "/api/admin"
             or "/api/admin/lookup" or "/api/admin/avatar" or "/api/admin/bans"
-            or "/api/player" or "/api/administration" or "/api/reports/mine"
+            or "/api/player" or "/api/matches" or "/api/administration" or "/api/reports/mine"
             or "/api/admin/reports" or "/healthz")
+            return WithAllow("GET", WebResponse.Text("405", 405));
+
+        // /api/match/<id> — тоже только GET; номер разбираем тем же правилом.
+        if (TryParseMatchPath(path, out _))
             return WithAllow("GET", WebResponse.Text("405", 405));
 
         if (path is "/api/auth" or "/api/logout" or "/api/reports"
@@ -620,6 +631,11 @@ public sealed class WebPanelRouterOptions
     /// статистики нет (пустые нули), а не падает.
     /// </summary>
     public PlayerStatsStore? Stats { get; init; }
+
+    /// <summary>
+    /// История матчей на диске. <c>null</c> — история не ведётся: API отдаёт пустой список.
+    /// </summary>
+    public MatchHistoryStore? Matches { get; init; }
 
     /// <summary>
     /// Серверный id → админ? Из конфига <c>admin.ids</c>. <c>null</c> — админов нет.

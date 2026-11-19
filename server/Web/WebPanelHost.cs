@@ -69,6 +69,9 @@ public sealed class WebPanelHost : IDisposable
     /// <summary>Жалобы игроков на диске — переживают рестарт.</summary>
     private readonly ReportStore _reports;
 
+    /// <summary>История сыгранных матчей на диске.</summary>
+    private readonly MatchHistoryStore _history;
+
     /// <summary>Раз в сколько секунд семплируем комнаты для статистики.</summary>
     private const int StatsSampleSeconds = 15;
 
@@ -77,6 +80,9 @@ public sealed class WebPanelHost : IDisposable
 
     /// <summary>Файл жалоб — рядом с остальными данными сервера.</summary>
     private const string ReportsFileName = "reports.json";
+
+    /// <summary>Файл истории матчей — отдельно от агрегатов stats.json.</summary>
+    private const string MatchHistoryFileName = "matches.json";
 
     public WebPanelHost(ServerConfig server)
     {
@@ -90,6 +96,9 @@ public sealed class WebPanelHost : IDisposable
 
         _reports = new ReportStore(Path.Combine(AppContext.BaseDirectory, ReportsFileName));
         Console.WriteLine($"[report] хранилище: {_reports.FilePath} (в памяти {_reports.Count} жалоб)");
+
+        _history = new MatchHistoryStore(Path.Combine(AppContext.BaseDirectory, MatchHistoryFileName));
+        Console.WriteLine($"[history] хранилище: {_history.FilePath} (в памяти {_history.Count} матчей)");
 
         _indexHtml = LoadEmbeddedIndex;
         _addresses = new SiteAddressResolver
@@ -151,6 +160,9 @@ public sealed class WebPanelHost : IDisposable
                 Reports = _reports,
                 ReportPlayerLookup = q => _host?.LookupReportTarget(q),
                 AdministrationList = () => _host?.AdministrationForWeb(),
+
+                // История матчей: последние катки для профилей.
+                Matches = _history,
 
                 // ── Админ панель ──
                 AdminSessionStore = _adminSessions,
@@ -278,6 +290,9 @@ public sealed class WebPanelHost : IDisposable
         // раз в 15 секунд забирает «кто и в каких фазах».
         host.Match.Stats = _stats;
 
+        // История матчей: хост сам снимает составы раундов и пишет запись на финале.
+        host.Match.History = _history;
+
         // «Комнат не больше, чем игроков онлайн»: квота реестра спрашивает у хоста,
         // сколько людей сейчас в лобби и в катке. Пока хост не подключён, считаем 0.
         _rooms.OnlinePlayerCount = () => host.JoinedCount + host.Match.HumanActorCount;
@@ -329,6 +344,8 @@ public sealed class WebPanelHost : IDisposable
         try { _stats.Flush(); }
         catch { /* сохранение уже залогировало свою беду */ }
         try { _reports.Flush(); }
+        catch { /* сохранение уже залогировало свою беду */ }
+        try { _history.Flush(); }
         catch { /* сохранение уже залогировало свою беду */ }
     }
 

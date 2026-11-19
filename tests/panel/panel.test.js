@@ -500,7 +500,8 @@ function toPage(list) {
                  bans: { enabled: true, minMinutes: 10, maxDays: 14 } };
   await P.loadAdminState();
   check('админ: панель открыта', $('adm-panel').hidden === false);
-  check('админ: ник из сервера', $('adm-nick').textContent === 'влал',
+  // В панели рядом с ником стоит бейдж ADM — проверяем сам ник, а не весь текст.
+  check('админ: ник из сервера', $('adm-nick').textContent.trim().split(/\s+/)[0] === 'влал',
     $('adm-nick').textContent);
   check('админ: диапазон сроков из сервера',
     $('adm-brange').textContent.indexOf('10') >= 0, $('adm-brange').textContent);

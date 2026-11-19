@@ -251,6 +251,9 @@ public sealed partial class GameMatchHost
         Dashboard.DashboardHub.PostRoundResult(
             $"MATCH OVER: {winSide}  ·  T {scoreTr} : {scoreCt} CT",
             winner, mvpNr, mvpName, isFinal: true);
+
+        // История: TDM тоже сыгранная катка, пишем до финального HUD.
+        RecordMatchHistory(room, $"tdm-end {reason}");
     }
 
     /// <summary>C2=201 FinalHud — phone gold RX#18879 {Time, C2=201}.</summary>

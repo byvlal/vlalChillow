@@ -170,6 +170,36 @@ public sealed class PlayerDirectory
         }
     }
 
+    /// <summary>
+    /// Найти личность по нику: точное совпадение, иначе без регистра (последняя замеченная).
+    /// </summary>
+    /// <remarks>
+    /// Нужно для ссылок вида <c>#/profile/vlal</c>: в URL можно писать ник, а не только
+    /// цифровой ID. Тёзки без регистра — редкость; берём самую свежую запись.
+    /// </remarks>
+    public SeenPlayer? FindByNick(string? nick)
+    {
+        var normalized = ServerConfig.NormalizeNick(nick);
+        if (normalized.Length == 0)
+            return null;
+
+        lock (_gate)
+        {
+            if (_byNick.TryGetValue(normalized, out var exact))
+                return exact;
+
+            SeenPlayer? best = null;
+            foreach (var player in _players)
+            {
+                if (!string.Equals(player.Nick, normalized, StringComparison.OrdinalIgnoreCase))
+                    continue;
+                if (best is null || player.LastSeenUtcMs > best.LastSeenUtcMs)
+                    best = player;
+            }
+            return best;
+        }
+    }
+
     /// <summary>Сколько личностей делят этот id (для честного предупреждения админу).</summary>
     public int CountById(int id)
     {

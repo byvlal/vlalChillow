@@ -1759,6 +1759,143 @@ body.so-side-open .so-side{transform:none}
 .so-btn--no:hover{background:rgba(120,38,38,.6);border-color:rgba(192,59,59,.8)}
 
 /* ══════════════════════════════════════════════════════════════════
+   ИСТОРИЯ МАТЧЕЙ + ЭКРАН ИТОГОВ КАТКИ
+   Стиль тот же, что у игры: тёмная панель, CT-синий / T-оранж,
+   Bebasbolt в заголовках. Ничего нового в палитру не добавляем.
+   ══════════════════════════════════════════════════════════════════ */
+.so-hist{margin-top:26px}
+.so-hist__list{display:grid;gap:10px;margin-top:16px}
+
+.so-mcard{
+  display:grid;grid-template-columns:5px 1fr auto;align-items:stretch;
+  background:rgba(9,20,30,.55);border:1px solid var(--so-line);border-radius:10px;
+  overflow:hidden;color:inherit;text-decoration:none;
+  transition:border-color .15s,background .15s;
+}
+.so-mcard:hover{border-color:var(--so-line-strong);background:rgba(20,39,55,.72)}
+.so-mcard__bar{background:#5b6b78}
+.so-mcard--ct .so-mcard__bar{background:var(--so-ct)}
+.so-mcard--t .so-mcard__bar{background:var(--so-t)}
+.so-mcard__body{padding:12px 15px;min-width:0}
+.so-mcard__top{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+.so-mcard__mode{
+  font-family:var(--so-display);font-size:17px;letter-spacing:.08em;color:#fff;
+}
+.so-mcard__map{font-size:12px;color:var(--so-muted)}
+.so-mcard__when{margin-left:auto;font-size:11px;color:#68809a;white-space:nowrap}
+.so-mcard__line{margin-top:6px;font-size:12.5px;color:var(--so-muted);line-height:1.5}
+.so-mcard__line b{color:var(--so-text);font-weight:500}
+.so-mcard__side{
+  display:flex;flex-direction:column;align-items:flex-end;justify-content:center;
+  gap:4px;padding:12px 16px;border-left:1px solid var(--so-line);
+}
+.so-mcard__score{
+  font-family:var(--so-display);font-size:26px;line-height:1;color:#fff;
+  font-variant-numeric:tabular-nums;
+}
+.so-mcard__res{font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--so-muted)}
+.so-mcard__res--win{color:#7fe0a1}
+.so-mcard__res--lose{color:#e0a1a1}
+.so-mcard__res--left{color:#d9a441}
+
+/* экран итогов: две стороны, как в игре */
+.so-ms{
+  margin-top:22px;border:1px solid var(--so-line-strong);border-radius:12px;
+  overflow:hidden;background:linear-gradient(180deg,rgba(8,17,25,.92),rgba(10,22,32,.86));
+}
+.so-ms__title{
+  padding:14px 20px;font-family:var(--so-display);font-size:20px;letter-spacing:.16em;
+  color:#fff;background:rgba(5,12,19,.72);border-bottom:1px solid var(--so-line-strong);
+}
+.so-ms__board{display:grid;grid-template-columns:1fr 1fr}
+.so-ms__side{min-width:0;padding-bottom:8px}
+.so-ms__side + .so-ms__side{border-left:1px solid rgba(154,196,226,.22)}
+.so-ms__head{
+  display:flex;align-items:center;gap:12px;padding:12px 18px 10px;
+  background:rgba(5,12,19,.45);border-bottom:1px solid var(--so-line);
+}
+.so-ms__team{font-family:var(--so-display);font-size:19px;letter-spacing:.07em;white-space:nowrap}
+.so-ms--ct .so-ms__team{color:var(--so-ct)}
+.so-ms--t .so-ms__team{color:var(--so-t)}
+.so-ms__win{
+  margin-left:auto;font-family:var(--so-display);font-size:17px;letter-spacing:.12em;
+  color:#5fdc86;text-shadow:0 0 14px rgba(95,220,134,.35);white-space:nowrap;
+}
+.so-ms__score{
+  font-family:var(--so-display);font-size:32px;line-height:1;color:#fff;
+  font-variant-numeric:tabular-nums;margin-left:auto;
+}
+.so-ms__win + .so-ms__score{margin-left:10px}
+
+.so-ms__tbl{width:100%;border-collapse:collapse;font-size:12px}
+.so-ms__tbl th{
+  padding:8px 6px 6px;font-weight:500;font-size:9.5px;letter-spacing:.14em;
+  text-transform:uppercase;color:#68809a;text-align:right;white-space:nowrap;
+}
+.so-ms__tbl th:first-child{padding-left:14px}
+.so-ms__tbl th.so-ms__th-name{text-align:left;padding-left:8px;width:100%}
+.so-ms__tbl td{padding:7px 6px;border-top:1px solid rgba(154,196,226,.08);text-align:right;
+  font-variant-numeric:tabular-nums;white-space:nowrap}
+.so-ms__tbl td:first-child{padding-left:14px;color:#68809a}
+.so-ms__tbl tr:hover td{background:rgba(143,180,232,.05)}
+.so-ms__tbl td.so-ms__cell-name{text-align:left;padding-left:8px;max-width:210px}
+.so-ms__row--ct .so-ms__nick{color:var(--so-ct)}
+.so-ms__row--t .so-ms__nick{color:var(--so-t)}
+.so-ms__name{display:flex;align-items:center;gap:8px;min-width:0}
+.so-ms__av{
+  width:26px;height:26px;flex:0 0 auto;border-radius:5px;
+  display:flex;align-items:center;justify-content:center;
+  background:#14263a;border:1px solid var(--so-line-strong);
+  font-family:var(--so-display);font-size:13px;color:var(--so-acc);
+}
+.so-ms__nick{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500;
+  font-size:13px;letter-spacing:.02em}
+.so-ms__left{
+  display:inline-block;margin-left:6px;font-size:9px;letter-spacing:.1em;
+  color:#d9a441;text-transform:uppercase;vertical-align:middle;
+}
+.so-ms__money{color:#d9c58a}
+.so-ms__ping{color:#90a7b8}
+.so-ms__foot{
+  display:flex;gap:6px 16px;flex-wrap:wrap;padding:12px 18px;
+  border-top:1px solid var(--so-line);color:var(--so-muted);font-size:12px;
+}
+.so-ms__foot b{color:var(--so-text);font-weight:500}
+.so-ms__empty{padding:18px;color:var(--so-muted);font-size:13px}
+
+@media(max-width:760px){
+  .so-mcard{grid-template-columns:4px 1fr auto}
+  .so-mcard__body{padding:10px 12px}
+  .so-mcard__side{padding:10px 12px}
+  .so-mcard__when{margin-left:0;width:100%}
+  .so-ms__board{grid-template-columns:1fr}
+  .so-ms__side + .so-ms__side{border-left:0;border-top:1px solid rgba(154,196,226,.22)}
+  .so-ms__head{padding:10px 12px 8px;gap:8px}
+  .so-ms__team{font-size:16px}
+  .so-ms__win{font-size:14px}
+  .so-ms__score{font-size:26px}
+  /* Восемь колонок на узком экране: ужимаем поля, а не прячем столбцы
+     за горизонтальной прокруткой — итоги должны читаться целиком. */
+  .so-ms__tbl{table-layout:fixed;min-width:0;font-size:11px}
+  .so-ms__tbl th:nth-child(1){width:7%}
+  .so-ms__tbl th:nth-child(2){width:34%}
+  .so-ms__tbl th:nth-child(3){width:15%}
+  .so-ms__tbl th:nth-child(4),
+  .so-ms__tbl th:nth-child(5),
+  .so-ms__tbl th:nth-child(6){width:7%}
+  .so-ms__tbl th:nth-child(7){width:12%}
+  .so-ms__tbl th:nth-child(8){width:11%}
+  .so-ms__tbl th{padding:7px 3px 5px;font-size:8.5px;letter-spacing:.07em}
+  .so-ms__tbl th:first-child{padding-left:10px}
+  .so-ms__tbl td{padding:6px 3px}
+  .so-ms__tbl td:first-child{padding-left:10px}
+  .so-ms__tbl td.so-ms__cell-name{padding-left:4px;max-width:0}
+  .so-ms__name{gap:6px}
+  .so-ms__av{width:22px;height:22px;font-size:11px}
+  .so-ms__nick{font-size:12px}
+}
+
+/* ══════════════════════════════════════════════════════════════════
    МОБИЛЬНАЯ ВЕРСИЯ
    ПК-версию не трогаем: все правила ниже живут только в медиазапросах
    и на широком экране не применяются вовсе.
@@ -2638,6 +2775,15 @@ body.so-side-open .so-side{transform:none}
         </div>
       </div>
     </div>
+
+    <section class="so-hist" id="pf-history" hidden>
+      <div class="so-card">
+        <div class="so-card__t">ИСТОРИЯ МАТЧЕЙ</div>
+        <div class="so-hist__list" id="pf-history-list"></div>
+        <p class="so-note" id="pf-history-empty" hidden>Ты ещё не доиграл ни одной катки —
+           история появится после первого матча.</p>
+      </div>
+    </section>
   </main>
 </div><!-- /view-profile -->
 
@@ -2964,7 +3110,7 @@ body.so-side-open .so-side{transform:none}
   </main>
 </div><!-- /view-administration -->
 
-<!-- ═════════════════════ ПУБЛИЧНЫЙ ПРОФИЛЬ (#/player/<id>) ═════════════════════ -->
+<!-- ═════════════════════ ПУБЛИЧНЫЙ ПРОФИЛЬ (#/profile/<id>) ═════════════════════ -->
 <div id="view-player" hidden>
 
   <header class="so-top so-top--static">
@@ -3030,9 +3176,51 @@ body.so-side-open .so-side{transform:none}
           <p class="so-note">Статистика общая за всё время. Аватары офлайн не хранятся — показываем букву.</p>
         </div>
       </div>
+
+      <section class="so-hist" id="pv-history">
+        <div class="so-card">
+          <div class="so-card__t">ИСТОРИЯ МАТЧЕЙ</div>
+          <div class="so-hist__list" id="pv-history-list"></div>
+          <p class="so-note" id="pv-history-empty" hidden>Доигранных каток пока нет.</p>
+        </div>
+      </section>
     </div>
   </main>
 </div><!-- /view-player -->
+
+<!-- ═════════════════════ МАТЧ (#/match/<id>) ═════════════════════ -->
+<div id="view-match" hidden>
+
+  <header class="so-top so-top--static">
+    <a class="so-top__logo" href="#/">ВЛАЛ<b>CHILLOW</b></a>
+    <nav>
+      <a href="#/">ГЛАВНАЯ</a>
+      <a href="#/docs">ИНСТРУКЦИЯ</a>
+      <a href="#/play">КОМНАТЫ</a>
+      <a href="#/administration">АДМИНИСТРАЦИЯ</a>
+      <span class="so-online" title="сервер отвечает"><i class="so-online__dot" id="so-dot-match"></i></span>
+      <button class="so-sidebtn" type="button" data-side-open>ПАНЕЛЬ</button>
+    </nav>
+  </header>
+
+  <main class="so-sec" style="padding-top:30px;padding-bottom:110px">
+    <a class="so-backlink" id="mt-back" href="#/profile">← ПРОФИЛЬ</a>
+
+    <div class="so-card" id="mt-loading" style="margin-top:22px;max-width:680px">
+      <div class="so-card__t">ЗАГРУЖАЮ МАТЧ…</div>
+    </div>
+
+    <section class="so-card" id="mt-missing" hidden style="margin-top:22px;max-width:680px">
+      <div class="so-card__t">МАТЧ НЕ НАЙДЕН</div>
+      <p class="so-card__d" id="mt-missing-d" style="margin-top:10px">
+        Сервер не хранит такой матч.
+      </p>
+      <p style="margin-top:18px"><a class="so-btn so-btn--sm so-btn--ghost" href="#/profile">К ПРОФИЛЮ</a></p>
+    </section>
+
+    <div id="mt-screen" hidden></div>
+  </main>
+</div><!-- /view-match -->
 
 <!-- ═════════════════════ ПАНЕЛЬ СПРАВА ═════════════════════ -->
 <div class="so-scrim" id="side-scrim"></div>
@@ -3497,11 +3685,16 @@ function renderSide(){
 function renderProfileView(){
   var anon = $('pf-when-anon');
   var auth = $('pf-when-auth');
+  var hist = $('pf-history');
   if (!anon || !auth) return;
 
   anon.hidden = !!me;
   auth.hidden = !me;
+  if (hist) hist.hidden = !me;
   if (!me) return;
+
+  /* История могла ещё не грузиться (только что вошёл) — тянем один раз на игрока. */
+  if (ownMatchesFor !== me.id) loadOwnMatches();
 
   var n = $('pf-nick');
   var pi = $('pf-id');
@@ -4271,7 +4464,7 @@ function reportItemHtml(r, withActions){
       '<div class="so-repitem__head">' +
         '<div class="so-repitem__who">' +
           '<div class="so-repitem__target">' +
-            '<a href="#/player/' + encodeURIComponent(String(r.targetId)) + '">' +
+            '<a href="#/profile/' + encodeURIComponent(String(r.targetId)) + '">' +
               esc(target) + '</a>' +
             (r.targetAdmin ? ' <span class="so-badge-adm">ADM</span>' : '') +
             ' <span style="font-size:12px;color:#68809a">ID ' + r.targetId + '</span>' +
@@ -4440,7 +4633,7 @@ function loadAdministration(){
       var total = t.reports && typeof t.reports.total === 'number' ? t.reports.total : 0;
       if (total > 0) line += ' · ' + total + ' ' + reportsWord(total);
 
-      return '<a class="so-admcard" href="#/player/' + encodeURIComponent(String(t.id)) + '">' +
+      return '<a class="so-admcard" href="#/profile/' + encodeURIComponent(String(t.id)) + '">' +
           '<span class="so-admcard__av" aria-hidden="true">' + esc(letter) + '</span>' +
           '<span class="so-admcard__meta">' +
             '<span class="so-admcard__nick">' + nickWithBadge(nick, true) + '</span>' +
@@ -4455,14 +4648,24 @@ function loadAdministration(){
   });
 }
 
-/* ── #/player/<id>: публичный профиль ── */
+/* ── #/profile/<id>: публичный профиль ── */
 
 function publicPlayerQueryFromHash(){
   var h = (location.hash || '').replace(/^#\/?/, '');
+  if (h.indexOf('profile/') === 0)
+    return decodeURIComponent(h.slice('profile/'.length).split('?')[0]).trim();
   if (h.indexOf('player/') === 0)
     return decodeURIComponent(h.slice('player/'.length).split('?')[0]).trim();
   if (h.indexOf('player?') === 0) return (hashQuery('q') || hashQuery('id') || '').trim();
   return '';
+}
+
+/* ── #/match/<id>: экран итогов катки ── */
+
+function matchIdFromHash(){
+  var h = (location.hash || '').replace(/^#\/?/, '');
+  if (h.indexOf('match/') !== 0) return '';
+  return decodeURIComponent(h.slice('match/'.length).split('?')[0]).trim();
 }
 
 function loadPublicPlayer(query){
@@ -4544,6 +4747,9 @@ function renderPublicPlayer(t){
   set('pv-time', fmtTime((t.stats && t.stats.seconds) || 0));
   set('pv-matches', fmtNum((t.stats && t.stats.matches) || 0));
 
+  /* История приходит тем же ответом: второй запрос не нужен. */
+  renderMatchHistory('pv-history-list', 'pv-history-empty', t.matches || [], t.id);
+
   var seen = $('pv-seen');
   if (seen){
     if (t.status !== 'offline') seen.textContent = 'Сейчас на сервере: ' + adminStatusText(t.status) + '.';
@@ -4565,6 +4771,211 @@ function renderPublicPlayer(t){
       : 'ПОЖАЛОВАТЬСЯ';
     btn.setAttribute('data-target', String(t.customId || t.id));
   }
+}
+
+/* ═══════════ история матчей и экран итогов ═══════════ */
+
+function matchModeName(id){
+  var m = modeById(id);
+  if (!m) return id || '—';
+  if (m.alias) return String(m.alias).toUpperCase();
+  return m.name || id;
+}
+
+/* «победа» / «поражение» для конкретной команды игрока. */
+function matchResultText(match, team){
+  if (!team || match.winner === 'DRAW') return 'ничья';
+  return match.winner === team ? 'победа' : 'поражение';
+}
+
+function matchResultClass(match, team){
+  if (!team || match.winner === 'DRAW') return '';
+  return match.winner === team ? ' so-mcard__res--win' : ' so-mcard__res--lose';
+}
+
+/* Список каток: карточки в стиле панели, клик — полный экран итогов. */
+function renderMatchHistory(listId, emptyId, matches, viewerId){
+  var list = $(listId);
+  var empty = $(emptyId);
+  if (!list) return;
+
+  list.innerHTML = '';
+  if (!matches || !matches.length){
+    if (empty) empty.hidden = false;
+    return;
+  }
+  if (empty) empty.hidden = true;
+
+  var html = '';
+  for (var i = 0; i < matches.length; i++){
+    var m = matches[i] || {};
+    var you = m.you || null;
+    var team = you && you.team ? you.team : '';
+    var side = team === 'CT' ? 'ct' : team === 'T' ? 't' : 'draw';
+    var res = matchResultText(m, team);
+    var resCls = matchResultClass(m, team);
+    var left = you && you.left ? ' · <span class="so-mcard__res--left">вышел до конца</span>' : '';
+    var kda = you
+      ? (you.kills + ' / ' + you.assists + ' / ' + you.deaths)
+      : '—';
+
+    html += '<a class="so-mcard so-mcard--' + side + '" href="#/match/' + encodeURIComponent(String(m.id)) + '">' +
+      '<span class="so-mcard__bar" aria-hidden="true"></span>' +
+      '<span class="so-mcard__body">' +
+        '<span class="so-mcard__top">' +
+          '<span class="so-mcard__mode">' + esc(matchModeName(m.mode)) + '</span>' +
+          '<span class="so-mcard__map">' + esc(m.map || '—') +
+            (m.rounds ? ' · раундов ' + m.rounds : '') + '</span>' +
+          '<span class="so-mcard__when">' + esc(fmtWhen(m.ended)) + '</span>' +
+        '</span>' +
+        '<span class="so-mcard__line">Счёт <b>' + (m.scoreCt || 0) + ' : ' + (m.scoreTr || 0) +
+          '</b> · У/П/С <b>' + esc(kda) + '</b>' + left + '</span>' +
+      '</span>' +
+      '<span class="so-mcard__side">' +
+        '<span class="so-mcard__score">' + (m.scoreCt || 0) + ':' + (m.scoreTr || 0) + '</span>' +
+        '<span class="so-mcard__res' + resCls + '">' + esc(res) + '</span>' +
+      '</span>' +
+    '</a>';
+  }
+  list.innerHTML = html;
+}
+
+var ownMatchesFor = 0;
+
+function loadOwnMatches(){
+  if (!me) return;
+  var id = me.id;
+  ownMatchesFor = id;
+  api('GET', 'api/matches?player=' + encodeURIComponent(String(id)) + '&limit=10')
+    .then(function(res){
+      if (!res.ok || !res.data) return;
+      renderMatchHistory('pf-history-list', 'pf-history-empty', res.data.matches || [], id);
+    })
+    .catch(function(){ /* история не критична: профиль уже показан */ });
+}
+
+/* ── #/match/<id>: полный экран итогов как в игре ── */
+
+function loadMatch(id){
+  var screen = $('mt-screen');
+  var loading = $('mt-loading');
+  var missing = $('mt-missing');
+  if (!screen || !loading || !missing) return;
+
+  loading.hidden = false;
+  screen.hidden = true;
+  missing.hidden = true;
+
+  var fail = function(text){
+    loading.hidden = true;
+    missing.hidden = false;
+    var d = $('mt-missing-d');
+    if (d) d.textContent = text;
+  };
+
+  if (!id){
+    fail('В ссылке нет номера матча.');
+    return;
+  }
+
+  api('GET', 'api/match/' + encodeURIComponent(id)).then(function(res){
+    if (!res.ok || !res.data || res.data.ok === false || !res.data.match){
+      fail(res.status === 404
+        ? 'Сервер не хранит матч #' + id + '.'
+        : ((res.data && res.data.message) || 'не получилось загрузить матч'));
+      return;
+    }
+    renderMatchPage(res.data.match);
+    loading.hidden = true;
+    missing.hidden = true;
+    screen.hidden = false;
+  }).catch(function(){ fail('Сервер не ответил.'); });
+}
+
+function renderMatchPage(m){
+  var screen = $('mt-screen');
+  if (!screen) return;
+
+  var ct = [], tr = [], other = [];
+  var players = m.players || [];
+  for (var i = 0; i < players.length; i++){
+    var p = players[i];
+    if (p.team === 'CT') ct.push(p);
+    else if (p.team === 'T') tr.push(p);
+    else other.push(p);
+  }
+
+  var row = function(p, index, teamClass){
+    var nick = p.nick || ('ID ' + p.id);
+    var letter = (String(nick).charAt(0) || '?').toUpperCase();
+    var left = p.left ? '<span class="so-ms__left">вышел</span>' : '';
+    var ping = (typeof p.ping === 'number' && p.ping >= 0) ? p.ping : '—';
+    var title = 'ID ' + (p.displayId || p.id);
+    return '<tr class="so-ms__row--' + teamClass + '">' +
+      '<td>' + (index + 1) + '</td>' +
+      '<td class="so-ms__cell-name"><span class="so-ms__name">' +
+        '<span class="so-ms__av" aria-hidden="true">' + esc(letter) + '</span>' +
+        '<span class="so-ms__nick" title="' + esc(title) + '">' +
+          nickWithBadge(nick, p.admin === true) +
+        '</span>' + left +
+      '</span></td>' +
+      '<td class="so-ms__money">$' + fmtNum(p.money || 0) + '</td>' +
+      '<td>' + (p.kills || 0) + '</td>' +
+      '<td>' + (p.assists || 0) + '</td>' +
+      '<td>' + (p.deaths || 0) + '</td>' +
+      '<td>' + (p.score || 0) + '</td>' +
+      '<td class="so-ms__ping">' + ping + '</td>' +
+    '</tr>';
+  };
+
+  var side = function(teamKey, list, title, score){
+    var cls = teamKey === 'CT' ? 'so-ms--ct' : 'so-ms--t';
+    var teamClass = teamKey === 'CT' ? 'ct' : 't';
+    var win = m.winner === teamKey ? '<span class="so-ms__win">ПОБЕДА</span>' : '';
+    var body = '';
+    if (list.length){
+      for (var j = 0; j < list.length; j++)
+        body += row(list[j], j, teamClass);
+    } else {
+      body = '<tr><td colspan="8" class="so-ms__empty">никого не было</td></tr>';
+    }
+
+    return '<div class="so-ms__side ' + cls + '">' +
+      '<div class="so-ms__head">' +
+        '<span class="so-ms__team">' + title + '</span>' + win +
+        '<span class="so-ms__score">' + (score || 0) + '</span>' +
+      '</div>' +
+      '<table class="so-ms__tbl">' +
+        '<thead><tr>' +
+          '<th>#</th><th class="so-ms__th-name">ИМЯ</th>' +
+          '<th>ДЕНЬГИ</th><th>У</th><th>П</th><th>С</th><th>СЧЁТ</th><th>ПИНГ</th>' +
+        '</tr></thead>' +
+        '<tbody>' + body + '</tbody>' +
+      '</table>' +
+    '</div>';
+  };
+
+  var winnerText = m.winner === 'DRAW' ? 'ничья'
+    : (m.winner === 'CT' ? 'победа обороны' : 'победа атаки');
+
+  screen.innerHTML =
+    '<div class="so-ms">' +
+      '<div class="so-ms__title">СТАТИСТИКА · МАТЧ #' + (m.id || '—') + '</div>' +
+      '<div class="so-ms__board">' +
+        side('CT', ct, 'ОБОРОНА (CT)', m.scoreCt) +
+        side('T', tr, 'АТАКА (T)', m.scoreTr) +
+      '</div>' +
+      '<div class="so-ms__foot">' +
+        '<span><b>' + esc(matchModeName(m.mode)) + '</b> · ' + esc(m.map || '—') + '</span>' +
+        (m.rounds ? '<span>раундов: <b>' + m.rounds + '</b></span>' : '') +
+        '<span>' + esc(fmtWhen(m.ended)) + '</span>' +
+        '<span>' + esc(winnerText) + '</span>' +
+        (other.length ? '<span>зрителей: ' + other.length + '</span>' : '') +
+      '</div>' +
+    '</div>';
+
+  var back = $('mt-back');
+  if (back && me) back.href = '#/profile';
 }
 
 /* Значение из hash-строки: #/reports?target=123 → '123'. */
@@ -5042,6 +5453,7 @@ function api(method, path, body){
 function loadModes(){
   return api('GET', 'api/modes').then(function(res){
     if (!res.ok || !res.data || !res.data.modes) return;
+    var hadModes = MODES.length > 0;
     MODES = res.data.modes.map(function(m){
       return {
         id: m.id, name: m.name, alias: m.alias,
@@ -5057,6 +5469,14 @@ function loadModes(){
     renderTeams();
     renderMaps();
     fillMarquee();
+
+    /* Страница матча или профиля могла отрисоваться до каталога — тогда в подписях
+       остались сырые id. Один раз перерисовываем, когда режимы доехали. */
+    if (!hadModes && typeof currentRoute === 'function'){
+      if (currentRoute() === 'match') loadMatch(matchIdFromHash());
+      else if (currentRoute() === 'player') loadPublicPlayer(publicPlayerQueryFromHash());
+      else if (currentRoute() === 'profile' && me) loadOwnMatches();
+    }
   });
 }
 
@@ -5342,6 +5762,7 @@ var adminView = $('view-admin');
 var reportsView = $('view-reports');
 var administrationView = $('view-administration');
 var playerView = $('view-player');
+var matchView = $('view-match');
 var heroVideo = $('hero-video');
 var heroSection = document.querySelector('.so-hero');
 var reduceMotion = !!(window.matchMedia &&
@@ -5404,7 +5825,11 @@ function fillMarquee(){
 function currentRoute(){
   var h = (location.hash || '').replace(/^#\/?/, '');
   if (h === 'play' || h.indexOf('play/') === 0 || h.indexOf('play?') === 0) return 'play';
-  if (h === 'profile' || h.indexOf('profile/') === 0) return 'profile';
+  if (h === 'profile') return 'profile';
+  /* #/profile/<id> — чужой (или свой) профиль по ссылке; старый #/player/<id>
+     переводим на новый адрес в applyRoute. */
+  if (h.indexOf('profile/') === 0) return 'player';
+  if (h === 'match' || h.indexOf('match/') === 0) return 'match';
   if (h === 'admin' || h.indexOf('admin/') === 0) return 'admin';
   if (h === 'docs' || h.indexOf('docs/') === 0) return 'docs';
   if (h === 'reports' || h.indexOf('reports/') === 0 || h.indexOf('reports?') === 0) return 'reports';
@@ -5417,7 +5842,20 @@ function currentRoute(){
 
 function applyRoute(){
   if (!homeView || !playView || !docsView || !profileView || !adminView ||
-      !reportsView || !administrationView || !playerView) return;
+      !reportsView || !administrationView || !playerView || !matchView) return;
+
+  // Старые ссылки #/player/<id> — на новый адрес #/profile/<id>. Одна замена,
+  // дальше сработает hashchange и применит уже новый маршрут.
+  var raw = (location.hash || '').replace(/^#\/?/, '');
+  if (raw === 'player'){
+    location.hash = '#/profile';
+    return;
+  }
+  if (raw.indexOf('player/') === 0){
+    location.hash = '#/profile/' + raw.slice('player/'.length);
+    return;
+  }
+
   var route = currentRoute();
   var onPlay = route === 'play';
   var onDocs = route === 'docs';
@@ -5426,8 +5864,9 @@ function applyRoute(){
   var onReports = route === 'reports';
   var onAdministration = route === 'administration';
   var onPlayer = route === 'player';
+  var onMatch = route === 'match';
   homeView.hidden = onPlay || onDocs || onProfile || onAdmin || onReports ||
-    onAdministration || onPlayer;
+    onAdministration || onPlayer || onMatch;
   docsView.hidden = !onDocs;
   playView.hidden = !onPlay;
   profileView.hidden = !onProfile;
@@ -5435,15 +5874,20 @@ function applyRoute(){
   reportsView.hidden = !onReports;
   administrationView.hidden = !onAdministration;
   playerView.hidden = !onPlayer;
+  matchView.hidden = !onMatch;
   document.body.classList.toggle('is-home', !onPlay);
   /* На профиле цифры тянутся свежими: сессия живёт, статистика — на диске. */
-  if (onProfile && me) loadStats();
+  if (onProfile && me){
+    loadStats();
+    loadOwnMatches();
+  }
   /* Админка всегда переспрашивает сервер: сессия могла умереть с рестартом. */
   if (onAdmin) loadAdminState();
   /* Жалобы, список админов и публичный профиль — каждый раз с сервера. */
   if (onReports) renderReportsPage();
   if (onAdministration) loadAdministration();
   if (onPlayer) loadPublicPlayer(publicPlayerQueryFromHash());
+  if (onMatch) loadMatch(matchIdFromHash());
   /* Гейт комнат синхронен с сессией: зашёл — интерфейс, вышел — экран входа. */
   if (onPlay) renderPlayGate();
   /* Глубокая ссылка в инструкцию: якорей-хэшей нет, цель передаётся переменной
@@ -5615,6 +6059,8 @@ if (typeof window !== 'undefined') {
     gotoDoc: gotoDoc,
     sideLogin: sideLogin, pfLogin: pfLogin,
     loadStats: loadStats, renderProfileView: renderProfileView, renderSide: renderSide,
+    loadOwnMatches: loadOwnMatches, renderMatchHistory: renderMatchHistory,
+    loadMatch: loadMatch, renderMatchPage: renderMatchPage,
     openSide: openSide, closeSide: closeSide,
     loadAdminState: loadAdminState, renderAdmin: renderAdmin,
     adminLogin: adminLogin, adminLogout: adminLogout, switchAdminTab: switchAdminTab,

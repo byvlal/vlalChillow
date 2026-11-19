@@ -105,6 +105,10 @@ public sealed partial class GameMatchHost
     /// <summary>Засчитать смерть жертве. Зовут из точек коммита смерти.</summary>
     private void NoteStatsDeath(MatchRoom room, byte victimActorNr)
     {
+        // История матча считает смерти в тех же точках и не зависит от того, включена ли
+        // общая статистика: запись должна собраться и при выключенном stats-сторе.
+        NoteHistoryDeath(room, victimActorNr);
+
         var stats = Stats;
         if (stats is null || victimActorNr == 0 || victimActorNr == MatchHostActor.ActorNr)
             return;
