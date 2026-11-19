@@ -527,6 +527,9 @@ public sealed partial class GameMatchHost
             $"MATCH OVER: {winSide}  ·  T {scoreTr} : {scoreCt} CT",
             winner, mvpNr: 0, mvpName: null, isFinal: true);
         PostServerDebugChat($"Финал {scoreTr}:{scoreCt}");
+
+        // История: у дуэли свой финальный HUD, общий бомбовый путь её не пишет.
+        RecordMatchHistory(room, $"duel-final round={round}");
     }
 
     private void ArmDuelLobbyReturnAfterFinalHud(MatchRoom room)

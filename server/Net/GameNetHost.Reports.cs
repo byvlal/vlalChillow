@@ -42,6 +42,10 @@ public sealed partial class GameNetHost
             id = numeric;
         }
 
+        // Ник в ссылке (#/profile/vlal): справочник помнит ники всех, кого видел.
+        if (id is null)
+            id = _directory.FindByNick(text)?.Id;
+
         return id is null ? null : DescribeReportTarget(id.Value);
     }
 
@@ -96,6 +100,19 @@ public sealed partial class GameNetHost
 
         if (found is null)
         {
+            // Игрок офлайн, но справочник его помнит: профиль обязан открываться и без
+            // онлайна — иначе ссылка из истории матчей вела бы в «не найден».
+            var seen = _directory.Resolve(id);
+            if (seen is not null && !string.IsNullOrWhiteSpace(seen.Nick))
+            {
+                DateTime? lastSeen = seen.LastSeenUtcMs > 0
+                    ? DateTimeOffset.FromUnixTimeMilliseconds(seen.LastSeenUtcMs).UtcDateTime
+                    : null;
+                return new ReportTarget(
+                    id, seen.Nick, custom, display, _config.IsAdmin(id), "offline",
+                    false, IsPlayerBannedById(id), lastSeen, devices, null);
+            }
+
             if (!_config.IsAdmin(id))
                 return null;
 

@@ -489,7 +489,7 @@ public sealed partial class GameMatchHost : IDisposable
         List<NetPeer> peers;
         lock (_roomGate)
         {
-            if (!_roomsByPassword.Remove(passwordKey, out room))
+            if (!_roomsByPassword.TryGetValue(passwordKey, out room) || room is null)
                 return false;
 
             peers = _peers
@@ -497,6 +497,16 @@ public sealed partial class GameMatchHost : IDisposable
                 .Select(kv => kv.Key)
                 .ToList();
         }
+
+        // Катку пишем в историю до того, как комната исчезнет: сюда приходит и очистка
+        // комнаты (все ушли / протухла), и закрытие после MatchOver — там запись уже есть,
+        // повторной не будет.
+        RecordMatchHistory(room, "room-close");
+        lock (_historyGate)
+            _historyRuns.Remove(room.PasswordKey);
+
+        lock (_roomGate)
+            _roomsByPassword.Remove(passwordKey);
 
         // Бронь жила ровно для этой комнаты. Комната закрыта — бронь не значит ничего,
         // и оставлять её нельзя: при следующем входе в лобби JoinResponse по ней снова
@@ -672,6 +682,9 @@ public sealed partial class GameMatchHost : IDisposable
             (MatchRoomPropKeys.FinalWinTeam, LobbyVariant.FromProps(finalWinTeam)),
             (MatchRoomPropKeys.C2, LobbyVariant.FromByte(MatchC2States.FinalHud)),
         ], reason: $"MatchOver FinalHud Tr={scoreTr} Ct={scoreCt}");
+
+        // История: до закрытия комнаты и до того, как клиенты разойдутся.
+        RecordMatchHistory(room, $"final {logTag}");
 
         Console.WriteLine(
             $"[match-host] {logTag}: final C2={MatchC2States.FinalHud} (FinalHud) " +
@@ -1042,6 +1055,8 @@ public sealed partial class GameMatchHost : IDisposable
                 // Match flow each tick: wipe / fuse expiry / phase deadlines.
                 var flowSw = Stopwatch.GetTimestamp();
                 TickMatchFlow();
+                // История матчей: ловим замороженный состав раунда, пока он жив.
+                TickMatchHistory();
                 // Issue #39: peers whose world gate never got a proof packet must not starve.
                 TickWorldReadyGates();
                 // Issue #39: actors whose session disappeared must not linger as alive ghosts.

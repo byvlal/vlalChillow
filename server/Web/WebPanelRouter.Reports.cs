@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json;
 using StandChillow.LanServer.Reports;
+using StandChillow.LanServer.Stats;
 
 namespace StandChillow.LanServer.Web;
 
@@ -75,6 +76,14 @@ public sealed partial class WebPanelRouter
             writer.WriteNumber("seconds", snap?.Seconds ?? 0);
             writer.WriteNumber("matches", snap?.Matches ?? 0);
             writer.WriteEndObject();
+
+            // Последние катки — прямо в профиле, без второго запроса.
+            writer.WriteStartArray("matches");
+            var matches = _options.Matches?.ForPlayer(target.Id, 10)
+                          ?? (IReadOnlyList<MatchHistoryRecord>)Array.Empty<MatchHistoryRecord>();
+            foreach (var match in matches)
+                WriteMatchSummary(writer, match, target.Id);
+            writer.WriteEndArray();
 
             WriteCounts(writer, counts);
             writer.WriteEndObject();
