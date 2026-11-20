@@ -265,9 +265,11 @@ public sealed partial class GameMatchHost
             LobbyVariant.FromByte((byte)MatchTeam.Spectator));
 
         // 5) Joiner money — phone OBT later forces Ct; we await inbound team before pawn.
-        // Issue #40: a reconnect keeps the balance the room already published. Bootstrapping
-        // it back to 10000 mid-buy silently rewound the round economy for the returning peer.
-        var joinerMoney = MatchFlowTestParams.BootstrapMoney;
+        // A fresh joiner enters the round with the round-start balance (800 by default), not
+        // the host actor's 10000 bootstrap reserve: the buy menu must match every other
+        // fighter on the first C2=22. Issue #40: a reconnect keeps the balance the room
+        // already published; bootstrapping it back to either default rewound the round economy.
+        var joinerMoney = MatchFlowTestParams.RoundStartMoney;
         var reconnectTrusted = false;
         lock (_roomGate)
         {
