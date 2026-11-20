@@ -1,5 +1,6 @@
 using System.Net;
 using System.Text;
+using System.Text.Json;
 using StandChillow.LanServer.Net.Match.Kernel;
 using StandChillow.LanServer.Web;
 using Xunit;
@@ -264,6 +265,48 @@ public sealed class WebPanelRouterTests
         Assert.Contains("\"scoreCt\":5", json);
         Assert.Contains("\"scoreTr\":3", json);
         Assert.Contains("\"players\":4", json);
+    }
+
+    [Fact]
+    public void LiveRoomIsPublicAndNeverShowsMoney()
+    {
+        var router = NewRouter(out var rooms);
+        Assert.True(rooms.TryCreate("2v2", null, "тестовая", "влал", out var room, out _,
+            ownerId: 1000));
+
+        var roster = new[]
+        {
+            new RoomLivePlayer(1000, "влал", "CT", 7, 2, 3, 1200, 12),
+            new RoomLivePlayer(1002, "b", "T", 4, 1, 5, 900, 20),
+        };
+        Assert.True(rooms.TryUpdate(room!.Number, RoomState.Live, 2, 3, 1, roster, 4));
+
+        // Без сессии: страницу комнаты открывает кто угодно.
+        var response = router.Route(Get("/api/room/1"));
+        Assert.Equal(200, response.Status);
+
+        var body = Body(response);
+        using var doc = JsonDocument.Parse(body);
+        var live = doc.RootElement.GetProperty("room");
+
+        Assert.Equal(1, live.GetProperty("number").GetInt32());
+        Assert.Equal("live", live.GetProperty("state").GetString());
+        Assert.Equal(2, live.GetProperty("playerCount").GetInt32());
+        Assert.Equal(4, live.GetProperty("round").GetInt32());
+        Assert.Equal(2, live.GetProperty("players").GetArrayLength());
+
+        // Деньги не отдаём вовсе — ни колонкой, ни полем в составе.
+        Assert.DoesNotContain("money", body, StringComparison.OrdinalIgnoreCase);
+        foreach (var player in live.GetProperty("players").EnumerateArray())
+            Assert.False(player.TryGetProperty("money", out _));
+
+        Assert.Equal(404, router.Route(Get("/api/room/999")).Status);
+
+        var wrong = router.Route(new WebRequestContext(
+            "POST", "/api/room/1", "", Array.Empty<byte>(), null,
+            new Dictionary<string, string>()));
+        Assert.Equal(405, wrong.Status);
+        Assert.Contains(wrong.ExtraHeaders, h => h.Item1 == "Allow" && h.Item2 == "GET");
     }
 
     [Fact]

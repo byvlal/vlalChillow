@@ -102,7 +102,7 @@ public static class CommandAccessPolicy
     /// при отказе — «молча проигнорировать» здесь невозможно by design.
     /// </summary>
     /// <param name="playerId">
-    /// Серверный id написавшего: считается из состояния сессии (<c>MatchPublicId</c>),
+    /// Серверный id написавшего: считается из состояния сессии (<c>LegacyNickHash</c>),
     /// а не из ника/uid, присланного клиентом.
     /// </param>
     /// <param name="hasAdminRights">

@@ -56,6 +56,7 @@ public sealed class WebPanelHost : IDisposable
     private readonly WebPanelRouter _router;
     private readonly CancellationTokenSource _tickCts = new();
     private readonly Func<string> _indexHtml;
+    private readonly AvatarCache _avatars;
 
     private GameNetHost? _host;
     private Task? _tickLoop;
@@ -84,11 +85,14 @@ public sealed class WebPanelHost : IDisposable
     /// <summary>Файл истории матчей — отдельно от агрегатов stats.json.</summary>
     private const string MatchHistoryFileName = "matches.json";
 
-    public WebPanelHost(ServerConfig server)
+    public WebPanelHost(ServerConfig server, AvatarCache? avatars = null)
     {
         _server = server;
         _config = server.Web;
         _rooms = new RoomRegistry { MaxRooms = Math.Clamp(_config.MaxRooms, 1, 1024) };
+        // Кэш аватаров общий с игровым хостом: лобби кладёт, сайт читает.
+        _avatars = avatars
+            ?? new AvatarCache(Path.Combine(AppContext.BaseDirectory, "avatars"));
 
         // Статистика живёт на диске рядом с exe: рестарт ничего не теряет.
         _stats = new PlayerStatsStore(Path.Combine(AppContext.BaseDirectory, StatsFileName));
@@ -143,8 +147,10 @@ public sealed class WebPanelHost : IDisposable
                 // Бан по ID игрока: гасит авторизацию и все запросы (#51).
                 IsBanned = IsPlayerBanned,
 
-                // Аватар — те же байты, что клиент прислал в лобби.
+                // Аватар — те же байты, что клиент прислал в лобби (или кэш на диске).
                 AvatarById = AvatarOfPlayer,
+                // Публичный профиль: тот же кэш, но без требования сессии.
+                PublicAvatarById = CachedAvatarOfPlayer,
 
                 // Префикс подпути: со слэшем в proxy_pass прокси его срежет, но
                 // конфиг правит владелец — роутер обязан понимать оба варианта.
@@ -286,6 +292,11 @@ public sealed class WebPanelHost : IDisposable
         host.SiteAddress = _addresses;
         host.Match.Rooms = _rooms;
 
+        // Файлы, накопленные со старых хешей ника (статистика, история, жалобы,
+        // аватары), переводим на номера аккаунтов. Аккаунты к этому моменту уже
+        // созданы и засеяны в InitBans — AttachHost вызывается после конструктора хоста.
+        MigrateLegacyIds(host);
+
         // Статистика: боевые пути матча отдают киллы/смерти сюда, семплер панели
         // раз в 15 секунд забирает «кто и в каких фазах».
         host.Match.Stats = _stats;
@@ -329,6 +340,40 @@ public sealed class WebPanelHost : IDisposable
         Console.WriteLine(
             $"[web] игровой хост подключён: онлайн {_rooms.OnlinePlayerCount()}, " +
             $"квота комнат по игрокам активна");
+    }
+
+    /// <summary>
+    /// Перевести статистику, историю матчей, жалобы и аватары со старых хешей ника
+    /// на постоянные номера аккаунтов.
+    /// </summary>
+    /// <remarks>
+    /// Миграция разовая: записи, которые уже лежат на номерах аккаунтов, не трогаются.
+    /// Ник в записи помогает опознать человека, но если его нет — номер находится
+    /// сканом старых хешей в <c>accounts.json</c>. Неизвестные аватары не удаляются,
+    /// а уезжают в <c>avatars/legacy/</c>.
+    /// </remarks>
+    private void MigrateLegacyIds(GameNetHost host)
+    {
+        try
+        {
+            var stats = _stats.RemapAccountIds(host.MapLegacyAccountId);
+            if (stats > 0)
+                Console.WriteLine($"[account] статистика переведена на аккаунты: {stats} записей");
+
+            var history = _history.RemapAccountIds(host.MapLegacyAccountId);
+            if (history > 0)
+                Console.WriteLine($"[account] история матчей переведена на аккаунты: {history} матчей");
+
+            var reports = _reports.RemapAccountIds(host.MapLegacyAccountId);
+            if (reports > 0)
+                Console.WriteLine($"[account] жалобы переведены на аккаунты: {reports} записей");
+
+            _avatars.RemapIds(host.MapLegacyAccountId);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[account] WARN миграция старых файлов: {ex.Message}");
+        }
     }
 
     /// <summary>Остановить панель (сокет + фоновая задача).</summary>
@@ -512,10 +557,10 @@ public sealed class WebPanelHost : IDisposable
     }
 
     /// <summary>
-    /// Кто сейчас в лобби: серверный id и ник. Пусто, пока хост не подключён.
+    /// Кто сейчас в лобби: номер аккаунта и ник. Пусто, пока хост не подключён.
     /// </summary>
     /// <remarks>
-    /// id считается той же функцией, что даёт <c>uid</c> в катке и строку
+    /// Номер выдаётся при входе — тот же, что даёт <c>uid</c> в катке и строку
     /// «Ты &lt;ник&gt; · ID: …» при входе в лобби, поэтому человек называет ровно
     /// то число, которое сервер и так про него знает.
     /// </remarks>
@@ -529,9 +574,8 @@ public sealed class WebPanelHost : IDisposable
         var list = new List<(int Id, string Nick)>(players.Count);
         foreach (var player in players)
         {
-            var id = MatchPublicId.ForNick(player.Name);
-            if (id > 0)
-                list.Add((id, player.Name));
+            if (player.PublicId > 0)
+                list.Add((player.PublicId, player.Name));
         }
 
         return list;
@@ -551,23 +595,34 @@ public sealed class WebPanelHost : IDisposable
     }
 
     /// <summary>
-    /// Аватар игрока: ровно те байты, что его клиент прислал при входе в лобби
-    /// (по захвату — JPEG 256×256). Игрока в лобби нет — аватара тоже нет.
+    /// Аватар игрока: живые байты из лобби, а если игрок уже вышел — из кэша на диске.
+    /// Кэш переживает выход и рестарт, поэтому профиль не теряет картинку.
     /// </summary>
     private byte[]? AvatarOfPlayer(int playerId)
     {
-        var host = _host;
-        if (host is null || playerId <= 0)
+        if (playerId <= 0)
             return null;
 
-        foreach (var player in host.Session.JoinedPlayers())
+        var host = _host;
+        if (host is not null)
         {
-            if (MatchPublicId.ForNick(player.Name) != playerId) continue;
-            return player.Avatar;
+            foreach (var player in host.Session.JoinedPlayers())
+            {
+                if (player.PublicId != playerId) continue;
+                if (player.Avatar is { Length: > 0 })
+                    return player.Avatar;
+                break;
+            }
         }
 
-        return null;
+        return _avatars.TryRead(playerId);
     }
+
+    /// <summary>Аватар из кэша без привязки к лобби — для публичного профиля.</summary>
+    private byte[]? CachedAvatarOfPlayer(int playerId) => _avatars.TryRead(playerId);
+
+    /// <summary>Кэш аватаров: лобби пишет сюда при входе.</summary>
+    public AvatarCache Avatars => _avatars;
 
     /// <summary>
     /// Забанен ли игрок с таким ID. Пока хост не подключён — считаем, что нет: банов

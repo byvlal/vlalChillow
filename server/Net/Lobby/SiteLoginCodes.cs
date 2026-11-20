@@ -5,7 +5,7 @@ namespace StandChillow.LanServer.Net.Lobby;
 /// <summary>
 /// Одна запись кода: кто, когда получил и до какого времени жив.
 /// </summary>
-/// <param name="PlayerId">Серверный ID игрока (<see cref="MatchPublicId.ForNick"/>).</param>
+/// <param name="PlayerId">Серверный ID игрока (<see cref="LegacyNickHash.ForNick"/>).</param>
 /// <param name="Nick">Ник на момент выдачи — сайт показывает его в «Привет, …».</param>
 /// <param name="Code">Сам код, 6 цифр.</param>
 /// <param name="IssuedUtc">Когда выдан.</param>

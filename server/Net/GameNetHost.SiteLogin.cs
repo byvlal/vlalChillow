@@ -34,7 +34,13 @@ public sealed partial class GameNetHost
     /// </remarks>
     private void SendIdentityLine(ConnectedPlayer player)
     {
-        var id = MatchPublicId.ForNick(player.Name);
+        var id = player.PublicId;
+        if (id <= 0)
+        {
+            SendServerChatTo(player.Peer, "не получилось выдать ID — перезайди в лобби");
+            return;
+        }
+
         var code = _siteCodes.Issue(id, player.Name, DateTime.UtcNow);
 
         // Кастомный ID админа показываем вместо числа: игроки видят то же, что и в катке.
@@ -66,7 +72,7 @@ public sealed partial class GameNetHost
         if (player.Status == PlayerLobbyStatus.InMatch)
             return;
 
-        var id = MatchPublicId.ForNick(player.Name);
+        var id = player.PublicId;
         if (id <= 0)
             return;
 
@@ -85,7 +91,13 @@ public sealed partial class GameNetHost
             return;
         }
 
-        var id = MatchPublicId.ForNick(player.Name);
+        var id = player.PublicId;
+        if (id <= 0)
+        {
+            reply("не получилось выпустить код: у входа нет ID аккаунта — перезайди в лобби");
+            return;
+        }
+
         var code = _siteCodes.Issue(id, player.Name, DateTime.UtcNow);
         if (code is null)
         {

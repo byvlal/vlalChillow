@@ -2,14 +2,33 @@ using StandChillow.LanServer.Config;
 
 namespace StandChillow.LanServer.Bans;
 
-/// <summary>Что спросили у реестра на входе: ник, адрес и (если есть) устройство.</summary>
+/// <summary>Что спросили у реестра на входе: ник, адрес, устройство и публичный id.</summary>
 /// <param name="Nick">Ник из пакета входа; на коннекте в матч его ещё нет.</param>
 /// <param name="Ip">Любой адрес: LAN, Hamachi, VPN, публичный. Фильтра по типу нет.</param>
 /// <param name="Device">
 /// Стабильный ключ 2.07-установки (<c>LB&lt;md5&gt;</c>). На коннекте и в лобби его нет —
 /// только в handshake канала матча.
 /// </param>
-public readonly record struct BanProbe(string? Nick, string? Ip, string? Device = null);
+/// <param name="PublicId">
+/// Публичный id аккаунта (<see cref="AccountStore.FirstId"/> и выше). Передаётся только
+/// тогда, когда устройство действительно принадлежит аккаунту: иначе новый человек под
+/// чужим ником получил бы чужой бан. <c>0</c> — ключ в проверке не участвует.
+/// </param>
+public readonly record struct BanProbe(
+    string? Nick,
+    string? Ip,
+    string? Device = null,
+    int PublicId = 0);
+
+/// <summary>По какому ключу сработал бан.</summary>
+public enum BanMatchKind
+{
+    None,
+    UserId,
+    Ip,
+    PublicId,
+    Nick,
+}
 
 /// <summary>
 /// Ответ реестра. <see cref="Banned"/> — не пускать; <see cref="AdminExempt"/> — это админ,
@@ -22,24 +41,27 @@ public sealed class BanDecision
     public bool Banned { get; init; }
     public bool AdminExempt { get; init; }
     public string MatchedBy { get; init; } = "";
+    public BanMatchKind MatchKind { get; init; }
     public bool LearnedAlias { get; init; }
     public BanRecord? Record { get; init; }
 }
 
 /// <summary>
-/// Реестр банов: ник ↔ IP ↔ устройство, с автоматическим запоминанием алиасов.
+/// Реестр банов: userId ↔ IP ↔ ник, с обучением только по жёсткому совпадению.
 /// </summary>
 /// <remarks>
 /// <para>
-/// Три связки: ник, IP и стабильный ключ 2.07-установки (<c>LB&lt;md5&gt;</c>). Устройство —
-/// главный якорь: оно не меняется при смене ника и включении VPN. Legacy userId и любые
-/// строки не формата 2.07-токена устройством не считаются.
+/// Жёсткие ключи — <c>userId</c> (<c>LB&lt;md5&gt;</c>), IP и публичный id аккаунта.
+/// Публичный id приходит только вместе с устройством, которому он принадлежит, поэтому
+/// не может «приклеиться» к невинному тёзке. Совпал любой жёсткий ключ — баним и
+/// дописываем в запись новый ник и остальные ключи. Совпал только ник — баним эту
+/// попытку и <b>ничего не учим</b>: иначе невинный, взявший чужой ник, навсегда
+/// унаследует чужой бан.
 /// </para>
 /// <para>
-/// Нарушитель меняет то одну сторону, то другую: новый IP при старом нике дописывается
-/// в запись, новый ник на старом IP — тоже, новое устройство при совпадении по нику —
-/// тоже. Устройство <b>не</b> учится при совпадении только по IP: общий NAT/VPN иначе
-/// навсегда забанил бы чужой телефон.
+/// IP — второй жёсткий ключ: совпал адрес — баним и учим новый ник и userId. Это
+/// ловит «сменил ник и переустановился, но остался на том же адресе». Ник — мягкий
+/// ключ: он только блокирует попытку и ничего не тянет за собой.
 /// </para>
 /// <para>
 /// Всё под одним <c>lock</c>: проверка на входе — один словарный lookup, без скана
@@ -53,11 +75,15 @@ public sealed class BanRegistry
     private readonly Dictionary<string, BanRecord> _byNick = new(StringComparer.OrdinalIgnoreCase);
     private readonly Dictionary<string, BanRecord> _byIp = new(StringComparer.Ordinal);
     private readonly Dictionary<string, BanRecord> _byDevice = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<int, BanRecord> _byPublicId = new();
 
     /// <summary>Вызывается после изменения набора — сюда навешивается запись на диск.</summary>
     public Action? Changed { get; set; }
 
-    /// <summary>Учить новые ники/IP на попытке входа (защита от смены ника или адреса).</summary>
+    /// <summary>
+    /// Учить новые ники/IP/id при жёстком совпадении. Выключатель
+    /// <c>admin.ban.bindAliases</c>: баны продолжают работать, но запись не растёт.
+    /// </summary>
     public bool LearnAliases { get; set; } = true;
 
     /// <summary>
@@ -75,7 +101,15 @@ public sealed class BanRegistry
     /// Проверка на входе. <see cref="BanDecision.Banned"/> = false значит «пускать».
     /// </summary>
     /// <param name="isAdmin">Предикат «это админский id»: на админов бан не распространяется.</param>
-    public BanDecision Inspect(BanProbe probe, DateTime nowUtc, Func<string?, bool>? isAdmin = null)
+    /// <param name="learn">
+    /// Учить новые ключи при совпадении. Для чтения с сайта и теневых проверок — false:
+    /// запрос не должен приклеивать чужой ник/IP к записи.
+    /// </param>
+    public BanDecision Inspect(
+        BanProbe probe,
+        DateTime nowUtc,
+        Func<string?, bool>? isAdmin = null,
+        bool learn = true)
     {
         lock (_gate)
         {
@@ -86,11 +120,11 @@ public sealed class BanRegistry
             if (isAdmin is not null && isAdmin(probe.Nick))
                 return new BanDecision { AdminExempt = true, MatchedBy = "админ" };
 
-            var record = FindLocked(probe, out var matchedBy);
+            var record = FindLocked(probe, out var matchKind);
             if (record is null)
                 return BanDecision.Allowed;
 
-            var learned = LearnAliases && LearnLocked(record, probe, matchedBy);
+            var learned = learn && LearnAliases && LearnLocked(record, probe, matchKind);
             if (learned)
                 NotifyChanged();
 
@@ -98,7 +132,8 @@ public sealed class BanRegistry
             {
                 Banned = true,
                 Record = record,
-                MatchedBy = matchedBy,
+                MatchedBy = Describe(matchKind),
+                MatchKind = matchKind,
                 LearnedAlias = learned,
             };
         }
@@ -125,9 +160,9 @@ public sealed class BanRegistry
             return _byNick.TryGetValue(normalized, out var record) ? record : null;
     }
 
-    /// <summary>Выдать бан. Существующая запись для этого ника/устройства/IP продлевается, а не дублируется.</summary>
+    /// <summary>Выдать бан. Существующая запись для этого userId/ника/IP продлевается, а не дублируется.</summary>
     /// <param name="matchId">
-    /// Серверный id матча, если бан выдан по нему: тег нужен для <c>/unban</c>.
+    /// Публичный id, если бан выдан по нему: тег нужен для <c>/unban</c>.
     /// </param>
     /// <param name="knownDevices">
     /// Все известные устройства личности (из живого матча или справочника). Дописываются
@@ -155,12 +190,14 @@ public sealed class BanRegistry
             PruneLocked(nowUtc);
 
             BanRecord? record = null;
-            if (nick.Length > 0 && _byNick.TryGetValue(nick, out var byNick))
-                record = byNick;
-            else if (ByDevice && device.Length > 0 && _byDevice.TryGetValue(device, out var byDevice))
+            if (ByDevice && device.Length > 0 && _byDevice.TryGetValue(device, out var byDevice))
                 record = byDevice;
             else if (!string.IsNullOrWhiteSpace(probe.Ip) && _byIp.TryGetValue(probe.Ip, out var byIp))
                 record = byIp;
+            else if (probe.PublicId != 0 && _byPublicId.TryGetValue(probe.PublicId, out var byId))
+                record = byId;
+            else if (nick.Length > 0 && _byNick.TryGetValue(nick, out var byNick))
+                record = byNick;
 
             if (record is null)
             {
@@ -222,8 +259,13 @@ public sealed class BanRegistry
                 }
             }
 
-            if (matchId is { } id && id != 0 && !record.MatchIds.Contains(id))
-                record.MatchIds.Add(id);
+            // Теги id: запрошенный (если банили по id) и id аккаунта, если он известен.
+            // Оба нужны /unban, даже если запись потом выросла новыми никами.
+            if (matchId is { } requested && requested != 0)
+                IndexPublicIdLocked(record, requested);
+
+            if (probe.PublicId != 0)
+                IndexPublicIdLocked(record, probe.PublicId);
 
             record.Reason = reason.Trim();
             record.BannedBy = string.IsNullOrWhiteSpace(bannedBy) ? "Server" : bannedBy.Trim();
@@ -232,6 +274,53 @@ public sealed class BanRegistry
 
             NotifyChanged();
             return record;
+        }
+    }
+
+    /// <summary>
+    /// Перевести теги <see cref="BanRecord.MatchIds"/> со старых хешей ника на аккаунты.
+    /// Сам бан остаётся на нике/IP/устройстве; меняется только число для <c>/unban</c>.
+    /// Возвращает число изменённых записей.
+    /// </summary>
+    public int RemapAccountIds(Func<int, string, int> map)
+    {
+        lock (_gate)
+        {
+            var changed = 0;
+            foreach (var record in _records)
+            {
+                var next = new List<int>();
+                foreach (var oldId in record.MatchIds)
+                {
+                    var mapped = oldId > 0 ? map(oldId, record.Nick) : 0;
+
+                    if (mapped is < AccountStore.FirstId or > AccountStore.MaxId)
+                    {
+                        changed++;
+                        continue;
+                    }
+
+                    if (!next.Contains(mapped))
+                        next.Add(mapped);
+                    if (mapped != oldId)
+                        changed++;
+                }
+
+                if (next.Count != record.MatchIds.Count
+                    || next.Where((id, i) => id != record.MatchIds[i]).Any())
+                {
+                    record.MatchIds = next;
+                }
+            }
+
+            _byPublicId.Clear();
+            foreach (var record in _records)
+            foreach (var id in record.MatchIds)
+                _byPublicId[id] = record;
+
+            if (changed > 0)
+                NotifyChanged();
+            return changed;
         }
     }
 
@@ -261,7 +350,7 @@ public sealed class BanRegistry
         }
     }
 
-    /// <summary>Снять все баны, выданные под серверным id матча (для <c>/unban</c>).</summary>
+    /// <summary>Снять все баны, выданные под публичным id (для <c>/unban</c>).</summary>
     public List<BanRecord> RemoveByMatchId(int matchId)
     {
         lock (_gate)
@@ -320,6 +409,7 @@ public sealed class BanRegistry
             _byNick.Clear();
             _byIp.Clear();
             _byDevice.Clear();
+            _byPublicId.Clear();
 
             foreach (var record in records)
             {
@@ -342,6 +432,11 @@ public sealed class BanRegistry
                     .Distinct(StringComparer.OrdinalIgnoreCase)
                     .ToList();
 
+                record.MatchIds = record.MatchIds
+                    .Where(id => id != 0)
+                    .Distinct()
+                    .ToList();
+
                 _records.Add(record);
                 _byNick[record.Nick] = record;
 
@@ -360,45 +455,65 @@ public sealed class BanRegistry
 
                 foreach (var device in record.Devices)
                     _byDevice[device] = record;
+
+                foreach (var publicId in record.MatchIds)
+                    _byPublicId[publicId] = record;
             }
 
             PruneLocked(DateTime.UtcNow);
         }
     }
 
-    private BanRecord? FindLocked(BanProbe probe, out string matchedBy)
+    private BanRecord? FindLocked(BanProbe probe, out BanMatchKind matchKind)
     {
-        matchedBy = string.Empty;
+        matchKind = BanMatchKind.None;
 
-        // Устройство — самый сильный ключ: не зависит ни от ника, ни от IP.
+        // userId — самый сильный ключ: не зависит ни от ника, ни от IP.
         if (ByDevice)
         {
             var device = BanRecord.NormalizeDevice(probe.Device);
             if (device.Length > 0 && _byDevice.TryGetValue(device, out var byDevice))
             {
-                matchedBy = "устройство";
+                matchKind = BanMatchKind.UserId;
                 return byDevice;
             }
+        }
+
+        // IP — второй жёсткий ключ. Раньше ника: новый ник на старом адресе должен
+        // учиться, а не проходить как «мягкое» совпадение по нику.
+        if (!string.IsNullOrWhiteSpace(probe.Ip) && _byIp.TryGetValue(probe.Ip, out var byIp))
+        {
+            matchKind = BanMatchKind.Ip;
+            return byIp;
+        }
+
+        // Публичный id приходит только с устройством, которому он принадлежит
+        // (см. AccountStore.ProbeId), поэтому это жёсткий ключ, а не догадка по нику.
+        if (probe.PublicId != 0 && _byPublicId.TryGetValue(probe.PublicId, out var byPublicId))
+        {
+            matchKind = BanMatchKind.PublicId;
+            return byPublicId;
         }
 
         var nick = ServerConfig.NormalizeNick(probe.Nick);
         if (nick.Length > 0 && _byNick.TryGetValue(nick, out var byNick))
         {
-            matchedBy = "ник";
+            matchKind = BanMatchKind.Nick;
             return byNick;
-        }
-
-        if (!string.IsNullOrWhiteSpace(probe.Ip) && _byIp.TryGetValue(probe.Ip, out var byIp))
-        {
-            matchedBy = "IP";
-            return byIp;
         }
 
         return null;
     }
 
-    private bool LearnLocked(BanRecord record, BanProbe probe, string matchedBy)
+    /// <summary>
+    /// Дописать в запись новые ключи. Учим только по жёсткому совпадению:
+    /// userId или IP. Совпадение по нику не учит ничего: это защита невинных тёзок.
+    /// </summary>
+    private bool LearnLocked(BanRecord record, BanProbe probe, BanMatchKind matchKind)
     {
+        if (matchKind is BanMatchKind.None or BanMatchKind.Nick)
+            return false;
+
         var learned = false;
 
         var nick = ServerConfig.NormalizeNick(probe.Nick);
@@ -416,10 +531,9 @@ public sealed class BanRegistry
             learned = true;
         }
 
-        // Устройство учим только когда запись совпала по нику или уже по устройству.
-        // Совпадение только по IP — это общий NAT/VPN; прилепить чужой телефон к чужому
-        // бану навсегда нельзя. Такой probe просто остаётся в логе.
-        if (ByDevice && matchedBy != "IP")
+        // Устройство учим при совпадении по IP или публичному id: при userId оно уже
+        // совпало, при нике — это был бы обход через чужой ник.
+        if (ByDevice && matchKind is BanMatchKind.Ip or BanMatchKind.PublicId)
         {
             var device = BanRecord.NormalizeDevice(probe.Device);
             if (device.Length > 0 && !record.HasDevice(device))
@@ -430,8 +544,24 @@ public sealed class BanRegistry
             }
         }
 
+        if (probe.PublicId != 0 && !record.MatchIds.Contains(probe.PublicId))
+        {
+            record.MatchIds.Add(probe.PublicId);
+            _byPublicId[probe.PublicId] = record;
+            learned = true;
+        }
+
         return learned;
     }
+
+    private static string Describe(BanMatchKind kind) => kind switch
+    {
+        BanMatchKind.UserId => "userId",
+        BanMatchKind.Ip => "IP",
+        BanMatchKind.PublicId => "id",
+        BanMatchKind.Nick => "ник",
+        _ => "",
+    };
 
     private int PruneLocked(DateTime nowUtc)
     {
@@ -448,6 +578,7 @@ public sealed class BanRegistry
         DropIndex(_byNick, record);
         DropIndex(_byIp, record);
         DropIndex(_byDevice, record);
+        DropIndex(_byPublicId, record);
         if (notify)
             NotifyChanged();
     }
@@ -456,6 +587,22 @@ public sealed class BanRegistry
     {
         foreach (var key in index.Where(kv => ReferenceEquals(kv.Value, record)).Select(kv => kv.Key).ToList())
             index.Remove(key);
+    }
+
+    private static void DropIndex(Dictionary<int, BanRecord> index, BanRecord record)
+    {
+        foreach (var key in index.Where(kv => ReferenceEquals(kv.Value, record)).Select(kv => kv.Key).ToList())
+            index.Remove(key);
+    }
+
+    private void IndexPublicIdLocked(BanRecord record, int publicId)
+    {
+        if (publicId == 0)
+            return;
+
+        if (!record.MatchIds.Contains(publicId))
+            record.MatchIds.Add(publicId);
+        _byPublicId[publicId] = record;
     }
 
     private void NotifyChanged()

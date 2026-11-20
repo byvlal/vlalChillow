@@ -261,7 +261,7 @@ public sealed partial class WebPanelRouter
             return WebResponse.Text("нет аватара", 404);
 
         var bytes = _options.AvatarById(id);
-        var type = ImageContentType(bytes);
+        var type = AvatarCache.ImageContentType(bytes);
         if (type is null)
             return WebResponse.Text("нет аватара", 404);
 

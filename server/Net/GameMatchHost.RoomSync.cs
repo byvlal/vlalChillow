@@ -1,3 +1,4 @@
+using StandChillow.LanServer.Bans;
 using StandChillow.LanServer.Net.Match;
 using StandChillow.LanServer.Net.Match.Kernel;
 
@@ -6,7 +7,8 @@ namespace StandChillow.LanServer.Net;
 public sealed partial class GameMatchHost
 {
     /// <summary>
-    /// Перенести состояние комнат в реестр панели: сколько людей, какая фаза и счёт.
+    /// Перенести состояние комнат в реестр панели: сколько людей, какая фаза, счёт,
+    /// номер раунда и живой состав для публичной страницы комнаты.
     /// </summary>
     /// <remarks>
     /// <para>
@@ -20,6 +22,11 @@ public sealed partial class GameMatchHost
     /// идёт катка. <see cref="MatchFlowPhase.MatchOver"/> и финальные стадии DeathMatch —
     /// «закончилась», такие комнаты удаляются по TTL.
     /// </para>
+    /// <para>
+    /// В живой состав попадают только текущие актёры комнаты — без денег: страница
+    /// <c>#/room/&lt;n&gt;</c> публичная. Смерти берутся из того же забега истории, что
+    /// попадёт в итоговую таблицу, поэтому числа совпадают.
+    /// </para>
     /// </remarks>
     internal void SyncRoomRegistry()
     {
@@ -27,7 +34,8 @@ public sealed partial class GameMatchHost
         if (registry is null)
             return;
 
-        List<(int Number, RoomState State, int Players, int ScoreCt, int ScoreTr)> snapshot = new();
+        List<(int Number, RoomState State, int Players, int ScoreCt, int ScoreTr,
+            int Round, string Key, List<(byte Nr, RoomLivePlayer Player)> Live)> snapshot = new();
         lock (_roomGate)
         {
             foreach (var room in _roomsByPassword.Values)
@@ -36,9 +44,36 @@ public sealed partial class GameMatchHost
                     continue;
 
                 var humans = 0;
-                foreach (var (nr, _, _) in room.Actors)
-                    if (nr != MatchHostActor.ActorNr)
-                        humans++;
+                var live = new List<(byte Nr, RoomLivePlayer Player)>();
+                foreach (var (nr, name, _) in room.Actors)
+                {
+                    if (nr == MatchHostActor.ActorNr)
+                        continue;
+                    humans++;
+
+                    if (string.IsNullOrWhiteSpace(name))
+                        continue;
+                    var id = AccountIdOfActorLocked(room, nr);
+                    if (id == 0 && Accounts is null)
+                        id = LegacyNickHash.ForNick(name); // тесты/проба без аккаунтов
+                    if (id <= 0)
+                        continue;
+
+                    var team = MatchFlowRules.GetActorTeam(room.ActorProps, nr);
+                    var kills = ReadActorIntProp(room, nr, MatchRoomPropKeys.Kills);
+                    if (kills < 0)
+                        kills = ReadActorIntProp(room, nr, MatchRoomPropKeys.FairKills);
+
+                    live.Add((nr, new RoomLivePlayer(
+                        Id: id,
+                        Nick: name,
+                        Team: TeamKey(team),
+                        Kills: Math.Max(0, kills),
+                        Assists: Math.Max(0, ReadActorIntProp(room, nr, MatchRoomPropKeys.Assists)),
+                        Deaths: 0,
+                        Score: Math.Max(0, ReadActorIntProp(room, nr, MatchRoomPropKeys.Score2)),
+                        Ping: ReadActorIntProp(room, nr, MatchRoomPropKeys.Ping))));
+                }
 
                 // Только чтение счёта: в игровой цикл ничего не пишем и провод не трогаем.
                 snapshot.Add((
@@ -46,12 +81,33 @@ public sealed partial class GameMatchHost
                     MapPhase(room.Flow.Phase, humans),
                     humans,
                     room.Flow.ScoreCt,
-                    room.Flow.ScoreTr));
+                    room.Flow.ScoreTr,
+                    room.Flow.RoundIndex,
+                    room.PasswordKey,
+                    live));
             }
         }
 
-        foreach (var (number, state, players, scoreCt, scoreTr) in snapshot)
-            registry.TryUpdate(number, state, players, scoreCt, scoreTr);
+        // Смерти — отдельный замок истории. Не вкладываем его в _roomGate: порядок
+        // захвата замков остаётся таким же, как у остального кода.
+        foreach (var (number, state, players, scoreCt, scoreTr, round, key, live) in snapshot)
+        {
+            Dictionary<byte, int>? deaths = null;
+            lock (_historyGate)
+            {
+                if (_historyRuns.TryGetValue(key, out var run) && run.Deaths.Count > 0)
+                    deaths = new Dictionary<byte, int>(run.Deaths);
+            }
+
+            var roster = new List<RoomLivePlayer>(live.Count);
+            foreach (var (nr, player) in live)
+            {
+                var dead = deaths is not null && deaths.TryGetValue(nr, out var count) ? count : 0;
+                roster.Add(player with { Deaths = dead });
+            }
+
+            registry.TryUpdate(number, state, players, scoreCt, scoreTr, roster, round);
+        }
     }
 
     /// <summary>

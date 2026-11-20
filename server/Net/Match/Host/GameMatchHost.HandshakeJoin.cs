@@ -383,13 +383,28 @@ public sealed partial class GameMatchHost
                     $"roster={MatchRoomField.Describe(req.Room)} actorNr={nr} " +
                     $"(host={MatchHostActor.ActorNr}/'{MatchHostActor.Name}' Spectator) " +
                     $"userId='{st.UserId}'");
-
-                // Бронь продлеваем на входе: игрок может стоять в комнате дольше TTL
-                // (создал, ждёт друзей), и тогда его переподключение ушло бы в legacy 'Dedik'.
-                if (room.IsPanelRoom && st.RosterName is { Length: > 0 } joinedNick)
-                    PendingRooms.Reserve(
-                        room.PasswordKey, joinedNick, st.IdentityKey, peer.Address?.ToString());
             }
+        }
+
+        // Аккаунт выдаём только после успешного Found: отказ в комнате не должен
+        // создавать новые номера. Устройство доказывает личность; без него — ник.
+        if (result == JoinRoomResult.Found && room is not null && actor is { } boundActor)
+        {
+            var account = Accounts?.EnsureForJoin(
+                st.RosterName, st.DeviceKey, DateTime.UtcNow);
+            if (account is not null)
+            {
+                st.AccountId = account.Id;
+                lock (_roomGate)
+                    room.ActorAccounts[boundActor] = account.Id;
+            }
+
+            // Бронь продлеваем на входе: игрок может стоять в комнате дольше TTL
+            // (создал, ждёт друзей), и тогда его переподключение ушло бы в legacy 'Dedik'.
+            if (room.IsPanelRoom && st.RosterName is { Length: > 0 } joinedNick)
+                PendingRooms.Reserve(
+                    room.PasswordKey, joinedNick, st.IdentityKey, peer.Address?.ToString(),
+                    playerId: st.AccountId);
         }
 
         MatchGapRoom? gap = null;
@@ -472,7 +487,7 @@ public sealed partial class GameMatchHost
             var joinName = st.RosterName ?? $"actor{joinerNr}";
             // Справочник должен знать устройство даже для реконнекта: иначе /ban по id
             // вышедшего игрока не закроет его установку. Ошибку колбэка не роняем.
-            try { OnMatchPlayerSeen?.Invoke(joinName, peer.Address, st.DeviceKey); }
+            try { OnMatchPlayerSeen?.Invoke(joinName, st.AccountId, peer.Address, st.DeviceKey); }
             catch (Exception ex)
             {
                 Console.WriteLine($"[match-host] OnMatchPlayerSeen: {ex.Message}");

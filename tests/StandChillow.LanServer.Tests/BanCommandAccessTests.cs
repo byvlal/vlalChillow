@@ -46,11 +46,11 @@ public sealed class BanCommandAccessTests
     [Fact]
     public void AdminCheckUsesTheServerId()
     {
-        var cfg = Config(MatchPublicId.ForNick("Влал"));
+        var cfg = Config(LegacyNickHash.ForNick("Влал"));
 
         // Тот же id независимо от регистра ника: его считает сервер.
         Assert.True(CommandAccessPolicy.IsAllowed(
-            cfg, MatchPublicId.ForNick("  влАЛ "), "/bans", out _));
+            cfg, LegacyNickHash.ForNick("  влАЛ "), "/bans", out _));
         Assert.False(CommandAccessPolicy.IsAllowed(
             cfg, 65_054_804, "/bans", out _));
     }

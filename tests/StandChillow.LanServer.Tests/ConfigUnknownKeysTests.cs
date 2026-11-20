@@ -41,13 +41,13 @@ public sealed class ConfigUnknownKeysTests : IDisposable
     {
         var cfg = Load("""
         {
-          "admins": [ "влал" ]
+          "admins": [ "Ktulxy" ]
         }
         """);
 
         var issue = Assert.Single(cfg.Issues.Where(i => i.Key == "admins"));
         Assert.Contains("admin.ids", issue.Detail);
-        Assert.False(cfg.IsAdmin(MatchPublicId.ForNick("влал")));
+        Assert.False(cfg.IsAdmin(LegacyNickHash.ForNick("Ktulxy")));
     }
 
     [Fact]

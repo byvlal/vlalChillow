@@ -174,7 +174,7 @@
   `GameMatchHost.DeathMatchCombat.cs` / `.DuelCombat.cs` / `.Ranked2v2Combat.cs` и
   `GameMatchHost.Stats.cs` (снапшот комнат каждые `StatsSampleSeconds=15` с, фазы
   «играет» 3,4,5,6,8,9,12,13,14,15; «матч закончен» 0,7,10,11). Уникальность матча —
-  ключ `MatchPublicId.ForNick(nick)`, повторный вход в ту же катку не считается.
+  ключ — номер аккаунта (`AccountStore`), повторный вход в ту же катку не считается.
 - Порты игры: матч 7777/udp, discovery 5056, лобби 7778.
 
 ## 7. JS-контракты (нельзя ломать)

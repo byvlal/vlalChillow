@@ -3,6 +3,7 @@ using LiteNetLib;
 using StandChillow.LanServer.Bans;
 using StandChillow.LanServer.Config;
 using StandChillow.LanServer.Net.Match;
+using StandChillow.LanServer.Net.Match.Host;
 
 namespace StandChillow.LanServer.Net;
 
@@ -33,6 +34,13 @@ public sealed partial class GameMatchHost
     public BanRegistry? Bans { get; set; }
 
     /// <summary>
+    /// Реестр аккаунтов (ставит <c>GameNetHost</c>; в тестах может быть null). Нужен,
+    /// чтобы публичный id для бана брался только у владельца устройства, а успешный
+    /// вход в катку привязывал аккаунт к актору.
+    /// </summary>
+    public AccountStore? Accounts { get; set; }
+
+    /// <summary>
     /// Предикат «этот ник — админский id»: на админов бан не распространяется.
     /// Права считает <c>GameNetHost</c> по <c>admin.ids</c>; здесь только ник записи бана,
     /// потому что гейт банов живёт по нику + IP, а не по id.
@@ -60,30 +68,47 @@ public sealed partial class GameMatchHost
         if (Bans is null)
             return BanDecision.Allowed;
 
+        // Публичный id участвует, только если устройство уже привязано к аккаунту:
+        // чужой новый вход под тем же ником не должен получить чужой бан.
+        var publicId = Accounts?.ProbeId(device) ?? 0;
         return Bans.Inspect(
-            new BanProbe(nick, address?.ToString(), device),
+            new BanProbe(nick, address?.ToString(), device, publicId),
             DateTime.UtcNow,
             IsBanExempt);
     }
 
     /// <summary>
-    /// Все стабильные устройства, которые сейчас сидят в матче под этим ником.
-    /// Нужно <c>/ban</c> и веб-админке: по нику находим живой сокет, по сокету — ключ.
+    /// Account ID актёра. Вызывать можно без внешнего <c>_roomGate</c>: замок
+    /// реентрантный, а SetProperty читает id вне его.
     /// </summary>
-    public IReadOnlyList<string> DevicesForNick(string? nick)
+    internal int AccountIdOfActor(byte actorNr, MatchPeerState? state, MatchRoom? room)
     {
-        var target = ServerConfig.NormalizeNick(nick);
-        if (target.Length == 0)
+        lock (_roomGate)
+        {
+            if (room is not null && room.ActorAccounts.TryGetValue(actorNr, out var id))
+                return id;
+        }
+
+        return state?.AccountId ?? 0;
+    }
+
+    /// <summary>Account ID актёра; вызывать под <c>_roomGate</c>.</summary>
+    private static int AccountIdOfActorLocked(MatchRoom room, byte actorNr) =>
+        room.ActorAccounts.TryGetValue(actorNr, out var id) ? id : 0;
+
+    /// <summary>
+    /// Все стабильные устройства, которые сейчас сидят в матче под этим аккаунтом.
+    /// Нужно <c>/ban</c> и веб-админке: по аккаунту находим живой сокет, по сокету — ключ.
+    /// </summary>
+    public IReadOnlyList<string> DevicesForAccount(int accountId)
+    {
+        if (accountId <= 0)
             return Array.Empty<string>();
 
         var devices = new List<string>();
         foreach (var state in _peers.Values)
         {
-            if (string.IsNullOrWhiteSpace(state.DeviceKey)
-                || !string.Equals(
-                    ServerConfig.NormalizeNick(state.RosterName),
-                    target,
-                    StringComparison.OrdinalIgnoreCase))
+            if (state.AccountId != accountId || string.IsNullOrWhiteSpace(state.DeviceKey))
                 continue;
 
             if (!devices.Any(d => MatchIdentity.SamePlayer(d, state.DeviceKey)))
@@ -94,15 +119,15 @@ public sealed partial class GameMatchHost
     }
 
     /// <summary>
-    /// Отключить забаненного от канала матча (7777). Ищем по нику, адресу и устройствам
-    /// сразу: к моменту бана сокет мог ещё не прислать JoinRoom, а ник — уже смениться.
+    /// Отключить забаненного от канала матча (7777). Ищем по аккаунту, адресу и
+    /// устройствам сразу: к моменту бана сокет мог ещё не прислать JoinRoom, а ник —
+    /// уже смениться. Ник ключом не является: тёзка не должен пострадать.
     /// </summary>
     public int DisconnectBanned(
-        string? nick,
+        int accountId,
         IPAddress? address,
         IReadOnlyCollection<string>? devices = null)
     {
-        var target = ServerConfig.NormalizeNick(nick);
         var kicked = 0;
 
         foreach (var (peer, state) in _peers)
@@ -111,11 +136,9 @@ public sealed partial class GameMatchHost
                               && state.DeviceKey is { Length: > 0 }
                               && devices.Any(d => MatchIdentity.SamePlayer(d, state.DeviceKey));
             var matched =
-                deviceMatch
-                || (address is not null && peer.Address is not null && peer.Address.Equals(address))
-                || (target.Length > 0
-                    && string.Equals(ServerConfig.NormalizeNick(state.RosterName), target,
-                        StringComparison.OrdinalIgnoreCase));
+                (accountId > 0 && state.AccountId == accountId)
+                || deviceMatch
+                || (address is not null && peer.Address is not null && peer.Address.Equals(address));
 
             if (!matched)
                 continue;
@@ -134,7 +157,7 @@ public sealed partial class GameMatchHost
         if (kicked > 0)
         {
             Console.WriteLine(
-                $"[ban] матч: отключено сокетов {kicked} (ник '{nick}', IP " +
+                $"[ban] матч: отключено сокетов {kicked} (аккаунт {accountId}, IP " +
                 $"{address?.ToString() ?? "—"}, устройств {devices?.Count ?? 0})");
         }
 

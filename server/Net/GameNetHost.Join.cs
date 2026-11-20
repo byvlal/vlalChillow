@@ -103,12 +103,14 @@ public sealed partial class GameNetHost
 
         var nick = player.Name;
         // IdentityKey появится только на 7777 (handshake 207), в лобби его ещё нет —
-        // бронируем по нику + адресу, этого достаточно для одного игрока в комнате.
+        // бронируем по нику + номеру аккаунта + адресу: этого достаточно, чтобы
+        // опознать игрока и не привязать бронь к тёзке.
         if (!_match.PendingRooms.Reserve(
                 room.PasswordKey,
                 nick,
                 identityKey: null,
-                address: player.Peer.Address?.ToString()))
+                address: player.Peer.Address?.ToString(),
+                playerId: player.PublicId))
         {
             reply("не удалось забронировать комнату — переполнен список ожидания, попробуй ещё");
             Console.WriteLine(

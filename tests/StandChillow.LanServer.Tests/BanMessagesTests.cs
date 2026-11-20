@@ -64,13 +64,13 @@ public sealed class BanMessagesTests
         var record = Sample();
         record.Reason = "софт удали, тогда поговорим";
         record.DurationSeconds = 6 * 24 * 60 * 60;
-        record.MatchIds = new List<int> { 67776161 };
+        record.MatchIds = new List<int> { 1000001 };
 
         var lines = BanMessages.PublicLines(record);
 
         Assert.Equal(4, lines.Length);
         Assert.Equal("Игрок влал забанил Ktulxy!", lines[0]);
-        Assert.Equal("Айди: 67776161", lines[1]);
+        Assert.Equal("Айди: 1000001", lines[1]);
         Assert.Equal("Длительность бана: 6д", lines[2]);
         Assert.Equal("Причина: софт удали, тогда поговорим", lines[3]);
     }
@@ -81,8 +81,8 @@ public sealed class BanMessagesTests
         var record = Sample();
         record.MatchIds = new List<int>();
 
-        Assert.Equal(MatchPublicId.ForNick(record.Nick), BanMessages.IdOf(record));
-        Assert.Contains($"Айди: {MatchPublicId.ForNick(record.Nick)}", BanMessages.PublicLines(record));
+        Assert.Equal(LegacyNickHash.ForNick(record.Nick), BanMessages.IdOf(record));
+        Assert.Contains($"Айди: {LegacyNickHash.ForNick(record.Nick)}", BanMessages.PublicLines(record));
     }
 
     [Fact]

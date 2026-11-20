@@ -16,7 +16,7 @@ namespace StandChillow.LanServer.Stats;
 /// </remarks>
 public sealed class MatchHistoryPlayer
 {
-    /// <summary>Серверный id игрока (<c>MatchPublicId.ForNick</c>).</summary>
+    /// <summary>Серверный id игрока — постоянный номер аккаунта (<see cref="AccountStore.FirstId"/>).</summary>
     public int Id { get; set; }
     public string Nick { get; set; } = "";
     /// <summary><c>CT</c>, <c>T</c>, <c>SPEC</c> или <c>NONE</c>.</summary>

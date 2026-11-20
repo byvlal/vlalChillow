@@ -73,6 +73,61 @@ public sealed class ReportStore
     /// <summary>Сколько жалоб сейчас в памяти.</summary>
     public int Count { get { lock (_gate) return _reports.Count; } }
 
+    /// <summary>
+    /// Перевести цели и авторов жалоб со старых хешей ника на аккаунты. Жалоба, у которой
+    /// не удалось опознать цель или автора, выбрасывается. Возвращает число изменённых жалоб.
+    /// </summary>
+    /// <remarks>
+    /// <paramref name="map"/> вызывается для всех id: старый хеш ника может быть больше
+    /// <see cref="AccountStore.FirstId"/> и выглядеть как номер аккаунта. Настоящий номер
+    /// функция возвращает без изменений.
+    /// </remarks>
+    public int RemapAccountIds(Func<int, string, int> map)
+    {
+        lock (_gate)
+        {
+            var changed = 0;
+            var kept = new List<ReportRecord>(_reports.Count);
+
+            foreach (var report in _reports)
+            {
+                var target = report.TargetId > 0 ? map(report.TargetId, report.TargetNick) : 0;
+                var reporter = report.ReporterId > 0 ? map(report.ReporterId, report.ReporterNick) : 0;
+
+                if (target is < AccountStore.FirstId or > AccountStore.MaxId
+                    || reporter is < AccountStore.FirstId or > AccountStore.MaxId)
+                {
+                    changed++;
+                    continue;
+                }
+
+                if (target != report.TargetId)
+                {
+                    report.TargetId = target;
+                    changed++;
+                }
+
+                if (reporter != report.ReporterId)
+                {
+                    report.ReporterId = reporter;
+                    changed++;
+                }
+
+                kept.Add(report);
+            }
+
+            if (changed == 0)
+                return 0;
+
+            _reports.Clear();
+            _reports.AddRange(kept);
+            _dirty = true;
+            if (SaveLocked())
+                _dirty = false;
+            return changed;
+        }
+    }
+
     /// <summary>Версия файла, которую прочитали при старте (0 — файла не было).</summary>
     public int LastLoadedVersion { get; private set; }
 

@@ -96,12 +96,20 @@ public sealed partial class WebPanelRouter
         if (request.Method == "GET" && path == "/api/player")
             return PublicPlayer(request);
 
+        // Аватар для публичного профиля: кэш на диске, поэтому виден и после выхода.
+        if (request.Method == "GET" && path == "/api/player/avatar")
+            return PublicAvatar(request);
+
         // История матчей: список для профиля и одна катка целиком.
         if (request.Method == "GET" && path == "/api/matches")
             return MatchesList(request);
 
         if (request.Method == "GET" && TryParseMatchPath(path, out _))
             return MatchById(request, path);
+
+        // Живая комната: публичное чтение, без сессии. Страница #/room/<n>.
+        if (request.Method == "GET" && TryParseRoomPath(path, out _))
+            return RoomById(request, path);
 
         if (request.Method == "GET" && path == "/api/administration")
             return Administration(request);
@@ -171,12 +179,16 @@ public sealed partial class WebPanelRouter
         if (path is "/" or "/index.html" or "/api/status" or "/api/modes"
             or "/api/me" or "/api/avatar" or "/api/stats/me" or "/api/admin"
             or "/api/admin/lookup" or "/api/admin/avatar" or "/api/admin/bans"
-            or "/api/player" or "/api/matches" or "/api/administration" or "/api/reports/mine"
+            or "/api/player" or "/api/player/avatar" or "/api/matches"
+            or "/api/administration" or "/api/reports/mine"
             or "/api/admin/reports" or "/healthz")
             return WithAllow("GET", WebResponse.Text("405", 405));
 
         // /api/match/<id> — тоже только GET; номер разбираем тем же правилом.
         if (TryParseMatchPath(path, out _))
+            return WithAllow("GET", WebResponse.Text("405", 405));
+
+        if (TryParseRoomPath(path, out _))
             return WithAllow("GET", WebResponse.Text("405", 405));
 
         if (path is "/api/auth" or "/api/logout" or "/api/reports"
@@ -573,10 +585,16 @@ public sealed class WebPanelRouterOptions
     public SiteSessions? Sessions { get; init; }
 
     /// <summary>
-    /// Аватар игрока: байты, которые клиент прислал в лобби. <c>null</c> — аватара нет
-    /// (или игрока нет в лобби). Формат определяет вызывающий по magic-байтам.
+    /// Аватар игрока: байты, которые клиент прислал в лобби, или кэш на диске.
+    /// <c>null</c> — аватара нет. Формат определяет вызывающий по magic-байтам.
     /// </summary>
     public Func<int, byte[]?>? AvatarById { get; init; }
+
+    /// <summary>
+    /// Аватар для публичного профиля (без сессии): только кэш на диске, чтобы картинка
+    /// не зависела от того, стоит ли игрок сейчас в лобби. <c>null</c> — 404.
+    /// </summary>
+    public Func<int, byte[]?>? PublicAvatarById { get; init; }
 
     /// <summary>
     /// Обменять код из лобби на запись игрока. Возвращает <c>null</c>, если код чужой,

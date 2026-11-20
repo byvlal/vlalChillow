@@ -92,6 +92,28 @@ public sealed partial class WebPanelRouter
         return WebResponse.Json(Encoding.UTF8.GetString(stream.ToArray()));
     }
 
+    /// <summary>
+    /// Аватар для публичного профиля. Отдаём только кэш на диске: картинка не должна
+    /// исчезать, как только игрок вышел из лобби. Кэш публичный и общий — заголовок
+    /// <c>public</c>, чтобы браузер не дёргал сервер на каждую перезагрузку.
+    /// </summary>
+    private WebResponse PublicAvatar(WebRequestContext request)
+    {
+        if (_options.PublicAvatarById is null)
+            return WebResponse.Text("нет аватара", 404);
+
+        if (!TryQueryInt(request.Query, "id", out var id) || id <= 0)
+            return WebResponse.Text("нет аватара", 404);
+
+        var bytes = _options.PublicAvatarById(id);
+        var type = AvatarCache.ImageContentType(bytes);
+        if (type is null)
+            return WebResponse.Text("нет аватара", 404);
+
+        return new WebResponse(200, type, bytes!, 0,
+            new List<(string, string)> { ("Cache-Control", "public, max-age=300") });
+    }
+
     /// <summary>Список всех админов из живого <c>admin.ids</c>.</summary>
     private WebResponse Administration(WebRequestContext request)
     {

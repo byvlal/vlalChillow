@@ -44,7 +44,10 @@ public static class HostBootstrap
         // Спека: если 7777 занят (старый процесс, чужой сервер), страница обязана
         // открыться и честно сказать, что игровой порт не поднялся. Обратный порядок
         // дал бы «502 Bad Gateway» на пустом месте.
-        using var web = new WebPanelHost(serverConfig);
+        // Кэш аватаров создаётся до панели и живёт дольше игрового хоста: лобби пишет,
+        // сайт читает — картинка в профиле переживает выход игрока.
+        var avatars = new AvatarCache(Path.Combine(AppContext.BaseDirectory, "avatars"));
+        using var web = new WebPanelHost(serverConfig, avatars);
         if (web.TryStart(out var webError))
         {
             Console.WriteLine($"[web] открыт: http://{serverConfig.Web.BindAddress}:{web.Port}/");
@@ -168,7 +171,8 @@ public static class HostBootstrap
                 SyncDiscovery();
                 plugins.NotifyMatchStarted("host");
             },
-            config: serverConfig);
+            config: serverConfig,
+            avatars: avatars);
         gameRef = game;
         plugins.AttachHost(game);
         plugins.LoadAll();

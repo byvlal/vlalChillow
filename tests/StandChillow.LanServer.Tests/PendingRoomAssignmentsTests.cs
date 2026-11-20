@@ -1,3 +1,4 @@
+using StandChillow.LanServer.Bans;
 using StandChillow.LanServer.Net.Match.Kernel;
 using Xunit;
 
@@ -164,6 +165,41 @@ public sealed class PendingRoomAssignmentsTests
 
         Assert.True(reg.TryResolve("влал", null, null, out var key));
         Assert.Equal("room#1", key);
+    }
+
+    [Fact]
+    public void TwoAccountsWithSameNickShareOneReservationByNick()
+    {
+        // Провод клиента несёт только ник, поэтому TryResolve не различает тёзок.
+        // Держим одну бронь на ник: свежая заменяет старую, как и до аккаунтов.
+        var reg = new PendingRoomAssignments();
+        reg.Reserve("room#1", "влал", playerId: AccountStore.FirstId);
+        reg.Reserve("room#2", "влал", playerId: AccountStore.FirstId + 1);
+
+        Assert.Equal(1, reg.Count);
+        var item = Assert.Single(reg.Snapshot());
+        Assert.Equal(AccountStore.FirstId + 1, item.Id);
+        Assert.Equal("room#2", item.PasswordKey);
+    }
+
+    [Fact]
+    public void ReservationStoresAccountId()
+    {
+        var reg = new PendingRoomAssignments();
+        reg.Reserve("room#1", "влал", playerId: AccountStore.FirstId + 7);
+
+        var item = Assert.Single(reg.Snapshot());
+        Assert.Equal(AccountStore.FirstId + 7, item.Id);
+    }
+
+    [Fact]
+    public void ReservationWithoutAccountFallsBackToLegacyHash()
+    {
+        var reg = new PendingRoomAssignments();
+        reg.Reserve("room#1", "влал");
+
+        var item = Assert.Single(reg.Snapshot());
+        Assert.Equal(LegacyNickHash.ForNick("влал"), item.Id);
     }
 
     [Fact]

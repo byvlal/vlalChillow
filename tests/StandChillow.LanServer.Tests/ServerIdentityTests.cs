@@ -68,11 +68,11 @@ public sealed class ServerIdentityTests
         // Число, которое даёт хеш слова «Server», — обычный id игрока: его можно банить,
         // и по нему видно, что это не сервер, а тот, кто так назвался. Сервер отличим
         // только по строке «Server», и банятся они по-разному.
-        var numeric = MatchPublicId.ForNick("Server");
-        Assert.InRange(numeric, MatchPublicId.Min, MatchPublicId.Max);
+        var numeric = LegacyNickHash.ForNick("Server");
+        Assert.InRange(numeric, LegacyNickHash.Min, LegacyNickHash.Max);
         Assert.False(ServerIdentity.IsServerUid(numeric.ToString()));
 
-        Assert.True(MatchPublicId.TryWireUid("Server", out var wireUid));
+        Assert.True(LegacyNickHash.TryWireUid("Server", out var wireUid));
         Assert.False(ServerIdentity.IsServerUid(wireUid));
         Assert.True(ServerIdentity.IsServerUid(ServerIdentity.Uid));
     }
@@ -81,11 +81,11 @@ public sealed class ServerIdentityTests
     public void PlayersNumberingStaysSeparateFromTheServerId()
     {
         // Игроки нумеруются 1…100 000 000; сервер — строка «Server», в диапазон не входит.
-        var playerId = MatchPublicId.ForNick("Ktulxy");
-        Assert.InRange(playerId, MatchPublicId.Min, MatchPublicId.Max);
+        var playerId = LegacyNickHash.ForNick("Ktulxy");
+        Assert.InRange(playerId, LegacyNickHash.Min, LegacyNickHash.Max);
         Assert.NotEqual(ServerIdentity.Uid, playerId.ToString());
 
-        Assert.True(MatchPublicId.TryWireUid("Ktulxy", out var wireUid));
+        Assert.True(LegacyNickHash.TryWireUid("Ktulxy", out var wireUid));
         Assert.False(ServerIdentity.IsServerUid(wireUid));
     }
 }

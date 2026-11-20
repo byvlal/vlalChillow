@@ -55,7 +55,36 @@ public sealed record RoomDescriptor(
     // Счёт команд для списка комнат панели: CT слева, T справа. Копируется из
     // room.Flow раз в секунду (только чтение — провод и фазы не трогаются).
     int ScoreCt = 0,
-    int ScoreTr = 0);
+    int ScoreTr = 0,
+    // Номер раунда и живой состав: страница #/room/<n> показывает то же, что матч-хост
+    // видит у себя. Деньги сюда не попадают вовсе — публичная страница их не отдаёт.
+    int Round = 0,
+    IReadOnlyList<RoomLivePlayer>? LivePlayers = null);
+
+/// <summary>
+/// Строка живого состава комнаты: только то, что сервер реально знает из actor props.
+/// </summary>
+/// <remarks>
+/// <para>
+/// Никаких денег: <c>#/room/&lt;n&gt;</c> — публичная страница, а бюджет игрока — нет.
+/// История матчей (<c>#/match/&lt;id&gt;</c>) деньги по-прежнему показывает.
+/// </para>
+/// <para>
+/// <see cref="Id"/> — серверный числовой id: по нему страница ведёт на профиль. Если
+/// у админа есть кастомный ID, его подставит веб-панель при выдаче JSON — реестр
+/// остаётся чистым и не знает про <c>customids.json</c>.
+/// </para>
+/// </remarks>
+public sealed record RoomLivePlayer(
+    int Id,
+    string Nick,
+    string Team,
+    int Kills,
+    int Assists,
+    int Deaths,
+    int Score,
+    int Ping,
+    bool Left = false);
 
 /// <summary>
 /// Верхняя граница номера комнаты. Номер печатается в команде <c>/join 2v2 #N</c>,
@@ -210,7 +239,7 @@ public sealed class RoomRegistry
         // а не ник. Ник в лобби не уникален: двое «влал» — обычное дело, а id
         // у них разные. Ник остаётся только подписью в списке комнат.
         var nick = NormalizeNick(ownerNick);
-        var resolvedId = ownerId > 0 ? ownerId : MatchPublicId.ForNick(nick);
+        var resolvedId = ownerId > 0 ? ownerId : LegacyNickHash.ForNick(nick);
         if (resolvedId <= 0)
         {
             error = RoomCreateError.EmptyOwner;
@@ -355,8 +384,13 @@ public sealed class RoomRegistry
     /// Обновление счётчиков от матч-хоста: сколько людей, какая фаза и счёт команд.
     /// Счёт необязателен: старые вызовы (тесты, legacy) оставляют его как есть.
     /// </summary>
+    /// <param name="livePlayers">
+    /// Живой состав для публичной страницы комнаты; <c>null</c> — не трогать прежний.
+    /// </param>
+    /// <param name="round">Номер раунда; <c>null</c> — не трогать прежний.</param>
     public bool TryUpdate(int number, RoomState state, int players,
-        int? scoreCt = null, int? scoreTr = null)
+        int? scoreCt = null, int? scoreTr = null,
+        IReadOnlyList<RoomLivePlayer>? livePlayers = null, int? round = null)
     {
         lock (_gate)
         {
@@ -366,6 +400,8 @@ public sealed class RoomRegistry
             var clampedPlayers = players < 0 ? 0 : players;
             var nextCt = scoreCt is null ? current.ScoreCt : Math.Max(0, scoreCt.Value);
             var nextTr = scoreTr is null ? current.ScoreTr : Math.Max(0, scoreTr.Value);
+            var nextRound = round is null ? current.Round : Math.Max(0, round.Value);
+            var nextLive = livePlayers ?? current.LivePlayers;
 
             // Отсчёт «комната пустует» начинается с момента, когда из неё ушёл
             // последний человек, а не с создания. Иначе катка, в которой играли час,
@@ -387,7 +423,9 @@ public sealed class RoomRegistry
             if (current.State == state && current.Players == clampedPlayers
                 && current.EmptySinceUtc == emptySince
                 && current.FinishedAtUtc == finishedAt
-                && current.ScoreCt == nextCt && current.ScoreTr == nextTr)
+                && current.ScoreCt == nextCt && current.ScoreTr == nextTr
+                && current.Round == nextRound
+                && SameLivePlayers(current.LivePlayers, nextLive))
                 return true;
 
             _rooms[number] = current with
@@ -398,9 +436,38 @@ public sealed class RoomRegistry
                 FinishedAtUtc = finishedAt,
                 ScoreCt = nextCt,
                 ScoreTr = nextTr,
+                Round = nextRound,
+                LivePlayers = nextLive,
             };
             return true;
         }
+    }
+
+    /// <summary>Строка живого состава совпадает поле в поле (чтобы не менять запись зря).</summary>
+    private static bool SameLivePlayers(
+        IReadOnlyList<RoomLivePlayer>? a, IReadOnlyList<RoomLivePlayer>? b)
+    {
+        if (ReferenceEquals(a, b))
+            return true;
+        if (a is null || b is null || a.Count != b.Count)
+            return false;
+
+        for (var i = 0; i < a.Count; i++)
+        {
+            if (a[i] != b[i])
+                return false;
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Комната по номеру — для публичной страницы <c>#/room/&lt;n&gt;</c>.
+    /// </summary>
+    public bool TryGet(int number, out RoomDescriptor room)
+    {
+        lock (_gate)
+            return _rooms.TryGetValue(number, out room!);
     }
 
     /// <summary>

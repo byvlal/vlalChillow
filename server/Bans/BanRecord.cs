@@ -24,7 +24,10 @@ public sealed class BanRecord
     /// <summary>Ник, которого забанил админ (нормализованный).</summary>
     public string Nick { get; set; } = "";
 
-    /// <summary>Другие ники этой же личности (зашёл под новым ником с забаненного IP).</summary>
+    /// <summary>
+    /// Другие ники этой же личности. Учатся только по жёсткому совпадению — userId
+    /// или IP; вход под забаненным ником с новым адресом и новым userId ничего не учит.
+    /// </summary>
     public List<string> Aliases { get; set; } = new();
 
     /// <summary>Все IP этой личности: LAN, Hamachi, VPN, публичный — без разницы.</summary>
@@ -32,13 +35,14 @@ public sealed class BanRecord
 
     /// <summary>
     /// Стабильные ключи установок (<c>LB&lt;md5&gt;</c>) из 2.07-handshake. В отличие от ника
-    /// и IP, не меняются при смене ника и включении VPN — это главный якорь device-бана.
+    /// и IP, не меняются при смене ника и включении VPN — это главный якорь бана.
     /// </summary>
     public List<string> Devices { get; set; } = new();
 
     /// <summary>
-    /// Серверные id матча (100…1 000 000), под которыми личность попала в бан.
-    /// Нужны только для <c>/unban</c>: сам id — селектор, а не ключ бана.
+    /// Публичные id аккаунтов (<see cref="AccountStore.FirstId"/> и выше), под которыми
+    /// личность попала в бан. Это настоящий ключ: аккаунт постоянен, а поиск по нему
+    /// включается только вместе с устройством, которому он принадлежит.
     /// </summary>
     public List<int> MatchIds { get; set; } = new();
 
@@ -145,6 +149,9 @@ public sealed class BanRecord
     }
 
     public bool HasMatchId(int id) => id != 0 && MatchIds.Contains(id);
+
+    /// <summary>Есть ли этот id аккаунта среди ключей записи.</summary>
+    public bool HasPublicId(int id) => HasMatchId(id);
 
     /// <summary>Ник для логов/чата; если бана по нику не было — первый IP.</summary>
     [JsonIgnore]

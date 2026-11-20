@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using StandChillow.LanServer.Bans;
 
 namespace StandChillow.LanServer.Net;
 
@@ -8,9 +9,8 @@ namespace StandChillow.LanServer.Net;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Оригинальный числовой ID нигде не теряется: он детерминирован от ника
-/// (<see cref="Bans.MatchPublicId.ForNick"/>), поэтому баны, <c>admin.ids</c> и статистика
-/// продолжают работать по-прежнему — подменяется только то, что показывают клиентам.
+/// Оригинальный номер аккаунта нигде не теряется: баны, <c>admin.ids</c> и статистика
+/// продолжают работать по нему — подменяется только то, что показывают клиентам.
 /// </para>
 /// <para>
 /// Файл <c>customids.json</c> рядом с исполняемым файлом (как <c>stats.json</c> и
@@ -19,7 +19,8 @@ namespace StandChillow.LanServer.Net;
 /// Битый файл не роняет сервер — хранилище стартует пустым.
 /// </para>
 /// <para>
-/// Правила значения: только цифры и английские буквы, 1..24 символа (спека владельца).
+/// Правила значения: только цифры и английские буквы, 1..24 символа, хотя бы одна
+/// буква — чисто цифровой ID сливался бы с номером аккаунта (спека владельца).
 /// Уникальность — без учёта регистра: два админа не должны выглядеть одинаково.
 /// </para>
 /// </remarks>
@@ -28,8 +29,8 @@ public sealed class CustomIdStore
     /// <summary>Сколько символов допускаем: короткий читаемый игровой ID.</summary>
     public const int MaxLength = 24;
 
-    /// <summary>Шаблон валидного значения: только A-Z, a-z, 0-9, непусто.</summary>
-    public const string Pattern = "^[A-Za-z0-9]{1,24}$";
+    /// <summary>Шаблон валидного значения: A-Z, a-z, 0-9, 1..24, хотя бы одна буква.</summary>
+    public const string Pattern = "^(?=.*[A-Za-z])[A-Za-z0-9]{1,24}$";
 
     private readonly object _gate = new();
     private readonly string _path;
@@ -59,6 +60,16 @@ public sealed class CustomIdStore
     public int Count
     {
         get { lock (_gate) return _byId.Count; }
+    }
+
+    /// <summary>Снимок записей для миграции аккаунтов: id, ник и само значение.</summary>
+    public IReadOnlyList<(int Id, string Nick, string CustomId)> Export()
+    {
+        lock (_gate)
+            return _byId.Values
+                .OrderBy(e => e.Id)
+                .Select(e => (e.Id, e.Nick, e.CustomId))
+                .ToList();
     }
 
     /// <summary>Путь файла — для логов.</summary>
@@ -112,7 +123,7 @@ public sealed class CustomIdStore
         if (value.Length > MaxLength)
             return $"максимум {MaxLength} символов (сейчас {value.Length})";
         if (!System.Text.RegularExpressions.Regex.IsMatch(value, Pattern))
-            return "только цифры и английские буквы";
+            return "только цифры и английские буквы, хотя бы одна буква";
 
         lock (_gate)
         {
@@ -148,6 +159,95 @@ public sealed class CustomIdStore
 
         Save();
         return null;
+    }
+
+    /// <summary>
+    /// Снять кастомные ID у всех, кто больше не админ. Возвращает, сколько снято.
+    /// </summary>
+    /// <remarks>
+    /// Права живут в <c>admin.ids</c> и меняются правкой config.json на лету. Кастомный
+    /// ID — привилегия админа: перестал быть админом — значение снимается с диска, а не
+    /// просто прячется, иначе вернувшиеся права вернули бы старую строку.
+    /// </remarks>
+    public int PruneNonAdmins(Func<int, bool> isAdmin)
+    {
+        List<Entry> removed;
+        lock (_gate)
+        {
+            removed = _byId.Values.Where(e => !isAdmin(e.Id)).ToList();
+            foreach (var entry in removed)
+                _byId.Remove(entry.Id);
+        }
+
+        if (removed.Count == 0)
+            return 0;
+
+        Save();
+        return removed.Count;
+    }
+
+    /// <summary>
+    /// Перевести кастомные ID со старых хешей ника на аккаунты. Записи, попавшие на
+    /// один аккаунт, склеиваются (побеждает более свежая); неизвестные — выбрасываются.
+    /// Возвращает число изменённых записей.
+    /// </summary>
+    /// <remarks>
+    /// <paramref name="map"/> вызывается для каждой записи: старый хеш ника может быть
+    /// больше <see cref="AccountStore.FirstId"/> и выглядеть как номер аккаунта.
+    /// Настоящий номер функция возвращает без изменений.
+    /// </remarks>
+    public int RemapAccounts(Func<int, string, int> map)
+    {
+        List<Entry> snapshot;
+        lock (_gate)
+            snapshot = _byId.Values.OrderBy(e => e.UpdatedUtc).ToList();
+
+        var changed = 0;
+        var next = new Dictionary<int, Entry>();
+        var usedValues = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var entry in snapshot)
+        {
+            var mapped = entry.Id > 0 ? map(entry.Id, entry.Nick) : 0;
+            if (mapped is < AccountStore.FirstId or > AccountStore.MaxId)
+            {
+                changed++;
+                continue;
+            }
+
+            if (next.ContainsKey(mapped))
+            {
+                changed++;
+                // Более свежая запись уже стоит последней: старую просто не добавляем.
+                continue;
+            }
+
+            if (!usedValues.Add(entry.CustomId))
+            {
+                changed++;
+                continue;
+            }
+
+            if (mapped != entry.Id)
+            {
+                entry.Id = mapped;
+                changed++;
+            }
+
+            next[mapped] = entry;
+        }
+
+        if (changed == 0)
+            return 0;
+
+        lock (_gate)
+        {
+            _byId.Clear();
+            foreach (var (id, entry) in next)
+                _byId[id] = entry;
+        }
+
+        Save();
+        return changed;
     }
 
     private void Load()

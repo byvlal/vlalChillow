@@ -16,10 +16,10 @@ public sealed class BanCommandLineTests
     public void ParsesIdDurationAndFullReason()
     {
         Assert.True(BanCommandLine.TryParse(
-            "25354325 6d лох сасал ахахах", out var id, out var duration, out var reason, out var error));
+            "1000001 6d лох сасал ахахах", out var id, out var duration, out var reason, out var error));
 
         Assert.Equal(string.Empty, error);
-        Assert.Equal(25354325, id);
+        Assert.Equal(1000001, id);
         Assert.Equal("6d", duration);
         Assert.Equal("лох сасал ахахах", reason);
     }
@@ -28,15 +28,15 @@ public sealed class BanCommandLineTests
     public void ReasonKeepsCommasAndQuotes()
     {
         Assert.True(BanCommandLine.TryParse(
-            "67776161 6h удали чит, а то забаню", out _, out _, out var reason, out _));
+            "1000042 6h удали чит, а то забаню", out _, out _, out var reason, out _));
         Assert.Equal("удали чит, а то забаню", reason);
     }
 
     [Fact]
     public void ReasonIsOptional()
     {
-        Assert.True(BanCommandLine.TryParse("67776161 30m", out var id, out var duration, out var reason, out _));
-        Assert.Equal(67776161, id);
+        Assert.True(BanCommandLine.TryParse("1000042 30m", out var id, out var duration, out var reason, out _));
+        Assert.Equal(1000042, id);
         Assert.Equal("30m", duration);
         Assert.Equal(string.Empty, reason);
     }
@@ -44,8 +44,8 @@ public sealed class BanCommandLineTests
     [Fact]
     public void HashPrefixFromTheGameIsAccepted()
     {
-        Assert.True(BanCommandLine.TryParse("#25354325 10m", out var id, out _, out _, out var error), error);
-        Assert.Equal(25354325, id);
+        Assert.True(BanCommandLine.TryParse("#1000001 10m", out var id, out _, out _, out var error), error);
+        Assert.Equal(1000001, id);
     }
 
     [Fact]
@@ -67,11 +67,12 @@ public sealed class BanCommandLineTests
 
     [Theory]
     [InlineData("")]
-    [InlineData("67776161")]
+    [InlineData("1000001")]
     [InlineData("0 30m")]              // 0 — «id нет», не игрок
     [InlineData("100000001 30m")]      // выше диапазона
+    [InlineData("999999 30m")]         // старый хеш ника — больше не адрес бана
     [InlineData("-5 30m")]
-    [InlineData("67776161  ")]
+    [InlineData("1000001  ")]
     public void BadLinesAreRejected(string args)
     {
         Assert.False(BanCommandLine.TryParse(args, out _, out _, out _, out var error));
@@ -79,8 +80,8 @@ public sealed class BanCommandLineTests
     }
 
     [Theory]
-    [InlineData("1 30m", 1)]
-    [InlineData("42 10m причина", 42)]
+    [InlineData("1000000 30m", 1000000)]
+    [InlineData("1000042 10m причина", 1000042)]
     [InlineData("100000000 14d", 100000000)]
     public void EdgeIdsAreAccepted(string args, int expected)
     {
@@ -89,9 +90,9 @@ public sealed class BanCommandLineTests
     }
 
     [Fact]
-    public void IdRangeMatchesTheServerIdRange()
+    public void IdRangeMatchesTheAccountIdRange()
     {
-        Assert.Equal(MatchPublicId.Min, BanCommandLine.MinId);
-        Assert.Equal(MatchPublicId.Max, BanCommandLine.MaxId);
+        Assert.Equal(AccountStore.FirstId, BanCommandLine.MinId);
+        Assert.Equal(AccountStore.MaxId, BanCommandLine.MaxId);
     }
 }

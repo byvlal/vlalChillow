@@ -96,7 +96,7 @@ public sealed partial class GameNetHost
         var found = LookupPlayerForAdmin(id);
         var custom = CustomIdOf(id);
         var display = custom ?? id.ToString(CultureInfo.InvariantCulture);
-        var devices = _directory.DevicesForId(id);
+        var devices = _directory.DevicesForAccount(id);
 
         if (found is null)
         {

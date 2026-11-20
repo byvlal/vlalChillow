@@ -3,7 +3,7 @@ namespace StandChillow.LanServer.Bans;
 /// <summary>
 /// Результат поиска игрока по серверному id — для превью в веб-админке (вкладка «Баны»).
 /// </summary>
-/// <param name="Id">Серверный id (<see cref="MatchPublicId.ForNick"/>).</param>
+/// <param name="Id">Серверный id (<see cref="LegacyNickHash.ForNick"/>).</param>
 /// <param name="Nick">Ник (как его знает сервер: в катке — ростер, офлайн — справочник).</param>
 /// <param name="Status">
 /// Где человек сейчас: <c>match</c> — в катке, <c>lobby</c> — в лобби, <c>offline</c> — не в сети.

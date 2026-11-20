@@ -7,7 +7,7 @@ using StandChillow.LanServer.Net;
 namespace StandChillow.LanServer.Stats;
 
 /// <summary>Снимок статистики одного игрока — то, что отдаёт API.</summary>
-/// <param name="Id">Серверный id (<see cref="MatchPublicId.ForNick"/>).</param>
+/// <param name="Id">Постоянный id аккаунта (<see cref="AccountStore.FirstId"/> и выше).</param>
 /// <param name="Nick">Последний замеченный ник.</param>
 /// <param name="Kills">Киллы за всё время.</param>
 /// <param name="Deaths">Смерти за всё время.</param>
@@ -88,6 +88,67 @@ public sealed class PlayerStatsStore
     /// <summary>Сколько игроков со статистикой сейчас в памяти.</summary>
     public int Count { get { lock (_gate) return _players.Count; } }
 
+    /// <summary>
+    /// Перевести старые id (хеши ников) на аккаунты. Записи, попавшие на один аккаунт,
+    /// складываются: киллы/смерти/секунды суммируются, «матчи» берутся максимумом
+    /// (один и тот же забег мог считаться под двумя старыми id). Неизвестные записи
+    /// выбрасываются. Возвращает число изменённых записей.
+    /// </summary>
+    /// <remarks>
+    /// <paramref name="map"/> вызывается для каждой записи: старый хеш ника может быть
+    /// больше <see cref="AccountStore.FirstId"/> и выглядеть как номер аккаунта.
+    /// Настоящий номер функция возвращает без изменений.
+    /// </remarks>
+    public int RemapAccountIds(Func<int, string, int> map)
+    {
+        lock (_gate)
+        {
+            var changed = 0;
+            var next = new Dictionary<int, StatsEntry>();
+
+            foreach (var (oldId, entry) in _players.OrderBy(kv => kv.Value.UpdatedUtc))
+            {
+                var mapped = oldId > 0 ? map(oldId, entry.Nick) : 0;
+
+                if (mapped is < AccountStore.FirstId or > AccountStore.MaxId)
+                {
+                    changed++;
+                    continue;
+                }
+
+                if (next.TryGetValue(mapped, out var existing))
+                {
+                    existing.Kills += entry.Kills;
+                    existing.Deaths += entry.Deaths;
+                    existing.Seconds += entry.Seconds;
+                    existing.Matches = Math.Max(existing.Matches, entry.Matches);
+                    if (entry.UpdatedUtc > existing.UpdatedUtc)
+                    {
+                        existing.UpdatedUtc = entry.UpdatedUtc;
+                        if (!string.IsNullOrWhiteSpace(entry.Nick))
+                            existing.Nick = entry.Nick;
+                    }
+                    changed++;
+                    continue;
+                }
+
+                if (mapped != oldId)
+                    changed++;
+                next[mapped] = entry;
+            }
+
+            if (changed == 0)
+                return 0;
+
+            _players.Clear();
+            foreach (var (id, entry) in next)
+                _players[id] = entry;
+            _dirty = true;
+            SaveLocked();
+            return changed;
+        }
+    }
+
     public void NoteKill(int id, string nick) => Bump(id, nick, kills: 1);
 
     public void NoteDeath(int id, string nick) => Bump(id, nick, deaths: 1);
@@ -153,9 +214,8 @@ public sealed class PlayerStatsStore
                     _runs[room.Key] = run;
                 }
 
-                foreach (var nick in room.Nicks)
+                foreach (var (id, nick) in room.Players)
                 {
-                    var id = MatchPublicId.ForNick(nick);
                     if (id <= 0)
                         continue;
 

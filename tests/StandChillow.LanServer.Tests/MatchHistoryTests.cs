@@ -186,6 +186,47 @@ public sealed class MatchHistoryTests
         }
     }
 
+    [Fact]
+    public void Store_LatestForRoom_PicksNewestOnlyForThatRoom()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"vlal-history-{Guid.NewGuid():N}.json");
+        try
+        {
+            var now = new DateTime(2026, 11, 19, 12, 0, 0, DateTimeKind.Utc);
+            var store = new MatchHistoryStore(path, () => now);
+
+            var first = store.Add(new MatchHistoryRecord
+            {
+                RoomNumber = 2, EndedUtc = now.AddMinutes(-30),
+                ModeId = "Duel", Map = "de_mirage",
+            });
+            var otherRoom = store.Add(new MatchHistoryRecord
+            {
+                RoomNumber = 3, EndedUtc = now.AddMinutes(-20),
+                ModeId = "Duel", Map = "de_mirage",
+            });
+            var newest = store.Add(new MatchHistoryRecord
+            {
+                // Номер комнаты переиспользовали: на #2 сыграли ещё одну катку.
+                RoomNumber = 2, EndedUtc = now.AddMinutes(-5),
+                ModeId = "Ranked2v2", Map = "Sandstone 2x2",
+            });
+
+            Assert.Equal(newest.Id, store.LatestForRoom(2)?.Id);
+            Assert.Equal(otherRoom.Id, store.LatestForRoom(3)?.Id);
+            Assert.Null(store.LatestForRoom(4));
+            Assert.Null(store.LatestForRoom(0));
+
+            // Старая катка #2 осталась в истории, но «последней» для комнаты не стала.
+            Assert.NotNull(store.Get(first.Id));
+            Assert.NotEqual(first.Id, store.LatestForRoom(2)?.Id);
+        }
+        finally
+        {
+            TryDelete(path);
+        }
+    }
+
     private static void TryDelete(string path)
     {
         try { File.Delete(path); } catch { /* тестовый мусор не должен ронять прогон */ }

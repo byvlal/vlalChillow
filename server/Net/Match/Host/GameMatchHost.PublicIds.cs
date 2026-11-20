@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net;
 using LiteNetLib;
 using StandChillow.LanServer.Bans;
@@ -11,21 +12,21 @@ namespace StandChillow.LanServer.Net;
 public readonly record struct MatchPublicEntry(int Id, string Nick, IPAddress? Address, byte ActorNr);
 
 /// <summary>
-/// Кто сейчас в катке — с серверным id, который выводится из ника.
+/// Кто сейчас в катке — с постоянным id аккаунта.
 /// </summary>
 /// <remarks>
 /// <para>
-/// Id не хранится и не выдаётся: он <b>вычисляется</b> (<see cref="MatchPublicId.ForNick"/>),
-/// поэтому переживает реконнект, рестарт хоста и удаление каталога сервера. Здесь он
-/// нужен только для админ-команд <c>/ids</c> и <c>/ban</c>.
+/// Id выдаётся при входе (<see cref="AccountStore"/>) и хранится в комнате рядом с
+/// актором, поэтому переживает реконнект и не зависит от ника. Здесь он нужен для
+/// админ-команд <c>/ids</c> и <c>/ban</c>.
 /// </para>
 /// <para>
-/// В провод id не уходит: клиент его не знает и подменить не может.
+/// В провод id не уходит как отдельное поле: клиент его не знает и подменить не может.
 /// </para>
 /// </remarks>
 public sealed partial class GameMatchHost
 {
-    /// <summary>Игроки в катке: id (из ника), ник, адрес сокета, номер актора.</summary>
+    /// <summary>Игроки в катке: id аккаунта, ник, адрес сокета, номер актора.</summary>
     public IReadOnlyList<MatchPublicEntry> SnapshotPublicIds()
     {
         lock (_roomGate)
@@ -38,7 +39,9 @@ public sealed partial class GameMatchHost
                     if (actorNr == MatchHostActor.ActorNr || string.IsNullOrWhiteSpace(name))
                         continue;
 
-                    var id = MatchPublicId.ForNick(name);
+                    var id = AccountIdOfActorLocked(room, actorNr);
+                    if (id == 0 && Accounts is null)
+                        id = LegacyNickHash.ForNick(name); // тесты/проба без аккаунтов
                     if (id == 0)
                         continue;
 
@@ -155,25 +158,84 @@ public sealed partial class GameMatchHost
             return true;
         }
 
-        var nick = ResolveActorNick(actorNr, state, room);
-
-        // Кастомный ID админа: вместо числа — его строка. Оригинальный id для банов и
-        // admin.ids никуда не девается — подменяется только то, что показывают клиентам.
-        if (!string.IsNullOrWhiteSpace(nick))
+        var id = AccountIdOfActor(actorNr, state, room);
+        if (id > 0)
         {
-            var custom = CustomIdOf?.Invoke(MatchPublicId.ForNick(nick));
-            if (!string.IsNullOrWhiteSpace(custom))
-            {
-                uid = LobbyVariant.FromString(custom);
-                return true;
-            }
+            // Кастомный ID админа: вместо числа — его строка. Оригинальный account ID
+            // для банов и admin.ids никуда не девается — подменяется только показ.
+            var custom = CustomIdOf?.Invoke(id);
+            uid = LobbyVariant.FromString(
+                string.IsNullOrWhiteSpace(custom)
+                    ? id.ToString(CultureInfo.InvariantCulture)
+                    : custom);
+            return true;
         }
 
-        if (!MatchPublicId.TryWireUid(nick, out var text))
+        // Аккаунты отключены только в тестах/пробе: там допустим прежний расчёт из ника.
+        if (Accounts is not null)
+            return false;
+
+        var nick = ResolveActorNick(actorNr, state, room);
+        if (!LegacyNickHash.TryWireUid(nick, out var text))
             return false;
 
         uid = LobbyVariant.FromString(text);
         return true;
+    }
+
+    private volatile bool _uidResyncPending;
+
+    /// <summary>
+    /// Попросить матч пересчитать <c>uid</c> на ближайшем тике: кастомный ID отозван или
+    /// выдан, а клиенты уже видят старую строку. Флаг можно ставить из любого потока —
+    /// пакеты шлёт только игровой цикл.
+    /// </summary>
+    internal void RequestUidResync() => _uidResyncPending = true;
+
+    /// <summary>
+    /// Разослать актуальный <c>uid</c> всем актёрам, у кого он разошёлся с решением
+    /// сервера. Только чтение-сверка и одна рассылка на изменившихся; если никто не
+    /// изменился — ни одного пакета.
+    /// </summary>
+    internal void ResyncActorUids()
+    {
+        _uidResyncPending = false;
+        if (!ExposeServerUid)
+            return;
+
+        List<(MatchRoom Room, byte ActorNr, LobbyVariant Uid)> updates = new();
+        lock (_roomGate)
+        {
+            foreach (var room in _roomsByPassword.Values)
+            {
+                foreach (var (_, st) in _peers)
+                {
+                    if (!ReferenceEquals(st.Room, room) || st.ActorNr == 0)
+                        continue;
+
+                    if (!TryServerUid(st.ActorNr, st, room, out var uid))
+                        continue;
+
+                    if (room.ActorProps.TryGetValue((st.ActorNr, MatchRoomPropKeys.Uid), out var have)
+                        && have.Kind == uid.Kind
+                        && string.Equals(have.String, uid.String, StringComparison.Ordinal))
+                        continue;
+
+                    room.ActorProps[(st.ActorNr, MatchRoomPropKeys.Uid)] = uid;
+                    updates.Add((room, st.ActorNr, uid));
+                }
+            }
+        }
+
+        foreach (var (room, actorNr, uid) in updates)
+        {
+            BroadcastRoom(
+                room,
+                MatchCodec.BuildSetProperty(NextServerTime(), actorNr, MatchRoomPropKeys.Uid, uid),
+                tag: "match_tx_SetProperty");
+            Console.WriteLine(
+                $"[match-host] uid actor={actorNr} обновлён на «{uid}» (права изменились)");
+        }
     }
 
     /// <summary>

@@ -4,15 +4,20 @@ using Xunit;
 namespace StandChillow.LanServer.Tests;
 
 /// <summary>
-/// Реестр банов: связка ник ↔ IP ↔ токен, выученные алиасы, админ-исключение, срок.
+/// Реестр банов v3: userId, IP и номер аккаунта — жёсткие ключи с обучением, ник —
+/// мягкий ключ, который блокирует только эту попытку и ничего не учит.
 /// </summary>
 /// <remarks>
 /// Никаких сокетов: реестр — чистая логика входа. Именно эти тесты держат обещания
-/// «сменил ник, но IP тот же — тоже бан» и «админа не банят».
+/// «сменил ник, но userId/IP тот же — тоже бан», «чужой ник не наследует бан»
+/// и «админа не банят».
 /// </remarks>
 public sealed class BanRegistryTests
 {
     private static readonly DateTime Now = new(2026, 11, 13, 12, 0, 0, DateTimeKind.Utc);
+
+    private const string Device = "LB143C7D41FAE30EB14F49B1678E3933C9";
+    private const string OtherDevice = "LB4B7BA14444774A9D4FBBEC23F4519998";
 
     private static BanRegistry NewRegistry() => new() { LearnAliases = true };
 
@@ -32,7 +37,7 @@ public sealed class BanRegistryTests
     }
 
     [Fact]
-    public void BanByNickAndIp_BlocksBothKeys()
+    public void NickAndIpBan_BlocksBothKeys()
     {
         var registry = NewRegistry();
         Ban(registry, "Ktulxy", "192.168.1.37");
@@ -44,7 +49,6 @@ public sealed class BanRegistryTests
         // Уже наученный ник («Другой» попал в запись по IP выше) банится и с нового адреса —
         // это и есть «тот же IP, сменил ник». А вот совсем новый ник с новым IP — свободен.
         Assert.True(registry.Inspect(new BanProbe("Другой", "192.168.1.99"), Now).Banned);
-        // Адрес, который ни разу не встречался, свободен: «новый ник + новый IP» не банится.
         Assert.False(registry.Inspect(new BanProbe("Третий", "172.20.5.5"), Now).Banned);
     }
 
@@ -68,35 +72,170 @@ public sealed class BanRegistryTests
     }
 
     [Fact]
-    public void NewIpUnderSameNick_IsLearnedAndBlocked()
+    public void NickOnlyMatchBlocksTheAttemptAndLearnsNothing()
     {
         var registry = NewRegistry();
         var record = Ban(registry, "Ktulxy", "203.0.113.9");
 
-        var decision = registry.Inspect(new BanProbe("Ktulxy", "10.8.0.2"), Now);
+        // Тот же ник с нового адреса и нового userId: попытку блокируем, но новые ключи
+        // не записываем — иначе невинный тёзка навсегда унаследует чужой бан.
+        var decision = registry.Inspect(
+            new BanProbe("Ktulxy", "10.8.0.2", Device), Now);
 
         Assert.True(decision.Banned);
         Assert.Equal("ник", decision.MatchedBy);
-        Assert.True(decision.LearnedAlias);
-        Assert.Contains("10.8.0.2", record.Ips);
-        Assert.True(registry.IsIpBanned("10.8.0.2", Now));
+        Assert.Equal(BanMatchKind.Nick, decision.MatchKind);
+        Assert.False(decision.LearnedAlias);
+        Assert.False(record.HasIp("10.8.0.2"));
+        Assert.False(record.HasDevice(Device));
+        Assert.False(registry.IsIpBanned("10.8.0.2", Now));
+
+        // Главное следствие: новый человек с новым ником, адресом и userId свободен.
+        Assert.False(registry.Inspect(
+            new BanProbe("Новый", "10.8.0.2", Device), Now).Banned);
     }
 
     [Fact]
-    public void NewNickOnBannedIp_IsLearnedAndBlocked()
+    public void NewNickOnBannedIp_LearnsNickAndUserId()
     {
         var registry = NewRegistry();
         var record = Ban(registry, "Ktulxy", "203.0.113.9");
 
-        var decision = registry.Inspect(new BanProbe("Ktulxy2", "203.0.113.9"), Now);
+        var decision = registry.Inspect(
+            new BanProbe("Ktulxy2", "203.0.113.9", Device), Now);
 
         Assert.True(decision.Banned);
         Assert.Equal("IP", decision.MatchedBy);
+        Assert.Equal(BanMatchKind.Ip, decision.MatchKind);
         Assert.True(decision.LearnedAlias);
-        Assert.Contains("Ktulxy2", record.Aliases);
+        Assert.True(record.HasNick("Ktulxy2"));
+        Assert.True(record.HasDevice(Device));
 
-        // И следующий заход уже под ником-алиасом с нового адреса тоже закрыт.
-        Assert.True(registry.Inspect(new BanProbe("Ktulxy2", "198.51.100.7"), Now).Banned);
+        // Выученный userId сам становится жёстким ключом: ник и IP можно менять.
+        var byId = registry.Inspect(new BanProbe("Ktulxy3", "198.51.100.7", Device), Now);
+        Assert.True(byId.Banned);
+        Assert.Equal("userId", byId.MatchedBy);
+        Assert.True(record.HasNick("Ktulxy3"));
+        Assert.True(record.HasIp("198.51.100.7"));
+    }
+
+    [Fact]
+    public void UserIdMatchLearnsNewNickAndIp()
+    {
+        var registry = NewRegistry();
+        var record = registry.Add(
+            new BanProbe("A", "203.0.113.9", Device),
+            TimeSpan.FromMinutes(30),
+            "софт",
+            "влал",
+            Now);
+
+        // Новый ник + VPN-адрес, но та же установка.
+        var decision = registry.Inspect(
+            new BanProbe("B", "198.51.100.7", Device.ToLowerInvariant()), Now);
+
+        Assert.True(decision.Banned);
+        Assert.Equal("userId", decision.MatchedBy);
+        Assert.Equal(BanMatchKind.UserId, decision.MatchKind);
+        Assert.True(decision.LearnedAlias);
+        Assert.True(record.HasNick("B"));
+        Assert.True(record.HasIp("198.51.100.7"));
+    }
+
+    [Fact]
+    public void UserIdIsCheckedBeforeIpAndNick()
+    {
+        var registry = NewRegistry();
+        Ban(registry, "A", "203.0.113.9");
+        var byId = registry.Add(
+            new BanProbe("B", "198.51.100.7", Device),
+            TimeSpan.FromMinutes(30),
+            "софт",
+            "влал",
+            Now);
+
+        // Совпали и адрес первой записи, и userId второй: отвечает userId.
+        var decision = registry.Inspect(
+            new BanProbe("C", "203.0.113.9", Device), Now);
+
+        Assert.True(decision.Banned);
+        Assert.Equal("userId", decision.MatchedBy);
+        Assert.Same(byId, decision.Record);
+    }
+
+    [Fact]
+    public void IpIsCheckedBeforeNickSoNewNickIsLearned()
+    {
+        var registry = NewRegistry();
+        var expires = BanRecord.ToUnixMs(DateTime.UtcNow.AddHours(1));
+        registry.Load(new[]
+        {
+            new BanRecord { Nick = "A", ExpiresUtcMs = expires },
+            new BanRecord
+            {
+                Nick = "B",
+                Ips = new List<string> { "203.0.113.9" },
+                ExpiresUtcMs = expires,
+            },
+        });
+
+        // Ник «A» забанен отдельной записью, но IP-совпадение сильнее: новый ник
+        // должен выучиться в запись адреса, а не пройти как мягкое совпадение.
+        var decision = registry.Inspect(new BanProbe("A", "203.0.113.9"), Now);
+
+        Assert.True(decision.Banned);
+        Assert.Equal("IP", decision.MatchedBy);
+        Assert.Equal("B", decision.Record!.Nick);
+        Assert.True(decision.Record.HasNick("A"));
+    }
+
+    [Fact]
+    public void UserIdBanDoesNotCatchAnotherPhoneOnTheSameIp()
+    {
+        var registry = NewRegistry();
+        registry.Add(
+            new BanProbe("A", null, Device),
+            TimeSpan.FromMinutes(30),
+            "софт",
+            "влал",
+            Now);
+
+        // У записи нет IP; второй телефон с тем же адресом и другим устройством свободен.
+        var decision = registry.Inspect(new BanProbe("B", "203.0.113.9", OtherDevice), Now);
+
+        Assert.False(decision.Banned);
+    }
+
+    [Fact]
+    public void LearnAliasesOff_BlocksButDoesNotGrowTheRecord()
+    {
+        var registry = new BanRegistry { LearnAliases = false };
+        var record = Ban(registry, "A", "203.0.113.9");
+
+        var decision = registry.Inspect(
+            new BanProbe("B", "203.0.113.9", Device), Now);
+
+        Assert.True(decision.Banned);
+        Assert.False(decision.LearnedAlias);
+        Assert.False(record.HasNick("B"));
+        Assert.False(record.HasDevice(Device));
+        Assert.False(record.HasPublicId(LegacyNickHash.ForNick("B")));
+    }
+
+    [Fact]
+    public void ReadOnlyInspectDoesNotGrowTheRecord()
+    {
+        var registry = NewRegistry();
+        var record = Ban(registry, "A", "203.0.113.9");
+
+        // Так смотрит сайт: найти бан можно, приклеить к нему свои ключи — нельзя.
+        var decision = registry.Inspect(
+            new BanProbe("B", "203.0.113.9", Device), Now, learn: false);
+
+        Assert.True(decision.Banned);
+        Assert.False(decision.LearnedAlias);
+        Assert.False(record.HasNick("B"));
+        Assert.False(record.HasDevice(Device));
     }
 
     [Fact]
@@ -110,7 +249,7 @@ public sealed class BanRegistryTests
 
         Assert.False(decision.Banned);
         Assert.True(decision.AdminExempt);
-        Assert.DoesNotContain("влал", record.Aliases);
+        Assert.False(record.HasNick("влал"));
     }
 
     [Fact]
@@ -136,6 +275,39 @@ public sealed class BanRegistryTests
         Assert.Equal(1, registry.Count);
         Assert.Single(registry.Export());
         Assert.Equal(TimeSpan.FromMinutes(180), record.Remaining(Now));
+    }
+
+    [Fact]
+    public void PublicIdIsAHardKeyForTheAccount()
+    {
+        var registry = NewRegistry();
+        var record = registry.Add(
+            new BanProbe("A", null, null, 1000001),
+            TimeSpan.FromMinutes(30),
+            "софт",
+            "влал",
+            Now,
+            matchId: 1000001);
+
+        Assert.True(record.HasPublicId(1000001));
+
+        // Номер аккаунта выдаёт сервер, клиент его не подделывает: совпадение номера —
+        // это тот же человек, даже с новым ником, адресом и устройством.
+        Assert.True(registry.Inspect(
+            new BanProbe("B", "198.51.100.7", null, 1000001), Now).Banned);
+    }
+
+    [Fact]
+    public void HardMatchTagsTheRecordWithThePublicId()
+    {
+        var registry = NewRegistry();
+        var record = Ban(registry, "A", "203.0.113.9");
+
+        var decision = registry.Inspect(
+            new BanProbe("B", "203.0.113.9", null, 424242), Now);
+
+        Assert.True(decision.LearnedAlias);
+        Assert.True(record.HasPublicId(424242));
     }
 
     [Fact]
@@ -177,6 +349,23 @@ public sealed class BanRegistryTests
     }
 
     [Fact]
+    public void KnownDevicesFromDirectoryAreBannedWithThePerson()
+    {
+        var registry = NewRegistry();
+        var record = registry.Add(
+            new BanProbe("A", null),
+            TimeSpan.FromMinutes(30),
+            "софт",
+            "влал",
+            Now,
+            matchId: 1,
+            knownDevices: new[] { Device, OtherDevice });
+
+        Assert.Equal(2, record.Devices.Count);
+        Assert.True(registry.Inspect(new BanProbe("B", null, OtherDevice), Now).Banned);
+    }
+
+    [Fact]
     public void TimeAndTimezoneAreStoredTimezoneProof()
     {
         var registry = NewRegistry();
@@ -186,20 +375,6 @@ public sealed class BanRegistryTests
         Assert.Equal(BanRecord.ToUnixMs(Now.AddMinutes(30)), record.ExpiresUtcMs);
         Assert.Equal(TimeSpan.FromMinutes(30), record.Remaining(Now));
         Assert.False(string.IsNullOrWhiteSpace(record.CreatedLocalIso));
-    }
-
-    [Fact]
-    public void LearnAliasesCanBeSwitchedOff()
-    {
-        var registry = new BanRegistry { LearnAliases = false };
-        var record = Ban(registry, "Ktulxy", "203.0.113.9");
-
-        var decision = registry.Inspect(new BanProbe("Ktulxy", "10.8.0.2"), Now);
-
-        Assert.True(decision.Banned);
-        Assert.False(decision.LearnedAlias);
-        Assert.DoesNotContain("10.8.0.2", record.Ips);
-        Assert.False(registry.IsIpBanned("10.8.0.2", Now));
     }
 
     [Fact]
@@ -219,134 +394,6 @@ public sealed class BanRegistryTests
     }
 
     [Fact]
-    public void ActiveListShowsNearestExpiryFirstAndSkipsExpired()
-    {
-        var registry = NewRegistry();
-        Ban(registry, "Долгий", "203.0.113.1", minutes: 600);
-        Ban(registry, "Короткий", "203.0.113.2", minutes: 30);
-
-        var active = registry.Active(Now);
-
-        Assert.Equal(2, active.Count);
-        Assert.Equal("Короткий", active[0].DisplayNick);
-        Assert.Equal("Долгий", active[1].DisplayNick);
-
-        Assert.Single(registry.Active(Now.AddMinutes(60)));
-    }
-
-    [Fact]
-    public void ChangedFiresWhenTheSetMutates()
-    {
-        var registry = NewRegistry();
-        var saves = 0;
-        registry.Changed = () => saves++;
-
-        Ban(registry, "Ktulxy", "203.0.113.9");
-        Assert.True(saves > 0);
-
-        var before = saves;
-        registry.Inspect(new BanProbe("Ktulxy", "10.8.0.2"), Now); // выучил новый IP
-        Assert.True(saves > before);
-
-        before = saves;
-        registry.Inspect(new BanProbe("Ktulxy", "10.8.0.2"), Now); // уже знает
-        Assert.Equal(before, saves);
-    }
-
-    private const string Device = "LB143C7D41FAE30EB14F49B1678E3933C9";
-    private const string OtherDevice = "LB4B7BA14444774A9D4FBBEC23F4519998";
-
-    [Fact]
-    public void DeviceBanBlocksNewNickAndVpnIp()
-    {
-        var registry = NewRegistry();
-        var record = registry.Add(
-            new BanProbe("A", "203.0.113.9", Device),
-            TimeSpan.FromMinutes(30),
-            "софт",
-            "влал",
-            Now);
-
-        // Новый ник + новый IP (VPN), но то же устройство.
-        var decision = registry.Inspect(
-            new BanProbe("B", "198.51.100.7", Device.ToLowerInvariant()), Now);
-
-        Assert.True(decision.Banned);
-        Assert.Equal("устройство", decision.MatchedBy);
-        Assert.True(decision.LearnedAlias);
-        Assert.True(record.HasNick("B"));
-        Assert.True(record.HasIp("198.51.100.7"));
-    }
-
-    [Fact]
-    public void DeviceBanDoesNotCatchAnotherPhoneOnTheSameIp()
-    {
-        var registry = NewRegistry();
-        registry.Add(
-            new BanProbe("A", null, Device),
-            TimeSpan.FromMinutes(30),
-            "софт",
-            "влал",
-            Now);
-
-        // У записи нет IP; второй телефон с тем же адресом и другим устройством свободен.
-        var decision = registry.Inspect(new BanProbe("B", "203.0.113.9", OtherDevice), Now);
-
-        Assert.False(decision.Banned);
-    }
-
-    [Fact]
-    public void IpOnlyMatchDoesNotLearnDevice()
-    {
-        var registry = NewRegistry();
-        var record = Ban(registry, "A", "203.0.113.9");
-
-        // Совпало только по IP: новый ник выучивается (как раньше), устройство — нет.
-        var byIp = registry.Inspect(new BanProbe("B", "203.0.113.9", Device), Now);
-        Assert.True(byIp.Banned);
-        Assert.Equal("IP", byIp.MatchedBy);
-        Assert.False(record.HasDevice(Device));
-
-        // Другой ник с того же устройства и с нового IP не банится: устройство не выучено.
-        var later = registry.Inspect(new BanProbe("C", "198.51.100.7", Device), Now);
-        Assert.False(later.Banned);
-    }
-
-    [Fact]
-    public void NickMatchMakesAnOldIpBanDeviceAware()
-    {
-        var registry = NewRegistry();
-        var record = Ban(registry, "A", "203.0.113.9");
-
-        // Старый v1-бан: тот же ник с нового IP — совпало по нику, устройство записалось.
-        var byNick = registry.Inspect(new BanProbe("A", "198.51.100.7", Device), Now);
-        Assert.True(byNick.Banned);
-        Assert.Equal("ник", byNick.MatchedBy);
-        Assert.True(byNick.LearnedAlias);
-        Assert.True(record.HasDevice(Device));
-
-        // Теперь смена ника и IP уже не помогает.
-        var byDevice = registry.Inspect(new BanProbe("B", "192.0.2.55", Device), Now);
-        Assert.True(byDevice.Banned);
-        Assert.Equal("устройство", byDevice.MatchedBy);
-    }
-
-    [Fact]
-    public void DeviceCheckCanBeSwitchedOff()
-    {
-        var registry = new BanRegistry { LearnAliases = true, ByDevice = false };
-        var record = registry.Add(
-            new BanProbe("A", null, Device),
-            TimeSpan.FromMinutes(30),
-            "софт",
-            "влал",
-            Now);
-
-        Assert.Empty(record.Devices);
-        Assert.False(registry.Inspect(new BanProbe("B", null, Device), Now).Banned);
-    }
-
-    [Fact]
     public void RemoveByDeviceKey()
     {
         var registry = NewRegistry();
@@ -363,20 +410,60 @@ public sealed class BanRegistryTests
     }
 
     [Fact]
-    public void KnownDevicesFromDirectoryAreBannedWithThePerson()
+    public void DeviceCheckCanBeSwitchedOff()
     {
-        var registry = NewRegistry();
+        var registry = new BanRegistry { LearnAliases = true, ByDevice = false };
         var record = registry.Add(
-            new BanProbe("A", null),
+            new BanProbe("A", null, Device),
             TimeSpan.FromMinutes(30),
             "софт",
             "влал",
-            Now,
-            matchId: 1,
-            knownDevices: new[] { Device, OtherDevice });
+            Now);
 
-        Assert.Equal(2, record.Devices.Count);
-        Assert.True(registry.Inspect(new BanProbe("B", null, OtherDevice), Now).Banned);
+        Assert.Empty(record.Devices);
+        Assert.False(registry.Inspect(new BanProbe("B", null, Device), Now).Banned);
+        Assert.False(registry.Inspect(new BanProbe("B", null, Device), Now, learn: false).Banned);
+    }
+
+    [Fact]
+    public void ActiveListShowsNearestExpiryFirstAndSkipsExpired()
+    {
+        var registry = NewRegistry();
+        Ban(registry, "Долгий", "203.0.113.1", minutes: 600);
+        Ban(registry, "Короткий", "203.0.113.2", minutes: 30);
+
+        var active = registry.Active(Now);
+
+        Assert.Equal(2, active.Count);
+        Assert.Equal("Короткий", active[0].DisplayNick);
+        Assert.Equal("Долгий", active[1].DisplayNick);
+
+        Assert.Single(registry.Active(Now.AddMinutes(60)));
+    }
+
+    [Fact]
+    public void ChangedFiresOnlyWhenAHardKeyActuallyLearns()
+    {
+        var registry = NewRegistry();
+        var saves = 0;
+        registry.Changed = () => saves++;
+
+        Ban(registry, "Ktulxy", "203.0.113.9");
+        Assert.True(saves > 0);
+
+        // Совпадение по нику ничего не пишет — диск не трогаем.
+        var before = saves;
+        registry.Inspect(new BanProbe("Ktulxy", "10.8.0.2"), Now);
+        Assert.Equal(before, saves);
+
+        // Совпадение по IP учит новый ник — одна запись на диске.
+        registry.Inspect(new BanProbe("Новый", "203.0.113.9"), Now);
+        Assert.True(saves > before);
+
+        // Повторный вход уже ничего нового не учит.
+        before = saves;
+        registry.Inspect(new BanProbe("Новый", "203.0.113.9"), Now);
+        Assert.Equal(before, saves);
     }
 
     [Fact]
@@ -397,6 +484,6 @@ public sealed class BanRegistryTests
         var decision = registry.Inspect(new BanProbe("B", null, Device), now);
 
         Assert.True(decision.Banned);
-        Assert.Equal("устройство", decision.MatchedBy);
+        Assert.Equal("userId", decision.MatchedBy);
     }
 }
