@@ -1,7 +1,7 @@
 namespace StandChillow.LanServer.Bans;
 
 /// <summary>
-/// Бан по серверному ID игрока: ID → ник, известные адреса и устройства → решение реестра.
+/// Бан по ID аккаунта: ID → ник, известные адреса и устройства → решение реестра.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -10,12 +10,14 @@ namespace StandChillow.LanServer.Bans;
 /// помнит по этому ID ник, адреса и устройства, с которых человек заходил, — их и проверяем.
 /// </para>
 /// <para>
-/// Адрес браузера в расчёт не берётся: он не совпадает с адресом игры (NAT, мобильная
-/// сеть, другой интерфейс), и бан по нему задел бы всех за этим NAT — см. README.
+/// Порядок — от жёсткого к мягкому: устройства (userId), адреса, публичный id, ник.
+/// Это чтение, а не вход: <c>learn: false</c> обязательно, иначе запрос к сайту приклеил
+/// бы чужой ник/IP к бану. ID здесь — найденная запись справочника, а не догадка по нику:
+/// поэтому его можно передавать в проверку.
 /// </para>
 /// <para>
-/// Класс ничего не знает ни о сокетах, ни о панели: решение принимается по уже готовым
-/// записям, поэтому проверяется тестами без сети.
+/// Адрес браузера в расчёт не берётся: он не совпадает с адресом игры (NAT, мобильная
+/// сеть, другой интерфейс), и бан по нему задел бы всех за этим NAT — см. README.
 /// </para>
 /// </remarks>
 public sealed class PlayerBanLookup
@@ -50,32 +52,52 @@ public sealed class PlayerBanLookup
         if (seen is null)
             return false;
 
-        // Сначала ник: бан ставится по нику, и это самый частый случай.
-        if (_bans.Inspect(new BanProbe(seen.Nick, null), nowUtc, _isExempt).Banned)
-            return true;
-
-        // Потом все адреса, которые человек светит в лобби: бан по IP ловит и тех,
-        // кто сменил ник (ID — производная от ника, поэтому сменивший ник сменил и ID).
-        foreach (var ip in seen.Ips)
-        {
-            if (string.IsNullOrWhiteSpace(ip))
-                continue;
-
-            if (_bans.Inspect(new BanProbe(seen.Nick, ip), nowUtc, _isExempt).Banned)
-                return true;
-        }
-
-        // И устройства: device-бан не зависит от ника и IP, поэтому именно он ловит
-        // «сменил ник и включил VPN». У legacy-записей список пуст — шаг ничего не стоит.
+        // userId — главный ключ: не зависит от ника и IP.
         foreach (var device in seen.Devices)
         {
             if (string.IsNullOrWhiteSpace(device))
                 continue;
 
-            if (_bans.Inspect(new BanProbe(seen.Nick, null, device), nowUtc, _isExempt).Banned)
+            if (_bans.Inspect(
+                    new BanProbe(seen.Nick, null, device, seen.Id),
+                    nowUtc,
+                    _isExempt,
+                    learn: false)
+                .Banned)
                 return true;
         }
 
-        return false;
+        // IP — жёсткий ключ текущей сети.
+        foreach (var ip in seen.Ips)
+        {
+            if (string.IsNullOrWhiteSpace(ip))
+                continue;
+
+            if (_bans.Inspect(
+                    new BanProbe(seen.Nick, ip, null, seen.Id),
+                    nowUtc,
+                    _isExempt,
+                    learn: false)
+                .Banned)
+                return true;
+        }
+
+        // Публичный id аккаунта — жёсткий ключ, но только на чтение: запись уже
+        // привязана к человеку, а не угадана по нику.
+        if (_bans.Inspect(
+                new BanProbe(seen.Nick, null, null, seen.Id),
+                nowUtc,
+                _isExempt,
+                learn: false)
+            .Banned)
+            return true;
+
+        // Ник — мягкий ключ: blocks only this identity, ничего не учит.
+        return _bans.Inspect(
+                new BanProbe(seen.Nick, null, null, 0),
+                nowUtc,
+                _isExempt,
+                learn: false)
+            .Banned;
     }
 }

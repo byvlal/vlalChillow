@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using StandChillow.LanServer.Bans;
 
 namespace StandChillow.LanServer.Stats;
 
@@ -59,6 +60,85 @@ public sealed class MatchHistoryStore
 
     public int Count { get { lock (_gate) return _matches.Count; } }
 
+    /// <summary>
+    /// Перевести игроков в истории со старых хешей ника на аккаунты. Если два старых id
+    /// попали на один аккаунт, строки склеиваются: накопительные числа берутся
+    /// максимумом, смерти складываются. Возвращает число изменённых матчей.
+    /// </summary>
+    /// <remarks>
+    /// <paramref name="map"/> вызывается для каждого игрока: старый хеш ника может быть
+    /// больше <see cref="AccountStore.FirstId"/> и выглядеть как номер аккаунта.
+    /// Настоящий номер функция возвращает без изменений.
+    /// </remarks>
+    public int RemapAccountIds(Func<int, string, int> map)
+    {
+        lock (_gate)
+        {
+            var changed = 0;
+            foreach (var match in _matches)
+            {
+                if (match?.Players is null || match.Players.Count == 0)
+                    continue;
+
+                var merged = new Dictionary<int, MatchHistoryPlayer>();
+                var order = new List<int>();
+                var matchChanged = false;
+
+                foreach (var player in match.Players)
+                {
+                    if (player is null)
+                        continue;
+
+                    var mapped = player.Id > 0 ? map(player.Id, player.Nick) : 0;
+
+                    if (mapped is < AccountStore.FirstId or > AccountStore.MaxId)
+                    {
+                        matchChanged = true;
+                        continue;
+                    }
+
+                    if (mapped != player.Id)
+                    {
+                        player.Id = mapped;
+                        matchChanged = true;
+                    }
+
+                    if (!merged.TryGetValue(mapped, out var existing))
+                    {
+                        merged[mapped] = player;
+                        order.Add(mapped);
+                        continue;
+                    }
+
+                    existing.Kills = Math.Max(existing.Kills, player.Kills);
+                    existing.Assists = Math.Max(existing.Assists, player.Assists);
+                    existing.Score = Math.Max(existing.Score, player.Score);
+                    existing.Deaths += player.Deaths;
+                    existing.Money = player.Money;
+                    existing.Ping = player.Ping;
+                    if (player.Team is "CT" or "T")
+                        existing.Team = player.Team;
+                    if (!string.IsNullOrWhiteSpace(player.Nick))
+                        existing.Nick = player.Nick;
+                    matchChanged = true;
+                }
+
+                if (!matchChanged)
+                    continue;
+
+                match.Players = order.Select(id => merged[id]).ToList();
+                changed++;
+            }
+
+            if (changed == 0)
+                return 0;
+
+            _dirty = true;
+            SaveLocked();
+            return changed;
+        }
+    }
+
     /// <summary>Сколько матчей храним — для лога и тестов.</summary>
     public int Capacity => MaxMatches;
 
@@ -100,6 +180,34 @@ public sealed class MatchHistoryStore
                     return m;
             }
             return null;
+        }
+    }
+
+    /// <summary>
+    /// Последняя записанная катка этой комнаты — чтобы завершённая <c>#/room/&lt;n&gt;</c>
+    /// вела на полную статистику, а не оставалась тупиком.
+    /// </summary>
+    /// <remarks>
+    /// Номера комнат переиспользуются (наименьший свободный), поэтому «последняя» — это
+    /// именно самая свежая запись с таким <see cref="MatchHistoryRecord.RoomNumber"/>,
+    /// а не любая: старую катку #2 после её закрытия не показываем.
+    /// </remarks>
+    public MatchHistoryRecord? LatestForRoom(int roomNumber)
+    {
+        if (roomNumber <= 0)
+            return null;
+
+        lock (_gate)
+        {
+            MatchHistoryRecord? best = null;
+            foreach (var m in _matches)
+            {
+                if (m.RoomNumber != roomNumber)
+                    continue;
+                if (best is null || m.EndedUtc > best.EndedUtc)
+                    best = m;
+            }
+            return best;
         }
     }
 

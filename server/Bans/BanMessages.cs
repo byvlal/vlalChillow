@@ -49,11 +49,11 @@ public static class BanMessages
     };
 
     /// <summary>
-    /// Id для объявления: из записи (там тег того, кого банили), а если запись старая и тега
-    /// нет — считается из ника, он детерминирован.
+    /// Id для объявления: номер аккаунта из записи (там тег того, кого банили). У совсем
+    /// старых записей тега нет — тогда считается хеш ника: другого id у них не осталось.
     /// </summary>
     public static int IdOf(BanRecord record) =>
-        record.MatchIds.Count > 0 ? record.MatchIds[0] : MatchPublicId.ForNick(record.Nick);
+        record.MatchIds.Count > 0 ? record.MatchIds[0] : LegacyNickHash.ForNick(record.Nick);
 
     private static string DescribeReason(BanRecord record) =>
         string.IsNullOrWhiteSpace(record.Reason) ? "не указана" : record.Reason.Trim();

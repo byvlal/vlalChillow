@@ -123,33 +123,12 @@ public sealed partial class WebPanelRouter
             return banned;
 
         var bytes = _options.AvatarById?.Invoke(session.PlayerId);
-        var type = ImageContentType(bytes);
+        var type = AvatarCache.ImageContentType(bytes);
         if (type is null)
             return WebResponse.Text("нет аватара", 404);
 
         return new WebResponse(200, type, bytes!, 0,
             new List<(string, string)> { ("Cache-Control", "private, max-age=300") });
-    }
-
-    /// <summary>
-    /// Тип картинки поmagic-байтам. Неизвестное — <c>null</c>: не угадываем.
-    /// </summary>
-    internal static string? ImageContentType(byte[]? bytes)
-    {
-        if (bytes is null || bytes.Length < 12)
-            return null;
-
-        if (bytes[0] == 0xFF && bytes[1] == 0xD8 && bytes[2] == 0xFF)
-            return "image/jpeg";
-
-        if (bytes[0] == 0x89 && bytes[1] == 0x50 && bytes[2] == 0x4E && bytes[3] == 0x47)
-            return "image/png";
-
-        if (bytes[0] == (byte)'R' && bytes[1] == (byte)'I' && bytes[2] == (byte)'F'
-            && bytes[3] == (byte)'F' && bytes[8] == (byte)'W' && bytes[9] == (byte)'E')
-            return "image/webp";
-
-        return null;
     }
 
     private WebResponse Logout(WebRequestContext request)

@@ -29,7 +29,7 @@ namespace StandChillow.LanServer.Bans;
 /// а не ключ бана: <c>/ban</c> всегда приводит его к нику и IP.
 /// </para>
 /// </remarks>
-public static class MatchPublicId
+public static class LegacyNickHash
 {
     public const int Min = 1;
     public const int Max = 100_000_000;

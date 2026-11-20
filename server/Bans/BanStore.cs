@@ -1,5 +1,6 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using StandChillow.LanServer.Config;
 
 namespace StandChillow.LanServer.Bans;
 
@@ -13,14 +14,23 @@ namespace StandChillow.LanServer.Bans;
 /// числе после рестарта).
 /// </para>
 /// <para>
+/// Схема v3 сбрасывает все баны старых версий: в v1/v2 реестр учил ник/IP/устройство
+/// слишком агрессивно, и в записях могли остаться чужие адреса и телефоны. Справочник
+/// при миграции сохраняется, но без старых <c>ips</c>/<c>devices</c> — их заново
+/// соберут только реальные входы под новой логикой.
+/// </para>
+/// <para>
 /// Запись атомарная: сначала <c>banlist.json.tmp</c>, потом замена. Битый файл не
 /// роняет сервер — логируется и стартует пустым, а не падает на первом входе.
 /// </para>
 /// </remarks>
 public sealed class BanStore
 {
-    /// <summary>Текущая схема файла. v2 добавила <c>Devices</c> к банам и игрокам.</summary>
-    public const int CurrentVersion = 2;
+    /// <summary>
+    /// Текущая схема файла. v3 сбрасывает старые баны и чистит изученные IP/устройства
+    /// в справочнике: до неё сервер мог приклеить чужой адрес к чужому бану.
+    /// </summary>
+    public const int CurrentVersion = 3;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -30,12 +40,6 @@ public sealed class BanStore
         AllowTrailingCommas = true,
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
     };
-
-    /// <summary>
-    /// Бэкап v1 не удался: до перезапуска файл нельзя перезаписывать, иначе исходник
-    /// пропадёт без копии.
-    /// </summary>
-    private bool _migrationBackupFailed;
 
     public BanStore(string path) => Path = path;
 
@@ -52,7 +56,8 @@ public sealed class BanStore
 
     /// <summary>
     /// Читает файл; отсутствие/битый JSON — пустые списки и строка в лог.
-    /// Старый v1 автоматически копируется в <c>banlist.json.v1.bak</c> и переписывается в v2.
+    /// Старые v1/v2 копируются в <c>banlist.json.vN.bak</c>, баны сбрасываются,
+    /// справочник переписывается без IP/устройств.
     /// </summary>
     public (List<BanRecord> Bans, List<SeenPlayer> Players) Load()
     {
@@ -83,7 +88,7 @@ public sealed class BanStore
             }
             else if (version < CurrentVersion)
             {
-                MigrateV1ToV2(version, bans, players);
+                MigrateToV3(version, bans, players);
             }
 
             Console.WriteLine(
@@ -99,35 +104,95 @@ public sealed class BanStore
     }
 
     /// <summary>
-    /// v1 → v2: сначала бэкап, потом атомарная перезапись. Если бэкап не удался —
-    /// файл не трогаем до перезапуска: v1 читается и работает, миграция повторится
-    /// на следующем старте. Флаг обязателен: иначе первый же бан/алиас вызвал бы
-    /// <see cref="Save"/> и перезаписал v1 без копии.
+    /// v1/v2 → v3: бэкап, обнуление банов, очистка IP/устройств в справочнике.
     /// </summary>
-    private void MigrateV1ToV2(int fromVersion, List<BanRecord> bans, List<SeenPlayer> players)
+    /// <remarks>
+    /// Бэкап — best-effort: если скопировать не удалось, активный файл всё равно
+    /// переписывается. Старые баны по условию задачи не мигрируются — их место
+    /// занимает новая логика, а не подозрительные записи прошлой.
+    /// </remarks>
+    private void MigrateToV3(int fromVersion, List<BanRecord> bans, List<SeenPlayer> players)
     {
-        var backup = Path + ".v1.bak";
+        var backup = Path + $".v{fromVersion}.bak";
+        if (File.Exists(backup))
+            backup = Path + $".v{fromVersion}.{DateTime.Now:yyyyMMdd-HHmmss}.bak";
+
         try
         {
-            if (!File.Exists(backup))
-                File.Copy(Path, backup);
+            File.Copy(Path, backup);
+            Console.WriteLine($"[ban] миграция v{fromVersion}→v{CurrentVersion}: бэкап {backup}");
         }
         catch (Exception ex)
         {
-            _migrationBackupFailed = true;
             Console.WriteLine(
                 $"[ban] миграция v{fromVersion}→v{CurrentVersion}: бэкап {backup} не удался " +
-                $"({ex.Message}) — файл не перезаписываю до перезапуска");
-            return;
+                $"({ex.Message}) — старые баны всё равно сбрасываю");
         }
+
+        var oldBans = bans.Count;
+        bans.Clear();
+
+        var sanitized = SanitizePlayers(players, out var cleaned, out var merged);
+        players.Clear();
+        players.AddRange(sanitized);
 
         if (Save(bans, players))
         {
             LastLoadedVersion = CurrentVersion;
             Console.WriteLine(
-                $"[ban] миграция v{fromVersion}→v{CurrentVersion}: банов {bans.Count}, " +
-                $"личностей {players.Count}, бэкап {backup}");
+                $"[ban] миграция v{fromVersion}→v{CurrentVersion}: старых банов сброшено {oldBans}, " +
+                $"личностей {players.Count}, IP/Devices очищено у {cleaned}, " +
+                $"дублей ников склеено {merged}, активный файл v{CurrentVersion}");
         }
+    }
+
+    /// <summary>
+    /// Оставить в справочнике только ник, id и время последнего входа.
+    /// IP и устройства старых версий не заслуживают доверия: они могли попасть туда
+    /// при входе под забаненным ником и потом приклеиться к чужому бану.
+    /// </summary>
+    private static List<SeenPlayer> SanitizePlayers(
+        List<SeenPlayer> players,
+        out int cleaned,
+        out int merged)
+    {
+        cleaned = 0;
+        merged = 0;
+
+        var byNick = new Dictionary<string, SeenPlayer>(StringComparer.OrdinalIgnoreCase);
+        foreach (var player in players)
+        {
+            if (player is null || string.IsNullOrWhiteSpace(player.Nick))
+                continue;
+
+            var nick = ServerConfig.NormalizeNick(player.Nick);
+            if (nick.Length == 0)
+                continue;
+
+            if (player.Ips is { Count: > 0 } || player.Devices is { Count: > 0 })
+                cleaned++;
+
+            if (byNick.TryGetValue(nick, out var existing))
+            {
+                if (player.LastSeenUtcMs > existing.LastSeenUtcMs)
+                {
+                    existing.LastSeenUtcMs = player.LastSeenUtcMs;
+                    existing.Id = player.Id;
+                }
+
+                merged++;
+                continue;
+            }
+
+            byNick[nick] = new SeenPlayer
+            {
+                Id = player.Id,
+                Nick = nick,
+                LastSeenUtcMs = player.LastSeenUtcMs,
+            };
+        }
+
+        return byNick.Values.ToList();
     }
 
     /// <summary>Пишет файл атомарно. Никогда не бросает — вызывающему нужен только факт.</summary>
@@ -137,14 +202,6 @@ public sealed class BanStore
         {
             Console.WriteLine(
                 $"[ban] {Path}: файл новее поддерживаемой схемы — сохранение пропущено");
-            return false;
-        }
-
-        if (_migrationBackupFailed)
-        {
-            Console.WriteLine(
-                $"[ban] {Path}: миграция v1→v2 не завершена (бэкап не удался) — " +
-                "сохранение пропущено, исходный файл не перезаписываю");
             return false;
         }
 

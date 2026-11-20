@@ -149,11 +149,12 @@ public sealed partial class GameMatchHost : IDisposable
 
     /// <summary>
     /// Fired on every successful JoinRoom (including reconnect takeover). Arguments: roster
-    /// nick, peer address, stable 2.07 device key (null for legacy). Lobby host uses this to
-    /// link nick ↔ device in the persistent directory, so <c>/ban</c> by id also closes the
-    /// install after the player has already left.
+    /// nick, account ID, peer address, stable 2.07 device key (null for legacy). Lobby host
+    /// uses this to link account ↔ device in the persistent directory, so <c>/ban</c> by id
+    /// also closes the install after the player has already left. <c>accountId = 0</c> —
+    /// accounts are disabled (tests) or the id could not be issued.
     /// </summary>
-    public Action<string, IPAddress?, string?>? OnMatchPlayerSeen { get; set; }
+    public Action<string, int, IPAddress?, string?>? OnMatchPlayerSeen { get; set; }
 
     /// <summary>
     /// Fired when a human leaves the Dedik room (disconnect / remove). Name = roster nick.
@@ -1068,6 +1069,9 @@ public sealed partial class GameMatchHost : IDisposable
                     _nextRoomSyncUtc = now + 1000;
                     SyncRoomRegistry();
                 }
+                // Кастомный ID отозван/выдан: досылаем актёрам актуальный uid.
+                if (_uidResyncPending)
+                    ResyncActorUids();
                 flowMs = Stopwatch.GetElapsedTime(flowSw).TotalMilliseconds;
 
                 if (Diag.StatsEnabled

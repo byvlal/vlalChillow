@@ -5,7 +5,7 @@ namespace StandChillow.LanServer.Tests;
 
 /// <summary>
 /// Бан по серверному ID игрока (#51): сайт знает про человека только ID, а справочник
-/// знает по нему ник и все адреса. Сокетов нет — проверяется только решение.
+/// знает по нему ник, все адреса и устройства. Сокетов нет — проверяется только решение.
 /// </summary>
 public sealed class PlayerBanLookupTests
 {
@@ -18,13 +18,13 @@ public sealed class PlayerBanLookupTests
     {
         var directory = new PlayerDirectory();
         var bans = new BanRegistry();
-        var seen = directory.Remember(nick, ip, Now);
+        var seen = directory.Remember(nick, ip, Now, accountId: AccountStore.FirstId + 42);
         Assert.NotNull(seen);
 
         return (new PlayerBanLookup(directory, bans, isExempt), directory, bans, seen!.Id);
     }
 
-    private static void Ban(BanRegistry bans, string? nick, string? ip) =>
+    private static BanRecord Ban(BanRegistry bans, string? nick, string? ip) =>
         bans.Add(new BanProbe(nick, ip), TimeSpan.FromHours(1), "тест", "админ", Now);
 
     [Fact]
@@ -89,7 +89,7 @@ public sealed class PlayerBanLookupTests
     {
         var (lookup, _, bans, id) = NewWorld();
         var other = new PlayerDirectory();
-        other.Remember("другой", "192.0.2.77", Now);
+        other.Remember("другой", "192.0.2.77", Now, accountId: AccountStore.FirstId + 43);
         Ban(bans, "другой", "192.0.2.77");
 
         Assert.False(lookup.IsBanned(id, Now));
@@ -101,7 +101,7 @@ public sealed class PlayerBanLookupTests
         const string device = "LB143C7D41FAE30EB14F49B1678E3933C9";
         var directory = new PlayerDirectory();
         var bans = new BanRegistry();
-        var seen = directory.Remember("A", "192.0.2.10", Now, device);
+        var seen = directory.Remember("A", "192.0.2.10", Now, device, AccountStore.FirstId + 44);
         Assert.NotNull(seen);
 
         // Бан выдан другому нику, но с того же устройства: по ID владельца устройства
@@ -123,7 +123,7 @@ public sealed class PlayerBanLookupTests
         const string device = "LB143C7D41FAE30EB14F49B1678E3933C9";
         var directory = new PlayerDirectory();
         var bans = new BanRegistry();
-        var seen = directory.Remember("A", "192.0.2.10", Now, device);
+        var seen = directory.Remember("A", "192.0.2.10", Now, device, AccountStore.FirstId + 45);
         Assert.NotNull(seen);
 
         bans.Add(
@@ -135,5 +135,46 @@ public sealed class PlayerBanLookupTests
 
         var lookup = new PlayerBanLookup(directory, bans);
         Assert.False(lookup.IsBanned(seen!.Id, Now));
+    }
+
+    [Fact]
+    public void LookupDoesNotLearnIpFromNickMatch()
+    {
+        var (lookup, _, bans, id) = NewWorld();
+        var record = Ban(bans, "влал", null);
+
+        Assert.True(lookup.IsBanned(id, Now));
+
+        // Сайт только читает: адрес из справочника не должен приклеиться к бану.
+        Assert.Empty(record.Ips);
+    }
+
+    [Fact]
+    public void LookupDoesNotLearnNickFromIpMatch()
+    {
+        var (lookup, _, bans, id) = NewWorld();
+        var record = Ban(bans, "другой", "192.0.2.10");
+
+        Assert.True(lookup.IsBanned(id, Now));
+
+        // Совпало по IP — чужой ник «влал» в запись не попадает.
+        Assert.DoesNotContain("влал", record.Aliases);
+    }
+
+    [Fact]
+    public void PublicIdIsAHardKey()
+    {
+        var (lookup, _, bans, id) = NewWorld();
+
+        // Номер аккаунта выдаёт сервер, клиент его не придумывает: бана по одному
+        // номеру достаточно, даже если ник и адрес уже сменились.
+        bans.Add(
+            new BanProbe("другой", null, null, id),
+            TimeSpan.FromHours(1),
+            "тест",
+            "админ",
+            Now);
+
+        Assert.True(lookup.IsBanned(id, Now));
     }
 }

@@ -5,13 +5,13 @@ using StandChillow.LanServer.Stats;
 
 namespace StandChillow.LanServer.Net;
 
-/// <summary>Комната для семплирования статистики: ключ, фаза боя и ники людей.</summary>
+/// <summary>Комната для семплирования статистики: ключ, фаза боя и люди в ней.</summary>
 /// <param name="Key">Устойчивый ключ комнаты (номер панели или её RoomId).</param>
 /// <param name="Playing">Бой идёт — секунды и киллы/смерти засчитываются.</param>
 /// <param name="Ended">Забег кончился (катка сыграна или комната снова ждёт).</param>
-/// <param name="Nicks">Ники людей в комнате — хост в них не входит.</param>
+/// <param name="Players">Аккаунты людей в комнате — хост в них не входит.</param>
 public sealed record StatsRoomSample(
-    string Key, bool Playing, bool Ended, IReadOnlyList<string> Nicks);
+    string Key, bool Playing, bool Ended, IReadOnlyList<(int Id, string Nick)> Players);
 
 /// <summary>
 /// Статистика игроков из матча: киллы, смерти, время и уникальные матчи.
@@ -46,10 +46,18 @@ public sealed partial class GameMatchHost
         {
             foreach (var room in _roomsByPassword.Values)
             {
-                var nicks = new List<string>();
+                var players = new List<(int Id, string Nick)>();
                 foreach (var (nr, name, _) in room.Actors)
-                    if (nr != MatchHostActor.ActorNr && !string.IsNullOrWhiteSpace(name))
-                        nicks.Add(name);
+                {
+                    if (nr == MatchHostActor.ActorNr || string.IsNullOrWhiteSpace(name))
+                        continue;
+
+                    var id = AccountIdOfActorLocked(room, nr);
+                    if (id == 0 && Accounts is null)
+                        id = LegacyNickHash.ForNick(name); // тесты/проба без аккаунтов
+                    if (id > 0)
+                        players.Add((id, name));
+                }
 
                 var phase = room.Flow.Phase;
                 var key = room.DisplayNumber > 0 ? "n" + room.DisplayNumber : "r" + room.RoomId;
@@ -57,7 +65,7 @@ public sealed partial class GameMatchHost
                     key,
                     Playing: StatsPhaseCountable(phase),
                     Ended: StatsPhaseEnded(phase),
-                    Nicks: nicks));
+                    Players: players));
             }
         }
         return list;
@@ -96,7 +104,9 @@ public sealed partial class GameMatchHost
                 return;
             if (!TryActorName(room, killerActorNr, out nick))
                 return;
-            id = MatchPublicId.ForNick(nick);
+            id = AccountIdOfActorLocked(room, killerActorNr);
+            if (id == 0 && Accounts is null)
+                id = LegacyNickHash.ForNick(nick);
         }
 
         stats.NoteKill(id, nick);
@@ -121,7 +131,9 @@ public sealed partial class GameMatchHost
                 return;
             if (!TryActorName(room, victimActorNr, out nick))
                 return;
-            id = MatchPublicId.ForNick(nick);
+            id = AccountIdOfActorLocked(room, victimActorNr);
+            if (id == 0 && Accounts is null)
+                id = LegacyNickHash.ForNick(nick);
         }
 
         stats.NoteDeath(id, nick);

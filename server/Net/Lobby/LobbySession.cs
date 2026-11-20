@@ -288,7 +288,8 @@ public sealed class LobbySession
             // /ids и команды, но на 7778 чужие строки не уходят: клиент ломается,
             // когда в лобби больше ~10 подключённых игроков. Та же форма уже
             // проверена на теневом входе забаненного (Server + я).
-            player.PublicId = MatchPublicId.ForNick(nick);
+            // PublicId не выставляем: аккаунт создаёт GameNetHost после успешного
+            // JoinResponse — у сессии нет доступа к реестру аккаунтов.
             var visible = BuildHiddenLobbyRoster();
 
             string? hostIp = null;
@@ -347,7 +348,7 @@ public sealed class LobbySession
             player.Avatar = req.Profile.Avatar;
             player.Status = PlayerLobbyStatus.Lobby;
             player.Joined = false;
-            player.PublicId = MatchPublicId.ForNick(player.Name);
+            // Теневой вход ничего не значит: аккаунта тут не выдаём и справочник не пишем.
 
             var response = LobbyCodec.BuildJoinSuccess(
                 selfMemberId: WireSelfMemberId,

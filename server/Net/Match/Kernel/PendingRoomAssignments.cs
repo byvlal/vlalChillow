@@ -63,16 +63,20 @@ public sealed class PendingRoomAssignments
     }
 
     /// <summary>
-    /// Забронировать комнату за ником. Повторная бронь того же ника заменяет прежнюю:
+    /// Забронировать комнату за ником. Повторная бронь того же игрока заменяет прежнюю:
     /// игрок, создавший вторую комнату, не должен попадать в первую.
     /// </summary>
+    /// <param name="playerId">
+    /// Account ID игрока. <c>0</c> — вычислить старый хеш из ника (старые вызовы и тесты).
+    /// </param>
     /// <returns><c>false</c> — мест нет (см. <see cref="Capacity"/>).</returns>
     public bool Reserve(
         string passwordKey,
         string nick,
         string? identityKey = null,
         string? address = null,
-        TimeSpan? ttl = null)
+        TimeSpan? ttl = null,
+        int playerId = 0)
     {
         if (string.IsNullOrWhiteSpace(passwordKey) || string.IsNullOrWhiteSpace(nick))
             return false;
@@ -86,7 +90,9 @@ public sealed class PendingRoomAssignments
         {
             PasswordKey = passwordKey.Trim(),
             Nick = normalized,
-            Id = MatchPublicId.ForNick(normalized),
+            Id = playerId is >= AccountStore.FirstId and <= AccountStore.MaxId
+                ? playerId
+                : LegacyNickHash.ForNick(normalized),
             IdentityKey = identityKey?.Trim() ?? "",
             Address = address?.Trim() ?? "",
             CreatedUtc = now,
@@ -97,10 +103,11 @@ public sealed class PendingRoomAssignments
         {
             PruneLocked(now);
 
-            // Замена прежней брони того же игрока: id — устойчивый ключ, ник
-            // подтверждает его на случай теоретической коллизии хеша.
+            // Замена прежней брони того же ника: провод клиента несёт только ник, и
+            // TryResolve не может различить тёзок. Одна бронь на ник — единственный
+            // способ не отправить одного тёзку в комнату другого «наугад».
             var sameNick = _items.FindIndex(a =>
-                a.Id == item.Id && string.Equals(a.Nick, item.Nick, NickComparison));
+                string.Equals(a.Nick, item.Nick, NickComparison));
             if (sameNick >= 0)
             {
                 _items[sameNick] = item;

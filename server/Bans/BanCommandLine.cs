@@ -5,10 +5,10 @@ namespace StandChillow.LanServer.Bans;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Бан адресуется **только серверным id** — тем числом, что видно в игре и в <c>/ids</c>.
-/// Ник для бана больше не принимается: ник присылает клиент, поэтому «забань влала» легко
-/// превращалось в бан не того человека (или в травлю по нику). Id детерминирован от ника,
-/// так что за одним числом всегда стоит конкретный человек.
+/// Бан адресуется **только номером аккаунта** — тем числом, что видно в игре и в
+/// <c>/ids</c>. Ник для бана не принимается: ник присылает клиент, поэтому «забань влала»
+/// легко превращалось в бан не того человека (травля по нику). Номер аккаунта выдаётся
+/// на входе и однозначно указывает на одного человека, даже если ник у него сменился.
 /// </para>
 /// <para>
 /// Причина — весь остаток строки: она не парсится по словам, иначе «удали чит, а то забаню»
@@ -17,8 +17,8 @@ namespace StandChillow.LanServer.Bans;
 /// </remarks>
 public static class BanCommandLine
 {
-    public const int MinId = MatchPublicId.Min;
-    public const int MaxId = MatchPublicId.Max;
+    public const int MinId = AccountStore.FirstId;
+    public const int MaxId = AccountStore.MaxId;
 
     public static bool TryParse(
         string? args,
@@ -35,7 +35,7 @@ public static class BanCommandLine
         var text = (args ?? string.Empty).Trim();
         if (text.Length == 0)
         {
-            error = "формат: /ban <id> <срок> [причина] — например /ban 67776161 6d софт; id смотри в /ids";
+            error = "формат: /ban <id> <срок> [причина] — например /ban 1000001 6d софт; id смотри в /ids";
             return false;
         }
 
@@ -43,13 +43,13 @@ public static class BanCommandLine
         var idToken = (gap < 0 ? text : text[..gap]).Trim();
         text = gap < 0 ? string.Empty : text[(gap + 1)..].Trim();
 
-        // «#67776161» — так id показывается в /ids и в игре, пусть можно копировать как есть.
+        // «#1000001» — так id показывается в /ids и в игре, пусть можно копировать как есть.
         var digits = idToken.StartsWith('#') ? idToken[1..] : idToken;
 
         if (!int.TryParse(digits, out id))
         {
             error = idToken.Length > 0 && idToken.Length <= 64
-                ? $"'{idToken}' — это не id. Баны только по серверному id: /ban 67776161 6d " +
+                ? $"'{idToken}' — это не id. Баны только по номеру аккаунта: /ban 1000001 6d " +
                   "(свой список — /ids, в игре id виден в списке игроков)"
                 : "не похоже на id — нужно число от " + MinId + " до " + MaxId + " (список: /ids)";
             return false;

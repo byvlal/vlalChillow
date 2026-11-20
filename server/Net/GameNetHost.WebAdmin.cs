@@ -59,20 +59,20 @@ public sealed partial class GameNetHost
         {
             return new PlayerLookupResult(
                 id, inMatch[0].Nick, "match", HasAvatarInLobby(id), banned, null, custom,
-                $"id {id} делят {inMatch.Count} игрока (совпадение ников) — бан по id невозможен");
+                $"id {id} одновременно у {inMatch.Count} акторов катки — ошибка сервера");
         }
         if (inMatch.Count == 1)
             return new PlayerLookupResult(id, inMatch[0].Nick, "match", HasAvatarInLobby(id), banned, null, custom, null);
 
         // 2) лобби (7778): статус и аватар живут в сессии лобби.
         var inLobby = _session.JoinedPlayers()
-            .Where(p => MatchPublicId.ForNick(p.Name) == id)
+            .Where(p => p.PublicId == id)
             .ToList();
         if (inLobby.Count > 1)
         {
             return new PlayerLookupResult(
                 id, ServerConfig.NormalizeNick(inLobby[0].Name), "lobby", HasAvatarInLobby(id), banned, null, custom,
-                $"id {id} делят {inLobby.Count} игрока в лобби (совпадение ников) — бан по id невозможен");
+                $"id {id} одновременно у {inLobby.Count} игроков лобби — ошибка сервера");
         }
         if (inLobby.Count == 1)
         {
@@ -85,24 +85,22 @@ public sealed partial class GameNetHost
         if (seen is null)
             return null;
 
-        var sharing = _directory.CountById(id);
         var lastSeen = DateTimeOffset.FromUnixTimeMilliseconds(seen.LastSeenUtcMs).UtcDateTime;
         return new PlayerLookupResult(
-            id, seen.Nick, "offline", false, banned, lastSeen, custom,
-            sharing > 1 ? $"id {id} делят {sharing} ника (коллизия) — бан по id невозможен" : null);
+            id, seen.Nick, "offline", _avatars.Has(id), banned, lastSeen, custom, null);
     }
 
-    /// <summary>Есть ли у игрока аватар (байты из лобби): онлайн-превью в админке.</summary>
+    /// <summary>Есть ли у игрока аватар (живые байты из лобби или кэш на диске).</summary>
     private bool HasAvatarInLobby(int id)
     {
         foreach (var player in _session.JoinedPlayers())
         {
-            if (MatchPublicId.ForNick(player.Name) != id)
+            if (player.PublicId != id)
                 continue;
-            return player.Avatar is { Length: > 0 };
+            return player.Avatar is { Length: > 0 } || _avatars.Has(id);
         }
 
-        return false;
+        return _avatars.Has(id);
     }
 
     /// <summary>
@@ -132,8 +130,8 @@ public sealed partial class GameNetHost
 
         var messages = new List<string>();
         var record = TryBanTarget(
-            messages.Add, target.Nick, target.Address, durationToken, reason,
-            player: null, id, target.KnownIps, bannedBy: bannedBy);
+            messages.Add, target.AccountId, target.Nick, target.Address, durationToken, reason,
+            player: null, target.KnownIps, bannedBy: bannedBy);
 
         if (record is null)
             return (messages.Count > 0 ? messages[0] : "бан не удался", null);

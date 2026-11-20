@@ -65,8 +65,13 @@ public sealed partial class GameNetHost
     /// </summary>
     internal bool AdminCodeMatches(string? code) => _adminAuth.Matches(code);
 
-    /// <summary>Id написавшего из ника сессии (никогда из поля пакета клиента).</summary>
-    internal static int IdOf(string? nick) => MatchPublicId.ForNick(nick);
+    /// <summary>
+    /// Id написавшего из ника сессии (никогда из поля пакета клиента): account ID, если
+    /// человек уже входил, иначе старый хеш ника — пока аккаунт не создан, <c>admin.ids</c>
+    /// ещё хранит хеш.
+    /// </summary>
+    internal int IdOf(string? nick) =>
+        _accounts?.FindByNick(nick)?.Id ?? LegacyNickHash.ForNick(nick);
 
     /// <summary>Код на этот запуск — в консоль и в панель (там его видит только хост).</summary>
     /// <remarks>
@@ -270,7 +275,7 @@ public sealed partial class GameNetHost
         }
 
         var nick = ServerConfig.NormalizeNick(player.Name);
-        var id = IdOf(nick);
+        var id = player.PublicId > 0 ? player.PublicId : IdOf(nick);
         var isAdmin = _config.IsAdmin(id);
         var authorized = _adminAuth.IsAuthorized(player.Peer.Address);
 

@@ -10,7 +10,7 @@ Goal: **no multi-thousand-line god-files**, clear homes for lobby / discovery / 
 | `server/Startup/` | Dedicated-host and ConnectAsClient startup paths | Entry-point orchestration only |
 | `server/Dashboard/` | CLI rendering and console command routing | Shared game commands stay in `GameNetHost` |
 | `server/Diagnostics/` | Verbose switch + async capture sink | **Never** do blocking disk I/O from a network hot path |
-| `server/Bans/` | Ban registry + `banlist.json` store + deterministic nickname→id + duration/message parsing | Shared by lobby **and** match; no sockets, no wire |
+| `server/Bans/` | Account registry, ban registry, `banlist.json`/`accounts.json` stores, legacy id migration, duration/message parsing | Shared by lobby **and** match; no sockets, no wire |
 | `tests/` | Socket-free protocol regression tests | xUnit; run in CI on all desktop OSes |
 | `server/Lan/` | Discovery (Bonjour V2 / UDP 5056) | Stay out of match host |
 | `server/Net/Lobby/` | Lobby LiteNetLib + codecs | Stay out of match host |
@@ -24,48 +24,64 @@ Goal: **no multi-thousand-line god-files**, clear homes for lobby / discovery / 
 | `decompiled/tools/` | RE tooling (Ghidra etc.) | **RE agent owns** — do not fight installs |
 | `server/**/captures/`, `logs/` | Runtime captures / run logs | Evidence only; never memcpy into replies |
 
-## Bans (shared layer)
+## Bans and accounts (shared layer)
 
-`server/Bans/` owns ban records (nick + IPs + deterministic public id), the seen-player
-directory (`nick ↔ id ↔ IP`) and their text. Lobby and match only **ask** it at three entry
-points — never on the packet path:
+`server/Bans/` owns the persistent account registry (`accounts.json`), ban records
+(`banlist.json`), the seen-player directory and the migration from the old nickname hash.
+Lobby and match only **ask** it at three entry points — never on the packet path:
 
 | Gate | Where | Keys |
 |------|-------|------|
 | Lobby join / lobby reconnect | `GameNetHost.HandleJoin` | nick + IP |
 | Match connect | `GameMatchHost.ConnectionRequestEvent` | IP only (no nick yet) |
-| Match join / mid-match reconnect | `GameMatchHost.HandleJoinRoom` (before `TryFindRejoinActor`) | nick + IP |
+| Match join / mid-match reconnect | `GameMatchHost.HandleJoinRoom` (before `TryFindRejoinActor`) | userId + IP + account id + nick |
 
 The last gate matters: a mid-match reconnect adopts the old actor and never runs a normal
 join, so a ban checked only at the first connect could be bypassed (e.g. leave VPN →
 reconnect from the banned address). Admins are exempt at every gate — the ban gate asks for
-the same server-computed id that `admin.ids` lists (`IsBanExemptNick`), and banning an admin is
-rejected. The install token is deliberately **not** used — nick + IP only.
-Ban keys are never the public id: `/ban <id>` is a selector that resolves to nick + IPs.
+the same account id that `admin.ids` lists (`IsBanExemptNick`), and banning an admin is
+rejected.
 
-`MatchPublicId` derives a stable `1…100 000 000` id from the nickname (SHA-256 of the
-normalized nick); it carries no state, so `/ban <id>` survives restarts. The host also
-substitutes it for the client-authored actor property `uid` (players send the `Offline`
-placeholder from the gold capture) so the in-game player list shows the same number
-`/ids` and `/ban` use. The Server actor carries the hardcoded string id `Server` instead —
-it is outside the player numbering, never bannable, and no client can claim it: the host
-overwrites `uid` from session state on every SetProperty/SetProperties and drops the property
-when the author cannot be resolved. The server nickname is reserved (lobby and match reject
-it, derived from `LobbySession.ServerPlayerName` so a rename moves the reservation).
+`AccountStore` issues permanent numbers at the first successful lobby join: `1_000_000`,
+`1_000_001`, … and never reuses one. The account is stored in `accounts.json`; the lobby does
+not receive a device key, so the first account is found by nick, and the `LB<md5>` from the
+2.07 match handshake is bound on the first match join. The same device under a new nick keeps
+the account (the old nick becomes an alias); a new device under a taken nick gets a new
+account, so a namesake inherits neither the account nor its ban. `ProbeId(device)` returns an
+account id only when that device is already bound — that is why the public id is a hard key
+only together with proof of the device.
 
-Admin rights are keyed on the **server-side id**, never on a configured nickname:
-`ServerConfig.AdminConfig.Ids` is the only list, `IsAdmin(int)` is the only test, and the id is
-computed from session state (the nickname a client sends is untrusted, so `admin.nicknames` is
-reported as an unknown key and ignored). The id alone is still not enough (`AdminAuth`): an
-admin id gets a shadow lobby until the address enters the per-run code printed to the console.
-The code is 24 random alphanumerics, regenerated on every start, authorized IPs live in memory
-only; the match host and the command dispatcher both consult `IsUnauthorizedAdmin`, so a
-shadowed admin cannot drop or sneak into 7777 either. `PlayerDirectory` persists
-`nick ↔ id ↔ IP ↔ device` in `banlist.json` so `/ban` still resolves a player who already left.
-The device is the stable `LB<md5>` part of the 2.07 handshake token; it survives a nick change
-and VPN, and it is learned on an explicit ban or a nick/device match, never on an IP-only match.
-`banlist.json` lives beside `config.json` and is git-ignored; v1 is backed up to
-`banlist.json.v1.bak` and rewritten as v2 on first start.
+The host substitutes the account id for the client-authored actor property `uid` (players
+send the `Offline` placeholder from the gold capture), so the in-game player list shows the
+same number `/ids` and `/ban` use. The Server actor carries the hardcoded string id `Server`
+instead — it is outside the account numbering, never bannable, and no client can claim it: the
+host overwrites `uid` from session state on every SetProperty/SetProperties and drops the
+property when the author cannot be resolved. The server nickname is reserved (lobby and match
+reject it, derived from `LobbySession.ServerPlayerName` so a rename moves the reservation).
+
+Admin rights are keyed on the **account number**, never on a configured nickname:
+`ServerConfig.AdminConfig.Ids` is the only list, `IsAdmin(int)` is the only test, and the
+number comes from session state (the nickname a client sends is untrusted, so
+`admin.nicknames` is reported as an unknown key and ignored). Until a person has an account,
+`IdOf(nick)` falls back to `LegacyNickHash.ForNick`, and `MigrateAdminIds` replaces the old
+hash with the account number in memory on startup and after every new account; the config file
+is not rewritten. The id alone is still not enough (`AdminAuth`): an admin id gets a shadow
+lobby until the address enters the per-run code printed to the console. The code is 24 random
+alphanumerics, regenerated on every start, authorized IPs live in memory only; the match host
+and the command dispatcher both consult `IsUnauthorizedAdmin`, so a shadowed admin cannot drop
+or sneak into 7777 either.
+
+`PlayerDirectory` persists `account ↔ nick ↔ IP ↔ device` in `banlist.json` so `/ban` still
+resolves a player who already left. The device is the stable `LB<md5>` part of the 2.07
+handshake token; it survives a nick change and VPN. Ban keys are hard (`userId`, IP, account
+id with a bound device) and soft (`nick`): a hard match bans and learns the other keys, a
+nick-only match bans that attempt and learns nothing, so an innocent player who picks a banned
+nickname does not inherit the ban. `admin.ban.byDevice` turns the userId key off;
+`admin.ban.bindAliases` turns learning off while bans keep working. `banlist.json` lives beside
+`config.json` and is git-ignored; v1/v2 are backed up to `banlist.json.vN.bak` and reset to v3
+on first start (old bans dropped, directory kept without old IPs/devices). `accounts.json` is
+the separate account registry (`version`, `nextId`, `accounts`) and is never reset by that
+migration.
 
 ## Match host split (was 2568-line god-file)
 

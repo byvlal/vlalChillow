@@ -1425,6 +1425,15 @@ body.so-side-open .so-side{transform:none}
   font-family:var(--so-display);font-size:18.5px;letter-spacing:.05em;color:#fff;
 }
 .so-room__name--muted{color:var(--so-muted)}
+/* Название комнаты — ссылка на живую страницу: стрелка появляется на наведении. */
+.so-room__open{display:inline-flex;align-items:center;gap:7px;color:inherit;
+  text-decoration:none;border-bottom:1px solid transparent;transition:color .15s,border-color .15s}
+.so-room__open:hover,.so-room__open:focus-visible{
+  color:var(--so-acc);border-bottom-color:currentColor;outline:none}
+.so-room__arrow{font-family:var(--so-display);font-size:15px;color:var(--so-acc);
+  opacity:0;transform:translateX(-3px);transition:opacity .15s,transform .15s}
+.so-room__open:hover .so-room__arrow,.so-room__open:focus-visible .so-room__arrow{
+  opacity:1;transform:none}
 .so-room__meta{margin-top:4px;color:var(--so-muted);font-size:13px;letter-spacing:.02em;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .so-room__meta b{color:#c6d6e4;font-weight:500}
 .so-room__side{display:flex;align-items:center;gap:12px;justify-content:flex-end}
@@ -1634,6 +1643,7 @@ body.so-side-open .so-side{transform:none}
   background:#14263a;border:1px solid var(--so-line-strong);
   font-family:var(--so-display);font-size:38px;color:var(--so-acc);
 }
+img.so-pubav{object-fit:cover;}
 .so-pubmeta{min-width:0;flex:1 1 240px}
 .so-pubacts{display:flex;gap:10px;flex-wrap:wrap;margin-top:4px}
 .so-admgrid{
@@ -1807,6 +1817,21 @@ body.so-side-open .so-side{transform:none}
   padding:14px 20px;font-family:var(--so-display);font-size:20px;letter-spacing:.16em;
   color:#fff;background:rgba(5,12,19,.72);border-bottom:1px solid var(--so-line-strong);
 }
+/* Состояние живой комнаты: «идёт» / «ожидание» / «завершён» — цветом, не только словом. */
+.so-rmstate{
+  display:inline-block;margin-left:10px;padding:3px 9px;border-radius:4px;
+  font-family:var(--so-display);font-size:11px;letter-spacing:.14em;vertical-align:middle;
+  border:1px solid currentColor;
+}
+.so-rmstate--live{color:#8fd9a0}
+.so-rmstate--waiting{color:#d9a441}
+.so-rmstate--finished{color:#8fa6bb}
+.so-rmmeta{
+  display:flex;gap:14px;flex-wrap:wrap;align-items:center;
+  padding:10px 20px;font-size:12px;letter-spacing:.06em;color:#8fa6bb;
+  border-bottom:1px solid rgba(154,196,226,.18);
+}
+.so-rmmeta b{color:#c7d7e6;font-weight:500}
 .so-ms__board{display:grid;grid-template-columns:1fr 1fr}
 .so-ms__side{min-width:0;padding-bottom:8px}
 .so-ms__side + .so-ms__side{border-left:1px solid rgba(154,196,226,.22)}
@@ -1850,6 +1875,13 @@ body.so-side-open .so-side{transform:none}
 }
 .so-ms__nick{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500;
   font-size:13px;letter-spacing:.02em}
+
+/* Кликабельный ник → профиль. Наследует цвет команды, на наведении — акцент
+   и подчёркивание: ссылка должна читаться как ссылка, но не ломать таблицу. */
+.so-nicklink{color:inherit;text-decoration:none;border-bottom:1px solid transparent;
+  transition:color .15s,border-color .15s}
+.so-nicklink:hover,.so-nicklink:focus-visible{
+  color:var(--so-acc);border-bottom-color:currentColor;outline:none}
 .so-ms__left{
   display:inline-block;margin-left:6px;font-size:9px;letter-spacing:.1em;
   color:#d9a441;text-transform:uppercase;vertical-align:middle;
@@ -3142,6 +3174,7 @@ body.so-side-open .so-side{transform:none}
 
     <div id="pv-main" hidden>
       <div class="so-pubwho">
+        <img class="so-pubav" id="pv-avatar" alt="аватар" width="88" height="88" hidden>
         <div class="so-pubav" id="pv-av" aria-hidden="true">?</div>
         <div class="so-pubmeta">
           <div class="so-acc__n so-acc__n--big" id="pv-nick">—</div>
@@ -3173,7 +3206,8 @@ body.so-side-open .so-side{transform:none}
             <span class="so-pill"><span class="so-pill__v" id="pv-time">0 м</span><span class="so-pill__l">В матчах</span></span>
             <span class="so-pill"><span class="so-pill__v" id="pv-matches">0</span><span class="so-pill__l">Матчей</span></span>
           </div>
-          <p class="so-note">Статистика общая за всё время. Аватары офлайн не хранятся — показываем букву.</p>
+          <p class="so-note">Статистика общая за всё время. Аватар кэшируется на сервере,
+             поэтому виден и после выхода из лобби.</p>
         </div>
       </div>
 
@@ -3221,6 +3255,39 @@ body.so-side-open .so-side{transform:none}
     <div id="mt-screen" hidden></div>
   </main>
 </div><!-- /view-match -->
+
+<div id="view-room" hidden>
+
+  <header class="so-top so-top--static">
+    <a class="so-top__logo" href="#/">ВЛАЛ<b>CHILLOW</b></a>
+    <nav>
+      <a href="#/">ГЛАВНАЯ</a>
+      <a href="#/docs">ИНСТРУКЦИЯ</a>
+      <a href="#/play">КОМНАТЫ</a>
+      <a href="#/administration">АДМИНИСТРАЦИЯ</a>
+      <span class="so-online" title="сервер отвечает"><i class="so-online__dot" id="so-dot-room"></i></span>
+      <button class="so-sidebtn" type="button" data-side-open>ПАНЕЛЬ</button>
+    </nav>
+  </header>
+
+  <main class="so-sec" style="padding-top:30px;padding-bottom:110px">
+    <a class="so-backlink" href="#/play">← КОМНАТЫ</a>
+
+    <div class="so-card" id="rm-loading" style="margin-top:22px;max-width:680px">
+      <div class="so-card__t">ЗАГРУЖАЮ КОМНАТУ…</div>
+    </div>
+
+    <section class="so-card" id="rm-missing" hidden style="margin-top:22px;max-width:680px">
+      <div class="so-card__t">КОМНАТА ЗАКРЫТА</div>
+      <p class="so-card__d" id="rm-missing-d" style="margin-top:10px">
+        Такой комнаты на сервере уже нет — она закрылась или номер освободился.
+      </p>
+      <p style="margin-top:18px"><a class="so-btn so-btn--sm so-btn--ghost" href="#/play">К СПИСКУ КОМНАТ</a></p>
+    </section>
+
+    <div id="rm-screen" hidden></div>
+  </main>
+</div><!-- /view-room -->
 
 <!-- ═════════════════════ ПАНЕЛЬ СПРАВА ═════════════════════ -->
 <div class="so-scrim" id="side-scrim"></div>
@@ -3614,11 +3681,18 @@ function renderStats(){
    Если аватара нет или он не отдался — показываем букву, а не битую картинку.
    Одно на все места: страница комнат, панель справа, профиль. */
 function setAvatar(imgId, fbId){
+  if (!me) return;
+  setAvatarUrl(imgId, fbId, 'api/avatar', me.nick, me.id);
+}
+
+/* Картинка с запасной буквой. url пустой — сразу буква, без запроса в 404.
+   v — версия в query: после смены аватара браузер не покажет старую из кэша. */
+function setAvatarUrl(imgId, fbId, url, nick, v){
   var img = $(imgId), fallback = $(fbId);
   if (!img || !fallback) return;
 
-  var letter = me && me.nick ? me.nick.charAt(0) : '?';
-  if (!me){
+  var letter = nick && nick.length ? String(nick).charAt(0) : '?';
+  if (!url){
     img.hidden = true;
     fallback.hidden = false;
     fallback.textContent = letter;
@@ -3630,7 +3704,8 @@ function setAvatar(imgId, fbId){
     fallback.hidden = false;
     fallback.textContent = letter;
   };
-  img.src = 'api/avatar?v=' + encodeURIComponent(String(me.id));
+  img.src = url + (url.indexOf('?') >= 0 ? '&' : '?') +
+    'v=' + encodeURIComponent(String(v || ''));
   img.hidden = false;
   fallback.hidden = true;
 }
@@ -3677,7 +3752,7 @@ function renderSide(){
   var n = $('side-nick');
   var pi = $('side-id');
   if (n) n.innerHTML = nickWithBadge(me.nick, me.admin === true);
-  if (pi) pi.textContent = 'ID ' + meDisplayId();
+  if (pi) pi.textContent = idLine(me.displayId, me.id);
   setAvatar('side-avatar', 'side-avatar-fb');
 }
 
@@ -3699,7 +3774,7 @@ function renderProfileView(){
   var n = $('pf-nick');
   var pi = $('pf-id');
   if (n) n.innerHTML = nickWithBadge(me.nick, me.admin === true);
-  if (pi) pi.textContent = 'ID ' + meDisplayId();
+  if (pi) pi.textContent = idLine(me.displayId, me.id);
   setAvatar('pf-avatar', 'pf-avatar-fb');
   loadOwnReportWarning();
 
@@ -3808,9 +3883,7 @@ function renderAdmin(){
   if (!st.admin || !st.authed) return;
 
   $('adm-nick').innerHTML = nickWithBadge(st.nick, true);
-  $('adm-id').textContent = st.customId
-    ? 'ID ' + st.customId + ' · оригинал ' + st.id
-    : 'ID ' + st.id;
+  $('adm-id').textContent = idLine(st.customId, st.id);
 
   /* аватар — те же байты, что клиент прислал в лобби */
   var img = $('adm-avatar'), fb = $('adm-avatar-fb');
@@ -3909,9 +3982,7 @@ function adminSaveCid(clear){
     renderAdminCidNow();
     if (input) input.value = adminState.customId || '';
     var who = $('adm-id');
-    if (who) who.textContent = adminState.customId
-      ? 'ID ' + adminState.customId + ' · оригинал ' + adminState.id
-      : 'ID ' + adminState.id;
+    if (who) who.textContent = idLine(adminState.customId, adminState.id);
     /* Сайт везде показывает displayId: обновляем и панель, и профиль. */
     loadMe();
   });
@@ -3936,9 +4007,8 @@ function renderAdminTarget(box, t){
   box.innerHTML =
     '<div class="so-admprev">' +
       '<div style="min-width:0">' +
-        '<div class="so-admprev__n">' + esc(t.nick) + '</div>' +
-        '<div class="so-admprev__i">ID ' + esc(String(t.id)) +
-          (t.customId ? ' · показывается как ' + esc(t.customId) : '') +
+        '<div class="so-admprev__n">' + nickLink(t.id, t.nick, false) + '</div>' +
+        '<div class="so-admprev__i">' + esc(idLine(t.customId, t.id)) +
           (t.status === 'offline' && t.lastSeen
             ? ' · был в сети ' + esc(adminSeenText(t.lastSeen))
             : '') +
@@ -4094,7 +4164,7 @@ function loadAdminBans(){
       row.className = 'so-admban';
       row.innerHTML =
         '<div style="min-width:0">' +
-          '<div class="so-admban__n">' + esc(b.nick) + '</div>' +
+          '<div class="so-admban__n">' + nickLink(b.id, b.nick, false) + '</div>' +
           '<div class="so-admban__m">ID ' + esc(String(b.id)) +
             ' · на ' + esc(b.duration) + ' · осталось ' + esc(b.remaining) +
             '<br>кто: ' + esc(b.bannedBy) +
@@ -4132,6 +4202,16 @@ function meDisplayId(){
   return me.displayId ? String(me.displayId) : String(me.id);
 }
 
+/* «ID byvlal · оригинал 25354325»: кастомный ID показываем первым, числовой — рядом.
+   Числовой не теряется нигде: по нему ищут в /whoami, admin.ids и бане. */
+function idLine(displayId, numericId){
+  var num = String(numericId);
+  var shown = (displayId === undefined || displayId === null || displayId === '')
+    ? num
+    : String(displayId);
+  return shown === num ? 'ID ' + num : 'ID ' + shown + ' · оригинал ' + num;
+}
+
 /* «1 репорт / 2 репорта / 5 репортов» — без кривых «1 репортов». */
 function reportsWord(n){
   var x = Math.abs(n) % 100, y = x % 10;
@@ -4144,6 +4224,16 @@ function reportsWord(n){
 function nickWithBadge(nick, isAdmin){
   var text = nick && nick.length ? esc(nick) : '—';
   return text + (isAdmin ? ' <span class="so-badge-adm">ADM</span>' : '');
+}
+
+/* Ник-ссылка на профиль. id обязателен: без него возвращаем просто текст.
+   displayId необязателен: если у админа есть кастомный ID, подсказка покажет
+   и его, и оригинальный числовой — по числу ищут в /whoami и admin.ids. */
+function nickLink(id, nick, isAdmin, displayId){
+  var text = nickWithBadge(nick, isAdmin);
+  if (!id) return text;
+  return '<a class="so-nicklink" href="#/profile/' + encodeURIComponent(String(id)) +
+    '" title="' + esc(idLine(displayId, id)) + '">' + text + '</a>';
 }
 
 function fmtWhen(iso){
@@ -4178,8 +4268,8 @@ function reportFoundHtml(t){
   return '<div class="so-repfound' + (total > 0 ? ' so-repfound--warn' : '') + '">' +
       '<div class="so-repfound__av" aria-hidden="true">' + esc(letter) + '</div>' +
       '<div class="so-repfound__meta">' +
-        '<div class="so-repfound__n">' + nickWithBadge(nick, t.admin) + '</div>' +
-        '<div class="so-repfound__i">ID ' + esc(String(t.displayId || t.id)) +
+        '<div class="so-repfound__n">' + nickLink(t.id, nick, t.admin) + '</div>' +
+        '<div class="so-repfound__i">' + esc(idLine(t.displayId, t.id)) +
           ' · ' + esc(adminStatusText(t.status)) +
           (t.banned ? ' · забанен' : '') + '</div>' +
         warn +
@@ -4396,7 +4486,7 @@ function submitReport(){
     if (done){
       done.innerHTML =
         '<p class="so-card__d" style="margin-top:0">Жалоба на <b>' +
-          nickWithBadge(report.targetNick || reportTarget.nick, reportTarget.admin) +
+          nickLink(reportTarget.id, report.targetNick || reportTarget.nick, reportTarget.admin) +
           '</b> ушла администрации. Статус можно смотреть в «Моих жалобах».</p>' +
         '<p class="so-note">Сейчас у игрока ' + total + ' ' + reportsWord(total) +
           ' за 30 дней.</p>';
@@ -4464,14 +4554,16 @@ function reportItemHtml(r, withActions){
       '<div class="so-repitem__head">' +
         '<div class="so-repitem__who">' +
           '<div class="so-repitem__target">' +
-            '<a href="#/profile/' + encodeURIComponent(String(r.targetId)) + '">' +
+            '<a class="so-nicklink" href="#/profile/' + encodeURIComponent(String(r.targetId)) + '">' +
               esc(target) + '</a>' +
             (r.targetAdmin ? ' <span class="so-badge-adm">ADM</span>' : '') +
             ' <span style="font-size:12px;color:#68809a">ID ' + r.targetId + '</span>' +
           '</div>' +
           '<div class="so-repitem__meta">' +
             esc(r.categoryLabel || r.category) +
-            ' · от <b style="color:#c7d7e6">' + esc(r.reporterNick || ('ID ' + r.reporterId)) + '</b>' +
+            ' · от <b style="color:#c7d7e6">' +
+              nickLink(r.reporterId, r.reporterNick || ('ID ' + r.reporterId), false) +
+            '</b>' +
             ' · ' + esc(fmtWhen(r.created)) +
           '</div>' +
         '</div>' +
@@ -4637,7 +4729,7 @@ function loadAdministration(){
           '<span class="so-admcard__av" aria-hidden="true">' + esc(letter) + '</span>' +
           '<span class="so-admcard__meta">' +
             '<span class="so-admcard__nick">' + nickWithBadge(nick, true) + '</span>' +
-            '<span class="so-admcard__id">ID ' + esc(String(t.displayId || t.id)) + '</span>' +
+            '<span class="so-admcard__id">' + esc(idLine(t.displayId, t.id)) + '</span>' +
             '<span class="so-admcard__line">' + esc(line) + '</span>' +
           '</span>' +
         '</a>';
@@ -4720,10 +4812,15 @@ function renderPublicPlayer(t){
   var n = $('pv-nick');
   if (n) n.innerHTML = nickWithBadge(nick, t.admin);
   var pi = $('pv-id');
-  if (pi) pi.textContent = 'ID ' + (t.displayId || t.id);
+  if (pi) pi.textContent = idLine(t.displayId, t.id);
 
   var av = $('pv-av');
   if (av) av.textContent = letter;
+  if (t.hasAvatar)
+    setAvatarUrl('pv-avatar', 'pv-av', 'api/player/avatar?id=' + encodeURIComponent(String(t.id)),
+      t.nick, t.id);
+  else
+    setAvatarUrl('pv-avatar', 'pv-av', '', t.nick, '');
 
   var warn = $('pv-warn');
   var total = t.reports && typeof t.reports.total === 'number' ? t.reports.total : 0;
@@ -4896,64 +4993,7 @@ function renderMatchPage(m){
   var screen = $('mt-screen');
   if (!screen) return;
 
-  var ct = [], tr = [], other = [];
-  var players = m.players || [];
-  for (var i = 0; i < players.length; i++){
-    var p = players[i];
-    if (p.team === 'CT') ct.push(p);
-    else if (p.team === 'T') tr.push(p);
-    else other.push(p);
-  }
-
-  var row = function(p, index, teamClass){
-    var nick = p.nick || ('ID ' + p.id);
-    var letter = (String(nick).charAt(0) || '?').toUpperCase();
-    var left = p.left ? '<span class="so-ms__left">вышел</span>' : '';
-    var ping = (typeof p.ping === 'number' && p.ping >= 0) ? p.ping : '—';
-    var title = 'ID ' + (p.displayId || p.id);
-    return '<tr class="so-ms__row--' + teamClass + '">' +
-      '<td>' + (index + 1) + '</td>' +
-      '<td class="so-ms__cell-name"><span class="so-ms__name">' +
-        '<span class="so-ms__av" aria-hidden="true">' + esc(letter) + '</span>' +
-        '<span class="so-ms__nick" title="' + esc(title) + '">' +
-          nickWithBadge(nick, p.admin === true) +
-        '</span>' + left +
-      '</span></td>' +
-      '<td class="so-ms__money">$' + fmtNum(p.money || 0) + '</td>' +
-      '<td>' + (p.kills || 0) + '</td>' +
-      '<td>' + (p.assists || 0) + '</td>' +
-      '<td>' + (p.deaths || 0) + '</td>' +
-      '<td>' + (p.score || 0) + '</td>' +
-      '<td class="so-ms__ping">' + ping + '</td>' +
-    '</tr>';
-  };
-
-  var side = function(teamKey, list, title, score){
-    var cls = teamKey === 'CT' ? 'so-ms--ct' : 'so-ms--t';
-    var teamClass = teamKey === 'CT' ? 'ct' : 't';
-    var win = m.winner === teamKey ? '<span class="so-ms__win">ПОБЕДА</span>' : '';
-    var body = '';
-    if (list.length){
-      for (var j = 0; j < list.length; j++)
-        body += row(list[j], j, teamClass);
-    } else {
-      body = '<tr><td colspan="8" class="so-ms__empty">никого не было</td></tr>';
-    }
-
-    return '<div class="so-ms__side ' + cls + '">' +
-      '<div class="so-ms__head">' +
-        '<span class="so-ms__team">' + title + '</span>' + win +
-        '<span class="so-ms__score">' + (score || 0) + '</span>' +
-      '</div>' +
-      '<table class="so-ms__tbl">' +
-        '<thead><tr>' +
-          '<th>#</th><th class="so-ms__th-name">ИМЯ</th>' +
-          '<th>ДЕНЬГИ</th><th>У</th><th>П</th><th>С</th><th>СЧЁТ</th><th>ПИНГ</th>' +
-        '</tr></thead>' +
-        '<tbody>' + body + '</tbody>' +
-      '</table>' +
-    '</div>';
-  };
+  var groups = matchPlayerGroups(m.players || []);
 
   var winnerText = m.winner === 'DRAW' ? 'ничья'
     : (m.winner === 'CT' ? 'победа обороны' : 'победа атаки');
@@ -4962,20 +5002,237 @@ function renderMatchPage(m){
     '<div class="so-ms">' +
       '<div class="so-ms__title">СТАТИСТИКА · МАТЧ #' + (m.id || '—') + '</div>' +
       '<div class="so-ms__board">' +
-        side('CT', ct, 'ОБОРОНА (CT)', m.scoreCt) +
-        side('T', tr, 'АТАКА (T)', m.scoreTr) +
+        matchSideHtml('CT', groups.ct, 'ОБОРОНА (CT)', m.scoreCt, true, m.winner) +
+        matchSideHtml('T', groups.tr, 'АТАКА (T)', m.scoreTr, true, m.winner) +
       '</div>' +
       '<div class="so-ms__foot">' +
         '<span><b>' + esc(matchModeName(m.mode)) + '</b> · ' + esc(m.map || '—') + '</span>' +
         (m.rounds ? '<span>раундов: <b>' + m.rounds + '</b></span>' : '') +
         '<span>' + esc(fmtWhen(m.ended)) + '</span>' +
         '<span>' + esc(winnerText) + '</span>' +
-        (other.length ? '<span>зрителей: ' + other.length + '</span>' : '') +
+        (groups.other.length ? '<span>зрителей: ' + groups.other.length + '</span>' : '') +
       '</div>' +
     '</div>';
 
   var back = $('mt-back');
   if (back && me) back.href = '#/profile';
+}
+
+/* Общие куски таблицы: история (#/match/<id>) и живая комната (#/room/<n>).
+   Деньги в живой комнате не показываем вовсе — ни колонки, ни значения. */
+function matchPlayerGroups(players){
+  var ct = [], tr = [], other = [];
+  for (var i = 0; i < players.length; i++){
+    var p = players[i];
+    if (p.team === 'CT') ct.push(p);
+    else if (p.team === 'T') tr.push(p);
+    else other.push(p);
+  }
+  return { ct: ct, tr: tr, other: other };
+}
+
+function matchRowHtml(p, index, teamClass, showMoney){
+  var nick = p.nick || ('ID ' + p.id);
+  var letter = (String(nick).charAt(0) || '?').toUpperCase();
+  var left = p.left ? '<span class="so-ms__left">вышел</span>' : '';
+  var ping = (typeof p.ping === 'number' && p.ping >= 0) ? p.ping : '—';
+  var money = showMoney
+    ? '<td class="so-ms__money">$' + fmtNum(p.money || 0) + '</td>'
+    : '';
+  return '<tr class="so-ms__row--' + teamClass + '">' +
+    '<td>' + (index + 1) + '</td>' +
+    '<td class="so-ms__cell-name"><span class="so-ms__name">' +
+      '<span class="so-ms__av" aria-hidden="true">' + esc(letter) + '</span>' +
+      '<span class="so-ms__nick">' +
+        nickLink(p.id, nick, p.admin === true, p.displayId) +
+      '</span>' + left +
+    '</span></td>' +
+    money +
+    '<td>' + (p.kills || 0) + '</td>' +
+    '<td>' + (p.assists || 0) + '</td>' +
+    '<td>' + (p.deaths || 0) + '</td>' +
+    '<td>' + (p.score || 0) + '</td>' +
+    '<td class="so-ms__ping">' + ping + '</td>' +
+  '</tr>';
+}
+
+function matchSideHtml(teamKey, list, title, score, showMoney, winner, emptyText){
+  var cls = teamKey === 'CT' ? 'so-ms--ct' : 'so-ms--t';
+  var teamClass = teamKey === 'CT' ? 'ct' : 't';
+  var win = winner === teamKey ? '<span class="so-ms__win">ПОБЕДА</span>' : '';
+  var body = '';
+  if (list.length){
+    for (var j = 0; j < list.length; j++)
+      body += matchRowHtml(list[j], j, teamClass, showMoney);
+  } else {
+    body = '<tr><td colspan="' + (showMoney ? 8 : 7) +
+      '" class="so-ms__empty">' + (emptyText || 'никого не было') + '</td></tr>';
+  }
+
+  return '<div class="so-ms__side ' + cls + '">' +
+    '<div class="so-ms__head">' +
+      '<span class="so-ms__team">' + title + '</span>' + win +
+      '<span class="so-ms__score">' + (score || 0) + '</span>' +
+    '</div>' +
+    '<table class="so-ms__tbl">' +
+      '<thead><tr>' +
+        '<th>#</th><th class="so-ms__th-name">ИМЯ</th>' +
+        (showMoney ? '<th>ДЕНЬГИ</th>' : '') +
+        '<th>У</th><th>П</th><th>С</th><th>СЧЁТ</th><th>ПИНГ</th>' +
+      '</tr></thead>' +
+      '<tbody>' + body + '</tbody>' +
+    '</table>' +
+  '</div>';
+}
+
+/* ═══════════ #/room/<n>: публичная живая комната ═══════════ */
+var roomPollTimer = 0;
+var roomLoadSeq = 0;
+var roomShownNumber = 0;
+
+function roomNumberFromHash(){
+  var h = (location.hash || '').replace(/^#\/?/, '');
+  if (h.indexOf('room/') !== 0) return 0;
+  var body = h.slice('room/'.length);
+  if (!body || body.indexOf('/') >= 0 || body.indexOf('?') >= 0) return 0;
+  if (!/^[1-9][0-9]*$/.test(body)) return 0;
+  return parseInt(body, 10) || 0;
+}
+
+function stopRoomPolling(){
+  if (roomPollTimer){
+    clearTimeout(roomPollTimer);
+    roomPollTimer = 0;
+  }
+}
+
+function roomStateBadge(state){
+  if (state === 'live')
+    return '<span class="so-rmstate so-rmstate--live">ИДЁТ</span>';
+  if (state === 'finished')
+    return '<span class="so-rmstate so-rmstate--finished">ЗАВЕРШЁН</span>';
+  return '<span class="so-rmstate so-rmstate--waiting">ОЖИДАНИЕ</span>';
+}
+
+/* Загрузка комнаты и опрос раз в 2 секунды. Таймер живёт только пока открыта
+   #/room/<n>: ушли на другую страницу — stopRoomPolling() в applyRoute. */
+function loadRoom(number){
+  var screen = $('rm-screen');
+  var loading = $('rm-loading');
+  var missing = $('rm-missing');
+  if (!screen || !loading || !missing) return;
+
+  stopRoomPolling();
+  var seq = ++roomLoadSeq;
+
+  if (!number){
+    roomShownNumber = 0;
+    loading.hidden = true;
+    screen.hidden = true;
+    missing.hidden = false;
+    var d0 = $('rm-missing-d');
+    if (d0) d0.textContent = 'В ссылке нет номера комнаты.';
+    return;
+  }
+
+  /* Первый заход — карточка «загружаю»; дальше данные уже на экране, и мигать
+     ими на каждом опросе нельзя. */
+  if (roomShownNumber !== number){
+    loading.hidden = false;
+    screen.hidden = true;
+    missing.hidden = true;
+  }
+
+  var fail = function(text){
+    loading.hidden = true;
+    screen.hidden = true;
+    missing.hidden = false;
+    var d = $('rm-missing-d');
+    if (d) d.textContent = text;
+  };
+
+  api('GET', 'api/room/' + encodeURIComponent(String(number))).then(function(res){
+    if (seq !== roomLoadSeq || currentRoute() !== 'room' ||
+        roomNumberFromHash() !== number) return;
+
+    if (!res.ok || !res.data || res.data.ok === false || !res.data.room){
+      if (res.status === 404){
+        roomShownNumber = 0;
+        fail((res.data && res.data.message) || ('Комнаты #' + number + ' уже нет.'));
+      } else if (roomShownNumber === number){
+        /* Сеть моргнула, но комната уже нарисована: оставляем данные и пробуем
+           снова, а не превращаем живую катку в «закрыта». */
+        roomPollTimer = setTimeout(function(){ loadRoom(number); }, 2000);
+      } else {
+        fail((res.data && res.data.message) || 'Не получилось загрузить комнату.');
+      }
+      return;
+    }
+
+    roomShownNumber = number;
+    renderRoomPage(res.data.room);
+    loading.hidden = true;
+    missing.hidden = true;
+    screen.hidden = false;
+
+    /* Завершённую комнату тоже опрашиваем: она закроется по TTL, и страница
+       честно скажет «закрыта», а не будет вечно показывать старый счёт. */
+    roomPollTimer = setTimeout(function(){ loadRoom(number); }, 2000);
+  }).catch(function(){
+    if (seq !== roomLoadSeq || roomNumberFromHash() !== number) return;
+    if (roomShownNumber === number){
+      roomPollTimer = setTimeout(function(){ loadRoom(number); }, 2000);
+    } else {
+      fail('Сервер не ответил.');
+    }
+  });
+}
+
+function renderRoomPage(r){
+  var screen = $('rm-screen');
+  if (!screen) return;
+
+  var groups = matchPlayerGroups(r.players || []);
+  var finished = r.state === 'finished';
+  var winner = finished
+    ? (r.scoreCt > r.scoreTr ? 'CT' : (r.scoreTr > r.scoreCt ? 'T' : 'DRAW'))
+    : '';
+  var title = r.name ? esc(r.name) : 'КОМНАТА #' + r.number;
+  var owner = r.owner
+    ? nickLink(r.owner.id, r.owner.nick, r.owner.admin === true, r.owner.displayId)
+    : '—';
+  var seats = (r.playerCount || 0) + ' / ' + (r.maxPlayers || '—');
+
+  screen.innerHTML =
+    '<div class="so-ms">' +
+      '<div class="so-ms__title">' + title + roomStateBadge(r.state) + '</div>' +
+      '<div class="so-rmmeta">' +
+        '<span><b>' + esc(r.modeName || r.mode || '—') + '</b> · ' +
+          esc(r.map || '—') + '</span>' +
+        (r.round ? '<span>раунд <b>' + r.round + '</b></span>' : '') +
+        '<span>хост: ' + owner + '</span>' +
+        '<span>мест: <b>' + seats + '</b></span>' +
+        (groups.other.length
+          ? '<span>зрителей: <b>' + groups.other.length + '</b></span>' : '') +
+        '<span>' + (finished ? 'катка завершена' : 'обновляется автоматически') + '</span>' +
+      '</div>' +
+      '<div class="so-ms__board">' +
+        matchSideHtml('CT', groups.ct, 'ОБОРОНА (CT)', r.scoreCt, false, winner,
+          'пока никого') +
+        matchSideHtml('T', groups.tr, 'АТАКА (T)', r.scoreTr, false, winner,
+          'пока никого') +
+      '</div>' +
+      '<div class="so-ms__foot">' +
+        '<span>' + (finished
+          ? (winner === 'DRAW' ? 'ничья' :
+              (winner === 'CT' ? 'победа обороны' : 'победа атаки'))
+          : 'живая таблица · без денег') + '</span>' +
+        (finished && r.matchId
+          ? '<a class="so-nicklink" href="#/match/' + r.matchId + '">' +
+              'полная статистика матча #' + r.matchId + ' →</a>'
+          : '') +
+      '</div>' +
+    '</div>';
 }
 
 /* Значение из hash-строки: #/reports?target=123 → '123'. */
@@ -5169,9 +5426,11 @@ function renderRooms(){
     else badge += '<span class="so-badge so-badge--wait">ожидание</span>';
     if (full) badge += '<span class="so-badge so-badge--full">заполнена</span>';
 
-    var titleHtml = r.name
-      ? esc(r.name)
-      : '<span class="so-room__name--muted">Комната #' + r.n + '</span>';
+    var titleHtml = '<a class="so-room__open" href="#/room/' + r.n + '">' +
+      (r.name
+        ? esc(r.name)
+        : '<span class="so-room__name--muted">Комната #' + r.n + '</span>') +
+      '<span class="so-room__arrow" aria-hidden="true">→</span></a>';
 
     var score;
     if (r.state === 'waiting'){
@@ -5196,7 +5455,7 @@ function renderRooms(){
         '<div class="so-room__meta">' + esc(m ? m.name : r.mode) +
           (r.teamLabel ? ' · ' + esc(r.teamLabel) : '') +
           ' · ' + esc(r.map) +
-          (r.owner ? ' · хост <b>' + esc(r.owner) + '</b>' : '') + '</div>' +
+          (r.owner ? ' · хост ' + nickLink(r.ownerId, r.owner, false) : '') + '</div>' +
       '</div>' +
       '<div class="so-room__side">' +
         score +
@@ -5763,6 +6022,7 @@ var reportsView = $('view-reports');
 var administrationView = $('view-administration');
 var playerView = $('view-player');
 var matchView = $('view-match');
+var roomView = $('view-room');
 var heroVideo = $('hero-video');
 var heroSection = document.querySelector('.so-hero');
 var reduceMotion = !!(window.matchMedia &&
@@ -5797,7 +6057,8 @@ function renderHomeNow(){
 function renderHomeStatus(res){
   if (!res || !res.data) return;
   var down = res.data.gameListening === false;
-  ['so-dot', 'so-dot-hero', 'so-dot-docs', 'so-dot-play', 'so-dot-profile'].forEach(function(id){
+  ['so-dot', 'so-dot-hero', 'so-dot-docs', 'so-dot-play', 'so-dot-profile',
+   'so-dot-room'].forEach(function(id){
     var el = $(id);
     if (el) el.classList.toggle('so-online__dot--off', down);
   });
@@ -5830,6 +6091,8 @@ function currentRoute(){
      переводим на новый адрес в applyRoute. */
   if (h.indexOf('profile/') === 0) return 'player';
   if (h === 'match' || h.indexOf('match/') === 0) return 'match';
+  /* #/room/<n> — публичная живая страница комнаты, без входа по коду. */
+  if (h === 'room' || h.indexOf('room/') === 0) return 'room';
   if (h === 'admin' || h.indexOf('admin/') === 0) return 'admin';
   if (h === 'docs' || h.indexOf('docs/') === 0) return 'docs';
   if (h === 'reports' || h.indexOf('reports/') === 0 || h.indexOf('reports?') === 0) return 'reports';
@@ -5842,7 +6105,8 @@ function currentRoute(){
 
 function applyRoute(){
   if (!homeView || !playView || !docsView || !profileView || !adminView ||
-      !reportsView || !administrationView || !playerView || !matchView) return;
+      !reportsView || !administrationView || !playerView || !matchView ||
+      !roomView) return;
 
   // Старые ссылки #/player/<id> — на новый адрес #/profile/<id>. Одна замена,
   // дальше сработает hashchange и применит уже новый маршрут.
@@ -5865,8 +6129,9 @@ function applyRoute(){
   var onAdministration = route === 'administration';
   var onPlayer = route === 'player';
   var onMatch = route === 'match';
+  var onRoom = route === 'room';
   homeView.hidden = onPlay || onDocs || onProfile || onAdmin || onReports ||
-    onAdministration || onPlayer || onMatch;
+    onAdministration || onPlayer || onMatch || onRoom;
   docsView.hidden = !onDocs;
   playView.hidden = !onPlay;
   profileView.hidden = !onProfile;
@@ -5875,6 +6140,10 @@ function applyRoute(){
   administrationView.hidden = !onAdministration;
   playerView.hidden = !onPlayer;
   matchView.hidden = !onMatch;
+  roomView.hidden = !onRoom;
+  /* Опрос комнаты живёт только пока открыта её страница: ушли — таймер снят,
+     следующий ответ уже не тронет чужой экран. */
+  if (!onRoom) stopRoomPolling();
   document.body.classList.toggle('is-home', !onPlay);
   /* На профиле цифры тянутся свежими: сессия живёт, статистика — на диске. */
   if (onProfile && me){
@@ -5888,6 +6157,7 @@ function applyRoute(){
   if (onAdministration) loadAdministration();
   if (onPlayer) loadPublicPlayer(publicPlayerQueryFromHash());
   if (onMatch) loadMatch(matchIdFromHash());
+  if (onRoom) loadRoom(roomNumberFromHash());
   /* Гейт комнат синхронен с сессией: зашёл — интерфейс, вышел — экран входа. */
   if (onPlay) renderPlayGate();
   /* Глубокая ссылка в инструкцию: якорей-хэшей нет, цель передаётся переменной

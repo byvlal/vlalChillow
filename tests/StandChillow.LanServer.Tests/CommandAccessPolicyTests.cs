@@ -126,7 +126,7 @@ public sealed class CommandAccessPolicyTests
 
         Assert.True(Allowed(cfg, AdminId, message, out _));
         // И регистр/невидимые символы не мешают.
-        Assert.True(Allowed(cfg, MatchPublicId.ForNick("ВЛАЛ"), message, out _));
+        Assert.True(Allowed(cfg, LegacyNickHash.ForNick("ВЛАЛ"), message, out _));
     }
 
     [Fact]

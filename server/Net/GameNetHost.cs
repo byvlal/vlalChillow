@@ -8,6 +8,7 @@ using StandChillow.LanServer.Diagnostics;
 using StandChillow.LanServer.Lan;
 using StandChillow.LanServer.Net.Lobby;
 using StandChillow.LanServer.Net.Match;
+using StandChillow.LanServer.Web;
 
 namespace StandChillow.LanServer.Net;
 
@@ -37,6 +38,9 @@ public sealed partial class GameNetHost : IDisposable
     private readonly Action? _onRosterChanged;
     private readonly Action? _onMatchStarted;
 
+    /// <summary>Кэш аватаров: вход в лобби кладёт сюда байты, сайт читает и после выхода.</summary>
+    private readonly AvatarCache _avatars;
+
     /// <summary>Конфиг выделенного сервера. Меняется только через <see cref="ReloadConfig"/>.</summary>
     private ServerConfig _config;
 
@@ -59,10 +63,13 @@ public sealed partial class GameNetHost : IDisposable
         Action? onRosterChanged = null,
         IPAddress? advertiseLanIp = null,
         Action? onMatchStarted = null,
-        ServerConfig? config = null)
+        ServerConfig? config = null,
+        AvatarCache? avatars = null)
     {
         _config = config ?? new ServerConfig();
         ApplyRuntimeConfig(_config);
+        _avatars = avatars
+            ?? new AvatarCache(System.IO.Path.Combine(AppContext.BaseDirectory, "avatars"));
         _session = new LobbySession(lobbyName);
         _onRosterChanged = onRosterChanged;
         _onMatchStarted = onMatchStarted;
@@ -98,13 +105,14 @@ public sealed partial class GameNetHost : IDisposable
         // Ник ↔ устройство для /ban по id: живёт в том же справочнике, что и IP.
         // Через очередь: Remember может писать banlist.json, а колбэк приходит из
         // poll-цикла матча — диск в hot path сокета не нужен.
-        _match.OnMatchPlayerSeen = (nick, ip, device) =>
+        _match.OnMatchPlayerSeen = (nick, accountId, ip, device) =>
         {
             var ipText = ip?.ToString();
             var deviceKey = BanRecord.NormalizeDevice(device);
             _deferred.Enqueue(() =>
             {
-                var seen = _directory.Remember(nick, ipText, DateTime.UtcNow, deviceKey);
+                var seen = _directory.Remember(
+                    nick, ipText, DateTime.UtcNow, deviceKey, accountId);
                 // Жалобы учатся устройствам здесь: смена ника не должна обнулять
                 // историю, а device-ключ переживает и ник, и VPN.
                 if (seen is not null && deviceKey.Length > 0)
@@ -125,7 +133,10 @@ public sealed partial class GameNetHost : IDisposable
         // Веб-админка: сервер сам ставит галочку админам (и снимает у не-админов — защита
         // от подмены на клиенте), плюс подменяет uid на кастомный ID, если админ его поставил.
         _match.IsAdminVerifiedFor = (nick, ip) => IsAdminAuthorized(IdOf(nick), ip);
-        _match.CustomIdOf = id => _customIds.Get(id);
+        _match.CustomIdOf = CustomIdOf;
+        // Кастомный ID — только у тех, кто сейчас в admin.ids: файл мог пережить
+        // снятие прав, поэтому чистим его на старте, а не доверяем прошлому запуску.
+        PruneCustomIds();
 
         _listener = new EventBasedNetListener();
         _manager = new NetManager(_listener)
@@ -647,9 +658,10 @@ public sealed partial class GameNetHost : IDisposable
             $"verOk={LobbyAuth.HashEquals(req.VersionHash, LobbyAuth.VersionHash)} " +
             $"authOk={LobbyAuth.HashEquals(req.AuthHash, LobbyAuth.AuthHash)}");
 
-        // Справочник «ник ↔ id ↔ IP»: нужен, чтобы /ban находил человека и после
-        // выхода из катки. Пишется на диск только при новом нике/адресе, не на каждый вход.
-        _directory.Remember(req.Profile.Name, peer.Address?.ToString(), DateTime.UtcNow);
+        // Справочник «ник ↔ id ↔ IP» пишем только после всех гейтов и успешного входа.
+        // Раньше это было до проверки бана: невинный, попробовавший чужой забаненный ник,
+        // оставлял свой IP в справочнике этого ника — и потом /ban по id мог приклеить
+        // чужой адрес к бану. Забаненный и теневой вход теперь ничего не записывают.
 
         // Админский id без кода — как забаненный: теневой лобби, ни команд, ни матча.
         // Проверяем до банов: админ от бана и так освобождён, а код нужен в любом случае.
@@ -701,10 +713,27 @@ public sealed partial class GameNetHost : IDisposable
                 : " в лобби hasHosting=0 (брони нет — в катку не зовём)"));
         Send(peer, result.ResponseBytes!);
 
+        // Аккаунт выдаём только после реального успешного входа: теневой и отклонённый
+        // вход не тратят номера и не оставляют следа в accounts.json. В лобби устройство
+        // ещё неизвестно, поэтому GetOrCreate находит человека по нику; настоящая
+        // привязка устройства — на входе в катку.
+        var self = result.Player!;
+        var account = _accounts?.GetOrCreate(self.Name, DateTime.UtcNow);
+        if (account is not null)
+            self.PublicId = account.Id;
+
+        // Только реальный успешный вход: ник, адрес, аккаунт и (если уже известен) userId.
+        // Забаненный сюда не доходит — он уходит в теневой лобби выше.
+        _directory.Remember(
+            self.Name, peer.Address?.ToString(), DateTime.UtcNow, accountId: self.PublicId);
+
+        // Аватар — в кэш сразу: выход из лобби (и рестарт) больше не стирает картинку
+        // из профиля. Пишем после успешного JoinResponse: отклонённый вход ничего не кладёт.
+        _avatars.Store(self.PublicId, req.Profile.Avatar);
+
         // op4 NewMember больше не рассылаем: в лобби каждый клиент видит только
         // Server + себя, иначе чужие игроки всё равно добавятся в его роспись
         // и клиент упадёт на >10 подключениях. Состояние сессии при этом полное.
-        var self = result.Player!;
         _onRosterChanged?.Invoke();
 
         Schedule(0, () =>
@@ -999,6 +1028,10 @@ public sealed partial class GameNetHost : IDisposable
                 : Path.Combine(AppContext.BaseDirectory, "captures"),
             config.Debug.CapturesMaxFiles,
             config.Debug.CapturesMaxBytesMb * 1024L * 1024L);
+
+        // admin.ids мог прийти со старыми хешами: к этому моменту аккаунты уже есть
+        // (первый вызов из конструктора — ещё нет, тогда метод просто выходит).
+        MigrateAdminIds();
     }
 
     /// <summary>Показать действующий конфиг (консоль: <c>config</c>).</summary>
@@ -1072,6 +1105,10 @@ public sealed partial class GameNetHost : IDisposable
         // Голоса /ready имеют смысл только в режиме ready — иначе это мусор.
         if (_config.StartMode != MatchStartMode.Ready)
             _startGate.Clear();
+
+        // Права могли измениться этой же правкой: снимаем кастомные ID у не-админов
+        // и просим матч разослать новый uid, если кто-то потерял доступ посреди катки.
+        PruneCustomIds();
     }
 
     /// <summary>

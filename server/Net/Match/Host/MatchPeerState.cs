@@ -23,6 +23,14 @@ internal sealed class MatchPeerState
     /// legacy-handshake: там <see cref="IdentityKey"/> — это userId, а не устройство.
     /// </summary>
     public string? DeviceKey { get; set; }
+
+    /// <summary>
+    /// Account ID, выданный <c>AccountStore</c> при успешном JoinRoom. Уникален для
+    /// человека, не зависит от ника и переживает реконнект. <c>0</c> — вход ещё не
+    /// завершён или аккаунты отключены (тесты).
+    /// </summary>
+    public int AccountId { get; set; }
+
     public string? AppId { get; set; }
     public MatchRoom? Room { get; set; }
     public byte ActorNr { get; set; }

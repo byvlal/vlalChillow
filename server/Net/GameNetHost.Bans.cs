@@ -14,7 +14,8 @@ namespace StandChillow.LanServer.Net;
 /// <remarks>
 /// Проверка выполняется только на входе (первый пакет лобби), не на каждом пакете:
 /// это один словарный lookup, без диска и без блокировок в hot path. Запись на диск
-/// случается лишь когда админ банит/разбанит или когда реестр выучил новый алиас.
+/// случается лишь когда админ банит/разбанит или когда жёсткий ключ (userId/IP)
+/// выучил новый ник или второй ключ.
 /// </remarks>
 public sealed partial class GameNetHost
 {
@@ -24,11 +25,18 @@ public sealed partial class GameNetHost
     private BanRegistry? _bans;
     private readonly PlayerDirectory _directory = new();
     private BanStore? _banStore;
+    private AccountStore? _accounts;
+    private readonly object _legacyMapGate = new();
+    private readonly Dictionary<int, int> _legacyAccountIds = new();
+    private readonly object _adminIdsGate = new();
     private DateTime _lastBanSweepUtc = DateTime.MinValue;
     private DateTime _lastShadowRefreshUtc = DateTime.MinValue;
 
     /// <summary>Реестр банов (null — проба/тесты без банов).</summary>
     public BanRegistry? Bans => _bans;
+
+    /// <summary>Реестр аккаунтов (null — проба/тесты без банов).</summary>
+    public AccountStore? Accounts => _accounts;
 
     private void InitBans()
     {
@@ -46,11 +54,38 @@ public sealed partial class GameNetHost
         _bans.Load(stored.Bans);
         _directory.Load(stored.Players);
 
+        // Аккаунты: постоянные номера вместо хеша ника. Реестр засеваем всем, кого
+        // сервер уже знал (справочник, баны, кастомные ID), чтобы старые данные можно
+        // было перевести на номера ещё до первого входа.
+        _accounts = new AccountStore(
+            System.IO.Path.Combine(AppContext.BaseDirectory, "accounts.json"));
+        var seeded = _accounts.SeedFromPlayers(BuildAccountSeeds(stored));
+        if (seeded > 0)
+            Console.WriteLine($"[account] засеяно из старых данных: {seeded} аккаунтов");
+        _accounts.Save();
+        _accounts.Changed = OnAccountsChanged;
+
+        var remapped = _directory.RemapAccountIds(MapLegacyAccountId);
+        if (remapped > 0)
+            Console.WriteLine($"[account] справочник переведён на аккаунты: {remapped} записей");
+
+        var custom = _customIds.RemapAccounts(MapLegacyAccountId);
+        if (custom > 0)
+            Console.WriteLine($"[account] кастомные ID переведены на аккаунты: {custom} записей");
+
+        var bans = _bans.RemapAccountIds(MapLegacyAccountId);
+        if (bans > 0)
+            Console.WriteLine($"[account] теги банов переведены на аккаунты: {bans} записей");
+
+        MigrateAdminIds();
+        PersistBans();
+
         _bans.Changed = PersistBans;
         _directory.Changed = PersistBans;
 
         // Матч проверяет те же записи: IP на коннекте, ник до выдачи актора.
         _match.Bans = _bans;
+        _match.Accounts = _accounts;
         _match.IsBanExempt = IsBanExemptNick;
         _match.ExposeServerUid = settings.ExposeIds;
 
@@ -58,6 +93,138 @@ public sealed partial class GameNetHost
             $"[ban] реестр: {_bans.Count} банов, {_directory.Count} личностей в справочнике, файл {path}, срок " +
             $"{settings.MinMinutes}м..{settings.MaxDays}д, проверка каждые {settings.SweepSec}с, " +
             $"device-бан {(settings.ByDevice ? "вкл" : "выкл")}, админов банить нельзя");
+    }
+
+    /// <summary>
+    /// Ники, из которых надо завести аккаунты при первом запуске новой схемы:
+    /// справочник, старые баны с алиасами и записи кастомных ID.
+    /// </summary>
+    private List<SeenPlayer> BuildAccountSeeds(
+        (List<BanRecord> Bans, List<SeenPlayer> Players) stored)
+    {
+        var seeds = new List<SeenPlayer>(stored.Players);
+        var seen = stored.Players
+            .Select(p => ServerConfig.NormalizeNick(p.Nick))
+            .Where(n => n.Length > 0)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+        void AddSeed(string? nick, long lastSeenUtcMs)
+        {
+            var normalized = ServerConfig.NormalizeNick(nick);
+            if (normalized.Length == 0 || !seen.Add(normalized))
+                return;
+            seeds.Add(new SeenPlayer
+            {
+                Nick = normalized,
+                LastSeenUtcMs = lastSeenUtcMs,
+            });
+        }
+
+        foreach (var ban in stored.Bans)
+        {
+            AddSeed(ban.Nick, ban.CreatedUtcMs);
+            foreach (var alias in ban.Aliases)
+                AddSeed(alias, ban.CreatedUtcMs);
+        }
+
+        foreach (var (_, nick, _) in _customIds.Export())
+            AddSeed(nick, 0);
+
+        return seeds;
+    }
+
+    /// <summary>
+    /// Старый id (хеш ника) → account ID. Повторяет тот же путь, что миграция
+    /// справочника, и запоминает пару для аватаров и других файлов без ника.
+    /// </summary>
+    internal int MapLegacyAccountId(int oldId, string? nick)
+    {
+        var accounts = _accounts;
+        if (accounts is null || oldId <= 0)
+            return 0;
+
+        // Номер настоящего аккаунта не пересчитываем: иначе повторная миграция
+        // перепривязала бы уже переведённые записи к чужому тёзке. Но старый хеш
+        // ника мог случайно попасть в диапазон номеров — тогда ник записи не
+        // принадлежит этому аккаунту, и запись всё-таки legacy.
+        if (oldId is >= AccountStore.FirstId and <= AccountStore.MaxId
+            && accounts.FindById(oldId) is { } byId
+            && (string.IsNullOrWhiteSpace(nick) || byId.HasNick(nick)))
+            return oldId;
+
+        lock (_legacyMapGate)
+        {
+            if (_legacyAccountIds.TryGetValue(oldId, out var known))
+                return known;
+        }
+
+        var mapped = accounts.MapLegacyId(oldId, nick);
+        if (mapped is < AccountStore.FirstId or > AccountStore.MaxId)
+            return 0;
+
+        if (mapped != oldId)
+        {
+            lock (_legacyMapGate)
+                _legacyAccountIds[oldId] = mapped;
+        }
+        return mapped;
+    }
+
+    /// <summary>То же, но без ника: только уже известная карта (для аватаров).</summary>
+    internal int MapLegacyAccountId(int oldId) => MapLegacyAccountId(oldId, null);
+
+    private void OnAccountsChanged()
+    {
+        _accounts?.Save();
+        MigrateAdminIds();
+    }
+
+    /// <summary>
+    /// Заменить старые хеши в <c>admin.ids</c> на account ID. Работает в памяти:
+    /// файл с комментариями не переписываем, при следующем старте миграция повторится
+    /// и снова найдёт уже существующий аккаунт. Пока аккаунта нет (человек ещё не
+    /// заходил), старый хеш остаётся и продолжает работать через fallback в <c>IdOf</c>.
+    /// </summary>
+    private void MigrateAdminIds()
+    {
+        var accounts = _accounts;
+        if (accounts is null)
+            return;
+
+        lock (_adminIdsGate)
+        {
+            var ids = _config.Admin.Ids;
+            if (ids.Count == 0)
+                return;
+
+            // Новые аккаунты с тем же ником не должны отбирать права: сначала самые
+            // свежие (настоящий владелец заходил позже всех), затем остальные.
+            foreach (var account in accounts.Export()
+                         .OrderByDescending(a => a.LastSeenUtcMs)
+                         .ThenByDescending(a => a.Id))
+            {
+                if (ids.Contains(account.Id))
+                    continue;
+
+                var legacy = account.AllNicks
+                    .Select(LegacyNickHash.ForNick)
+                    .Where(id => id is >= LegacyNickHash.Min and <= LegacyNickHash.Max)
+                    .Distinct()
+                    .ToList();
+
+                foreach (var oldId in legacy)
+                {
+                    var index = ids.IndexOf(oldId);
+                    if (index < 0)
+                        continue;
+
+                    ids[index] = account.Id;
+                    Console.WriteLine(
+                        $"[admin] admin.ids: старый хеш {oldId} → аккаунт {account.Id} " +
+                        $"('{account.Nick}')");
+                }
+            }
+        }
     }
 
     private static string ResolveBanPath(string? configured)
@@ -98,7 +265,11 @@ public sealed partial class GameNetHost
     }
 
     /// <summary>Проверка бана на входе в лобби (ник + IP).</summary>
-    private BanDecision InspectBan(string? nick, IPAddress? address)
+    /// <param name="learn">
+    /// Учить новые ключи. Для теневых проверок — false: забаненный не должен
+    /// «легализовать» свой новый ник/IP повторными запросами.
+    /// </param>
+    private BanDecision InspectBan(string? nick, IPAddress? address, bool learn = true)
     {
         if (_bans is null || !_config.Admin.Ban.Enabled)
             return BanDecision.Allowed;
@@ -106,15 +277,43 @@ public sealed partial class GameNetHost
         return _bans.Inspect(
             new BanProbe(nick, address?.ToString()),
             DateTime.UtcNow,
-            IsBanExemptNick);
+            IsBanExemptNick,
+            learn);
     }
 
     /// <summary>
     /// Кого бан не берёт: админа из конфига и сам сервер. Предикат читает <c>_config</c> на
     /// каждом входе, поэтому перечитывание конфига не оставляет старый список админов.
     /// </summary>
-    private bool IsBanExemptNick(string? nick) =>
-        _config.IsAdmin(IdOf(nick)) || ServerIdentity.IsServerNick(nick);
+    /// <remarks>
+    /// Проверяем и account ID, и старый хеш ника: <c>admin.ids</c> мигрируется на аккаунты
+    /// в памяти, но до первого входа человека там ещё может стоять хеш. Все аккаунты с
+    /// этим ником (включая алиасы) проверяются намеренно: тёзка не должен отобрать
+    /// права у настоящего админа, а сам админ не должен потерять их из-за тёзки.
+    /// </remarks>
+    private bool IsBanExemptNick(string? nick)
+    {
+        if (ServerIdentity.IsServerNick(nick))
+            return true;
+
+        if (_config.IsAdmin(LegacyNickHash.ForNick(nick)))
+            return true;
+
+        var accounts = _accounts;
+        if (accounts is null)
+            return false;
+
+        if (accounts.FindByNick(nick) is { } owner && _config.IsAdmin(owner.Id))
+            return true;
+
+        foreach (var account in accounts.FindAccountsByNick(nick))
+        {
+            if (_config.IsAdmin(account.Id))
+                return true;
+        }
+
+        return false;
+    }
 
     private bool IsShadowPeer(NetPeer peer)
     {
@@ -146,7 +345,6 @@ public sealed partial class GameNetHost
         }
 
         var nick = ServerConfig.NormalizeNick(req.Profile.Name);
-        _directory.Remember(nick, peer.Address?.ToString(), DateTime.UtcNow);
         lock (_shadowGate)
             _shadowPeers[peer] = nick;
 
@@ -187,7 +385,7 @@ public sealed partial class GameNetHost
         // Срок мог выйти (или баны выключили) — отпускаем теневые сокеты сразу, не ждём минуты.
         foreach (var (peer, nick) in SnapshotShadowPeers())
         {
-            if (InspectBan(nick, peer.Address).Banned)
+            if (InspectBan(nick, peer.Address, learn: false).Banned)
                 continue;
 
             SendServerChatTo(peer, "бан снят — заходи заново");
@@ -213,7 +411,7 @@ public sealed partial class GameNetHost
 
         foreach (var (peer, nick) in SnapshotShadowPeers())
         {
-            var decision = InspectBan(nick, peer.Address);
+            var decision = InspectBan(nick, peer.Address, learn: false);
             if (decision.Banned && decision.Record is not null)
                 SendServerChatTo(peer, BanMessages.CountdownLine(decision.Record, now));
         }
@@ -241,59 +439,63 @@ public sealed partial class GameNetHost
             return;
         }
 
-        TryBanTarget(reply, target.Nick, target.Address, durationToken, reason, player, id, target.KnownIps);
+        TryBanTarget(
+            reply, target.AccountId, target.Nick, target.Address,
+            durationToken, reason, player, target.KnownIps);
     }
 
     /// <summary>
-    /// Кого банить по серверному id: сначала катка, потом лобби, потом справочник личностей.
+    /// Кого банить по номеру аккаунта: сначала катка, потом лобби, потом справочник.
     /// Общий путь для <c>/ban</c> и веб-админки: правила одни и те же.
     /// </summary>
-    private (string Nick, IPAddress? Address, IReadOnlyList<string>? KnownIps, string? Error)
+    /// <remarks>
+    /// Номер аккаунта однозначен — тёзок он не путает, поэтому коллизий здесь больше нет.
+    /// Номер, которого нет ни в катке, ни в лобби, ни в справочнике, — ошибка: сервер
+    /// не выдумывает цель по нику.
+    /// </remarks>
+    private (int AccountId, string Nick, IPAddress? Address, IReadOnlyList<string>? KnownIps, string? Error)
         ResolveBanTargetById(int id)
     {
-        // 1) кто сейчас в катке. Коллизия id (два ника → один id) — отказ, а не
-        // «баню первого попавшегося»: забанить не того хуже, чем попросить уточнить.
-        var inMatch = _match.SnapshotPublicIds().Where(e => e.Id == id).ToList();
-        if (inMatch.Count > 1)
+        if (id is < AccountStore.FirstId or > AccountStore.MaxId)
         {
-            return (string.Empty, null, null, $"id {id} делят {inMatch.Count} игрока: " +
-                   string.Join(", ", inMatch.Select(e => $"'{e.Nick}' (actor {e.ActorNr})")) +
-                   " — совпадение ников, бан по id невозможен");
+            return (0, string.Empty, null, null,
+                $"id {id} вне диапазона аккаунтов {AccountStore.FirstId}…{AccountStore.MaxId} " +
+                "(список: /ids)");
         }
+
+        // 1) кто сейчас в катке: id аккаунта привязан к актору после успешного JoinRoom.
+        var inMatch = _match.SnapshotPublicIds().Where(e => e.Id == id).ToList();
         if (inMatch.Count == 1)
         {
             var entry = inMatch[0];
-            return (entry.Nick, entry.Address, null, null);
+            return (id, entry.Nick, entry.Address, null, null);
+        }
+        if (inMatch.Count > 1)
+        {
+            return (0, string.Empty, null, null, $"id {id} одновременно у {inMatch.Count} акторов катки " +
+                   "— это ошибка сервера, бан отменён");
         }
 
-        // 2) кто в лобби (id вычисляется из ника, поэтому его видно и до катки)
+        // 2) кто в лобби: номер выдаётся на входе, поэтому виден и до катки.
         var inLobby = _session.JoinedPlayers()
-            .Where(p => MatchPublicId.ForNick(p.Name) == id)
+            .Where(p => p.PublicId == id)
             .ToList();
         if (inLobby.Count > 1)
         {
-            return (string.Empty, null, null, $"id {id} делят {inLobby.Count} игрока в лобби: " +
-                   string.Join(", ", inLobby.Select(p => $"'{p.Name}'")) +
-                   " — совпадение ников, бан по id невозможен");
+            return (0, string.Empty, null, null, $"id {id} одновременно у {inLobby.Count} игроков лобби " +
+                   "— это ошибка сервера, бан отменён");
         }
         if (inLobby.Count == 1)
         {
-            return (ServerConfig.NormalizeNick(inLobby[0].Name), inLobby[0].Peer.Address, null, null);
+            return (id, ServerConfig.NormalizeNick(inLobby[0].Name), inLobby[0].Peer.Address, null, null);
         }
 
         // 3) уже вышел: справочник помнит ник и все его IP — бан сработает и без него.
         var seen = _directory.Resolve(id);
         if (seen is null)
-            return (string.Empty, null, null, $"никого с id {id} сервер не помнит — список: /ids");
+            return (0, string.Empty, null, null, $"никого с id {id} сервер не помнит — список: /ids");
 
-        var sharing = _directory.CountById(id);
-        if (sharing > 1)
-        {
-            return (string.Empty, null, null, $"id {id} делят {sharing} ника (коллизия) — " +
-                   "чтобы не задеть не того, бан по id невозможен");
-        }
-
-        return (seen.Nick, null, seen.Ips, null);
+        return (id, seen.Nick, null, seen.Ips, null);
     }
 
     private bool BanReady(Action<string> reply)
@@ -314,24 +516,22 @@ public sealed partial class GameNetHost
     }
 
     /// <summary>
-    /// Общее тело <c>/ban</c>: проверки, запись, кик из матча и лобби.
-    /// </summary>
-    /// <summary>
     /// Общее тело <c>/ban</c>: проверки, запись, кик из матча и лобби. Возвращает запись
     /// реестра или <c>null</c>, если бан не состоялся (причина — в <c>reply</c>).
     /// </summary>
     /// <remarks>
     /// <paramref name="bannedBy"/> — кто банит из веб-админки (ник из сессии сайта);
     /// для чат-команд остаётся <c>null</c> — тогда это ник игрока, приславшего команду.
+    /// <paramref name="accountId"/> — постоянный номер цели: он и есть ключ бана.
     /// </remarks>
     private BanRecord? TryBanTarget(
         Action<string> reply,
+        int accountId,
         string nick,
         IPAddress? address,
         string durationToken,
         string reason,
         ConnectedPlayer? player,
-        int? matchId,
         IReadOnlyList<string>? knownIps = null,
         string? bannedBy = null)
     {
@@ -345,6 +545,12 @@ public sealed partial class GameNetHost
             return null;
         }
 
+        if (accountId is < AccountStore.FirstId or > AccountStore.MaxId)
+        {
+            reply($"id {accountId} вне диапазона аккаунтов {AccountStore.FirstId}…{AccountStore.MaxId}");
+            return null;
+        }
+
         // Сам сервер не банится ни по нику, ни по id: это не игрок, а хост.
         if (ServerIdentity.IsServerNick(nick))
         {
@@ -352,17 +558,19 @@ public sealed partial class GameNetHost
             return null;
         }
 
-        // Правило №2: админов не баним (проверка по серверному id).
-        var id = IdOf(nick);
-        if (_config.IsAdmin(id))
+        // Правило №2: админов не баним. Проверяем и номер аккаунта, и старый хеш ника:
+        // до первого входа admin.ids ещё может хранить хеш, а аккаунт уже создан.
+        if (IsBanExemptNick(nick))
         {
-            reply($"id #{id} — админ (admin.ids), админов банить нельзя");
-            Console.WriteLine($"[ban] отказ: id #{id} в admin.ids — админа банить нельзя");
+            reply($"'{nick}' — админ (admin.ids), админов банить нельзя");
+            Console.WriteLine($"[ban] отказ: '{nick}' (аккаунт {accountId}) админ — банить нельзя");
             return null;
         }
 
         if (player is not null
-            && string.Equals(ServerConfig.NormalizeNick(player.Name), nick, StringComparison.OrdinalIgnoreCase))
+            && (player.PublicId == accountId
+                || string.Equals(
+                    ServerConfig.NormalizeNick(player.Name), nick, StringComparison.OrdinalIgnoreCase)))
         {
             reply("себя банить нельзя");
             return null;
@@ -379,46 +587,42 @@ public sealed partial class GameNetHost
             return null;
         }
 
-        // Цели в лобби: ник нормализованно, устройств с одним ником может быть несколько.
+        // Цели в лобби: ищем по номеру аккаунта, а не по нику. Тёзка не должен получить
+        // кик за чужой бан — ник у двух людей может совпасть, номер аккаунта не может.
         var targets = _session.JoinedPlayers()
-            .Where(p => string.Equals(
-                ServerConfig.NormalizeNick(p.Name), nick, StringComparison.OrdinalIgnoreCase))
+            .Where(p => p.PublicId == accountId)
             .ToList();
 
         var ip = address ?? targets.Select(t => t.Peer.Address).FirstOrDefault(a => a is not null);
 
-        // Устройства: живые сокеты матча + всё, что справочник уже связал с этим ником.
+        // Устройства: живые сокеты матча + всё, что справочник уже связал с аккаунтом.
         // Живой сокет важнее: он подтверждает, что человек сейчас реально в катке.
         var devices = new List<string>();
-        foreach (var liveDevice in _match.DevicesForNick(nick))
+        foreach (var liveDevice in _match.DevicesForAccount(accountId))
         {
             if (!devices.Any(d => string.Equals(d, liveDevice, StringComparison.OrdinalIgnoreCase)))
                 devices.Add(liveDevice);
         }
-        foreach (var knownDevice in _directory.DevicesForNick(nick))
+        foreach (var knownDevice in _directory.DevicesForAccount(accountId))
         {
             if (!devices.Any(d => string.Equals(d, knownDevice, StringComparison.OrdinalIgnoreCase)))
                 devices.Add(knownDevice);
         }
 
-        // Id детерминирован от ника: запись всегда тегируется id, чтобы /unban потом
+        // Номер аккаунта — постоянный: запись всегда тегируется им, чтобы /unban потом
         // нашёл её без отдельной истории.
-        var idForRecord = matchId is { } requested && requested != 0
-            ? requested
-            : MatchPublicId.ForNick(nick);
-
         var record = _bans.Add(
-            new BanProbe(nick, ip?.ToString(), devices.FirstOrDefault()),
+            new BanProbe(nick, ip?.ToString(), devices.FirstOrDefault(), accountId),
             duration,
             reason,
             bannedBy ?? player?.Name ?? LobbySession.ServerPlayerName,
             DateTime.UtcNow,
-            idForRecord,
+            accountId,
             knownIps,
             devices);
 
         // Кик из матча (7777) и из лобби (7778) — разные сокеты, нужны оба.
-        var matchKicked = _match.DisconnectBanned(nick, ip, devices);
+        var matchKicked = _match.DisconnectBanned(accountId, ip, devices);
         var lobbyKicked = 0;
         foreach (var target in targets)
         {
@@ -579,17 +783,16 @@ public sealed partial class GameNetHost
             reply($"{idText} · {entry.Nick} · {entry.Address?.ToString() ?? "—"} · actor {entry.ActorNr}");
         }
 
-        // Катка идёт, но кто-то сидит в лобби — его id тоже нужен.
-        var shown = entries
-            .Select(e => ServerConfig.NormalizeNick(e.Nick))
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        // Катка идёт, но кто-то сидит в лобби — его id тоже нужен. Дедупликация по
+        // номеру аккаунта, а не по нику: тёзка в лобби — отдельный человек.
+        var shown = entries.Select(e => e.Id).ToHashSet();
         var lobby = _session.JoinedPlayers()
-            .Where(p => !shown.Contains(ServerConfig.NormalizeNick(p.Name)))
+            .Where(p => p.PublicId > 0 && !shown.Contains(p.PublicId))
             .ToList();
 
         foreach (var player in lobby)
         {
-            reply($"#{MatchPublicId.ForNick(player.Name)} · {player.Name} · " +
+            reply($"#{player.PublicId} · {player.Name} · " +
                   $"{player.Peer.Address?.ToString() ?? "—"} · лобби");
         }
 

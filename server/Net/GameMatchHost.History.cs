@@ -353,7 +353,9 @@ public sealed partial class GameMatchHost
             if (!names.TryGetValue(nr, out var nick) || string.IsNullOrWhiteSpace(nick))
                 continue;
 
-            var id = MatchPublicId.ForNick(nick);
+            var id = AccountIdOfActorLocked(room, nr);
+            if (id == 0 && Accounts is null)
+                id = LegacyNickHash.ForNick(nick); // тесты/проба без аккаунтов
             if (id <= 0)
                 continue;
 

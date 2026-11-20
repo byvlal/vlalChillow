@@ -139,14 +139,14 @@ public sealed class RoomRegistryTests
         var reg = new RoomRegistry();
 
         Assert.True(Create(reg, "2v2", null, "влал", out var room, out _));
-        Assert.False(reg.Quota(MatchPublicId.ForNick("влал")).Allowed);
+        Assert.False(reg.Quota(LegacyNickHash.ForNick("влал")).Allowed);
 
         Assert.True(reg.TryRemove(room!.Number, out var removed));
         Assert.Equal("влал", removed.OwnerNick);
 
         // Ник свободен — можно создать новую комнату. Номер тоже освободился:
         // #1 закрылась, значит следующая берёт наименьший свободный — #1.
-        Assert.True(reg.Quota(MatchPublicId.ForNick("влал")).Allowed);
+        Assert.True(reg.Quota(LegacyNickHash.ForNick("влал")).Allowed);
         Assert.True(Create(reg, "duel", null, "влал", out var second, out _));
         Assert.Equal(1, second!.Number);
     }
@@ -263,6 +263,59 @@ public sealed class RoomRegistryTests
         Assert.Equal(0, reg.Snapshot()[0].ScoreTr);
 
         Assert.False(reg.TryUpdate(999, RoomState.Live, 1));
+    }
+
+    [Fact]
+    public void Update_KeepsLiveRosterAndRound()
+    {
+        // Публичная страница #/room/<n> читает именно это: раунд и состав без денег.
+        var reg = new RoomRegistry();
+        Assert.True(Create(reg, "2v2", null, "a", out var room, out _));
+
+        var roster = new[]
+        {
+            new RoomLivePlayer(25354325, "влал", "CT", 7, 2, 3, 1200, 12),
+            new RoomLivePlayer(100, "Ktulxy", "T", 4, 1, 5, 900, 20),
+        };
+
+        Assert.True(reg.TryUpdate(room!.Number, RoomState.Live, 2, 3, 1, roster, 4));
+        Assert.True(reg.TryGet(room.Number, out var live));
+
+        Assert.Equal(RoomState.Live, live.State);
+        Assert.Equal(4, live.Round);
+        Assert.Equal(2, live.Players);
+        Assert.Equal(roster, live.LivePlayers);
+
+        // Старый вызов без состава не стирает уже опубликованный: страница не должна
+        // мигать «никого», если хост прислал обновление счёта без списка.
+        Assert.True(reg.TryUpdate(room.Number, RoomState.Live, 2, 5, 2));
+        Assert.True(reg.TryGet(room.Number, out var after));
+        Assert.Equal(4, after.Round);
+        Assert.Equal(roster, after.LivePlayers);
+
+        // Пустой состав — это тоже данные («все вышли»), а не «не трогать прежний».
+        Assert.True(reg.TryUpdate(room.Number, RoomState.Waiting, 0,
+            livePlayers: Array.Empty<RoomLivePlayer>(), round: 0));
+        Assert.True(reg.TryGet(room.Number, out var empty));
+        Assert.Empty(empty.LivePlayers!);
+        Assert.Equal(0, empty.Round);
+    }
+
+    [Fact]
+    public void TryGet_ReturnsOnlyExistingRoom()
+    {
+        var reg = new RoomRegistry();
+        Assert.True(Create(reg, "duel", null, "a", out var room, out _));
+
+        Assert.True(reg.TryGet(room!.Number, out var found));
+        Assert.Equal(room.Number, found.Number);
+        Assert.Equal("Duel", found.ModeId);
+
+        Assert.False(reg.TryGet(999, out _));
+
+        // Удалённая комната больше не находится: страница скажет «закрыта».
+        Assert.True(reg.TryRemove(room.Number, out _));
+        Assert.False(reg.TryGet(room.Number, out _));
     }
 
     [Fact]
@@ -423,20 +476,20 @@ public sealed class RoomRegistryTests
     {
         var reg = new RoomRegistry { MaxRooms = 1 };
 
-        var before = reg.Quota(MatchPublicId.ForNick("влал"));
+        var before = reg.Quota(LegacyNickHash.ForNick("влал"));
         Assert.True(before.Allowed);
         Assert.Equal(0, before.OwnerRooms);
         Assert.Equal(RoomCreateError.None, before.Error);
 
         Assert.True(Create(reg, "2v2", null, "влал", out _, out _));
 
-        var mine = reg.Quota(MatchPublicId.ForNick("влал"));
+        var mine = reg.Quota(LegacyNickHash.ForNick("влал"));
         Assert.False(mine.Allowed);
         Assert.Equal(1, mine.OwnerRooms);
         Assert.Equal(RoomCreateError.DuplicateOwner, mine.Error);
 
         // Другому нику места уже нет — но причина другая: потолок, а не «у тебя уже есть».
-        var other = reg.Quota(MatchPublicId.ForNick("другой"));
+        var other = reg.Quota(LegacyNickHash.ForNick("другой"));
         Assert.False(other.Allowed);
         Assert.Equal(RoomCreateError.RoomLimitReached, other.Error);
 
@@ -457,11 +510,11 @@ public sealed class RoomRegistryTests
     public void OwnerIdOf_MatchesNickDerivedId()
     {
         // Реестр обязан считать id той же функцией, что и лобби: иначе бронь
-        // (PendingRooms.Reserve ищет по MatchPublicId.ForNick) не найдёт комнату.
+        // (PendingRooms.Reserve ищет по LegacyNickHash.ForNick) не найдёт комнату.
         var reg = new RoomRegistry();
         Assert.True(Create(reg, "2v2", null, "влал", out var room, out _));
 
-        Assert.Equal(MatchPublicId.ForNick("влал"), reg.OwnerIdOf(room!.Number));
+        Assert.Equal(LegacyNickHash.ForNick("влал"), reg.OwnerIdOf(room!.Number));
         Assert.Equal(0, reg.OwnerIdOf(999));
     }
 

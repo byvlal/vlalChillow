@@ -25,6 +25,11 @@ internal sealed class MatchRoom
     /// </remarks>
     public readonly Dictionary<byte, string> ActorIdentities = new();
     /// <summary>
+    /// Issue #B: account ID каждого актёра. Живёт в комнате рядом с actor-слотами:
+    /// статистика, история и админка берут id отсюда, а не считают его из ника.
+    /// </summary>
+    public readonly Dictionary<byte, int> ActorAccounts = new();
+    /// <summary>
     /// When an actor lost its owning peer (Environment.TickCount64), so the reaper can decide that
     /// the session is really gone instead of a reconnect in flight.
     /// </summary>

@@ -34,7 +34,8 @@ public sealed class ServerConfigTests
         Assert.True(cfg.MatchStart.Ready.ResetOnLeave);
         Assert.True(cfg.MatchStart.Ready.AllowUnready);
         Assert.True(cfg.Admin.AnyoneCanStart);
-        Assert.Empty(cfg.Admin.Ids);
+        // Владелец сервера админ «из коробки» — без правки config.json.
+        Assert.Contains(25_354_325, cfg.Admin.Ids);
         Assert.Empty(cfg.Launch.Args);
         Assert.False(cfg.Debug.Captures);
         Assert.False(cfg.Debug.Verbose);
@@ -81,15 +82,33 @@ public sealed class ServerConfigTests
     }
 
     [Fact]
-    public void DefaultConfig_IsAutoAndHasNoAdmins()
+    public void DefaultConfig_IsAutoAndMakesTheOwnerAdmin()
     {
         var cfg = new ServerConfig();
 
         // auto — единственный режим, который у пользователя работал без /start.
         Assert.Equal(MatchStartMode.Auto, cfg.StartMode);
+        // 25_354_325 — id ника «влал»: владелец админ без правки config.json.
+        Assert.True(cfg.IsAdmin(25_354_325));
         Assert.False(cfg.IsAdmin(65_054_804));
         Assert.False(cfg.IsAdmin(0));
         Assert.False(cfg.IsAdmin(-1));
+    }
+
+    [Fact]
+    public void ExplicitEmptyAdminList_StillMeansNoAdmins()
+    {
+        // Явный "ids": [] — осознанный выбор, дефолт его не перебивает.
+        var cfg = Parse("""
+        {
+          "admin": { "ids": [] }
+        }
+        """);
+
+        cfg.Normalize();
+
+        Assert.Empty(cfg.Admin.Ids);
+        Assert.False(cfg.IsAdmin(25_354_325));
     }
 
     [Fact]
@@ -121,14 +140,14 @@ public sealed class ServerConfigTests
     public void IsAdmin_UsesTheIdTheServerComputesFromTheSessionNick()
     {
         var cfg = new ServerConfig();
-        cfg.Admin.Ids.Add(MatchPublicId.ForNick("влал"));
+        cfg.Admin.Ids.Add(LegacyNickHash.ForNick("влал"));
         cfg.Normalize();
 
         // Регистр/невидимые символы не меняют id, потому что его считает сервер
         // из нормализованного ника сессии, а не из строки пакета.
-        Assert.True(cfg.IsAdmin(MatchPublicId.ForNick("ВЛАЛ")));
-        Assert.True(cfg.IsAdmin(MatchPublicId.ForNick("\u200Bвлал\u00AD")));
-        Assert.False(cfg.IsAdmin(MatchPublicId.ForNick("влал2")));
+        Assert.True(cfg.IsAdmin(LegacyNickHash.ForNick("ВЛАЛ")));
+        Assert.True(cfg.IsAdmin(LegacyNickHash.ForNick("\u200Bвлал\u00AD")));
+        Assert.False(cfg.IsAdmin(LegacyNickHash.ForNick("влал2")));
     }
 
     [Fact]
