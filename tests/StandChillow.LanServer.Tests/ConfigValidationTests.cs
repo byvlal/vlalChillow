@@ -72,6 +72,8 @@ public sealed class ConfigValidationTests
     [InlineData("server.lobbyPort")]
     [InlineData("debug.capturesMaxFiles")]
     [InlineData("debug.capturesMaxBytesMb")]
+    [InlineData("names.maxLength")]
+    [InlineData("names.kickDelaySec")]
     public void OutOfRangeNumber_IsReportedAndReplacedByTheStandard(string key)
     {
         // Одно «невозможное» значение (ниже любого минимума) для каждой числовой настройки.
@@ -85,6 +87,10 @@ public sealed class ConfigValidationTests
                 c.Server.MaxMembers = -999;
             else if (key == "server.lobbyPort")
                 c.Server.LobbyPort = 0;
+            else if (key == "names.maxLength")
+                c.Names.MaxLength = -999;
+            else if (key == "names.kickDelaySec")
+                c.Names.KickDelaySec = -999;
             else
                 SetDebug(c, key, -999);
         });
@@ -256,6 +262,7 @@ public sealed class ConfigValidationTests
         Assert.NotNull(cfg.Timings);
         Assert.NotNull(cfg.Tuning);
         Assert.NotNull(cfg.Debug);
+        Assert.NotNull(cfg.Names);
 
         // И у каждой есть хотя бы один параметр, который сервер реально применяет.
         var applied = new[]
@@ -267,6 +274,7 @@ public sealed class ConfigValidationTests
             nameof(ServerConfig.Timings),
             nameof(ServerConfig.Tuning),
             nameof(ServerConfig.Debug),
+            nameof(ServerConfig.Names),
         };
         var props = typeof(ServerConfig).GetProperties().Select(p => p.Name).ToHashSet();
         foreach (var section in applied)
@@ -339,6 +347,8 @@ public sealed class ConfigValidationTests
         "server.lobbyPort" => cfg.Server.LobbyPort,
         "debug.capturesMaxFiles" => cfg.Debug.CapturesMaxFiles,
         "debug.capturesMaxBytesMb" => cfg.Debug.CapturesMaxBytesMb,
+        "names.maxLength" => cfg.Names.MaxLength,
+        "names.kickDelaySec" => cfg.Names.KickDelaySec,
         _ => throw new ArgumentOutOfRangeException(nameof(key), key, "нет такой настройки"),
     };
 }

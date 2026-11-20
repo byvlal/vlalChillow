@@ -254,6 +254,7 @@ The console command `config reload` forces a re-read.
   },
   "server":  { "welcomeMessage": "…", "maxMembers": 16, "lobbyPort": 7778 },
   "network": { "bindAddress": "0.0.0.0", "ignoreVpn": true, "advertiseIp": null },
+  "names":   { "enforce": true, "maxLength": 20, "kickDelaySec": 10 },
   "admin":   { "ids": [ 1000000, 1000001 ],
                "adminOnlyCommands": [ "set", "end" ], "anyoneCanStart": true },
   "matchStart": { "mode": "auto", "auto": { … }, "ready": { … } },
@@ -287,6 +288,15 @@ The console command `config reload` forces a re-read.
 держит VPN/Hamachi/Radmin/ZeroTier в стороне; `false` — сервер слушает и на них.
 `advertiseIp` — что писать телефонам в op9 как адрес матча (`null` — авто по LAN);
 задай вручную, если играете через Hamachi/Radmin и авто берёт не тот адрес.
+
+**`names`** — политика ников, одна на лобби (7778) и катку (7777): клиент присылает ник
+дважды, и модифицированный клиент может обойти лобби. Разрешены латиница, кириллица, цифры,
+пробел, `_` и `-`; нужна хотя бы одна буква или цифра. Разметка (`<color=red>miro`), эмодзи,
+пунктуация и невидимки отклоняются: игрока пускают в скрытое лобби (в росписи только Server
+и он сам), показывают старый ник, подсказку и кикают через `kickDelaySec`, если он не вышел
+сменить ник. `maxLength` — 1..32 (по умолчанию 20), `kickDelaySec` — 1..300 (по умолчанию 10),
+`enforce: false` выключает проверку. Ники и текст чата в лобби и катке очищаются от rich-text
+разметки, чтобы сообщение не перекрашивало весь чат.
 
 **`timings`** — фазы матча в секундах, применяются и через `/set`. `winsNeeded: 0` — взять
 дефолт режима (Allies 8, Defuse 6); `winsNeeded: N` — жёстко N и режим его не перебивает.

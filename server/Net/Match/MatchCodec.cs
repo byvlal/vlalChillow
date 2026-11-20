@@ -803,12 +803,6 @@ public static class MatchCodec
         byte gaaTarget = 3,
         short field = 1)
     {
-        var utf8 = TruncateUtf8(text, MaxChatTextBytes);
-
-        var payload = new byte[1 + utf8.Length];
-        payload[0] = (byte)utf8.Length;
-        Array.Copy(utf8, 0, payload, 1, utf8.Length);
-
         return BuildWorldObjectRpc(
             serverTime,
             objectId: MatchSceneManagers.ChatManagerObjectId,
@@ -816,7 +810,25 @@ public static class MatchCodec
             gaaTarget: gaaTarget,
             field: field,
             timeValue: serverTime / 1000.0,
-            payload: payload);
+            payload: BuildChatManagerTextPayload(text));
+    }
+
+    /// <summary>
+    /// Payload ChatManager: один байт длины + UTF-8, ровно тот формат, что разбирает
+    /// <see cref="TryParseChatManagerText"/>.
+    /// </summary>
+    /// <remarks>
+    /// Нужен отдельно от кадра: сервер пересобирает только текст отфильтрованного чата,
+    /// а автора, <c>gaa</c> и <c>field</c> оставляет из клиентского кадра.
+    /// </remarks>
+    public static byte[] BuildChatManagerTextPayload(string text)
+    {
+        var utf8 = TruncateUtf8(text, MaxChatTextBytes);
+
+        var payload = new byte[1 + utf8.Length];
+        payload[0] = (byte)utf8.Length;
+        Array.Copy(utf8, 0, payload, 1, utf8.Length);
+        return payload;
     }
 
     /// <summary>

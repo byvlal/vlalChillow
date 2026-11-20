@@ -216,6 +216,37 @@ public sealed class NetworkConfig
 }
 
 /// <summary>
+/// Правила ников: что пускаем в лобби и в катку.
+/// </summary>
+/// <remarks>
+/// Ник уходит в чат текстом, а в катке становится именем актора. Клиент рисует его как
+/// rich-text, поэтому «&lt;color=red&gt;miro» — это разметка, а не ник. Проверка одна на
+/// оба входа: лобби 7778 и катка 7777 (клиент присылает ник дважды, и модифицированный
+/// клиент может обойти лобби).
+/// </remarks>
+public sealed class NamesConfig
+{
+    /// <summary>
+    /// false — проверка выключена целиком. Аварийный выключатель: если политика кому-то
+    /// перекроет вход, владелец снимает её правкой конфига, а не пересборкой.
+    /// </summary>
+    public bool Enforce { get; set; } = true;
+
+    /// <summary>Стандартная длина ника: столько же, сколько в шаблоне конфига.</summary>
+    public const int DefaultMaxLength = 20;
+
+    /// <summary>Максимум символов в нике (1..32).</summary>
+    public int MaxLength { get; set; } = DefaultMaxLength;
+
+    /// <summary>Сколько секунд нарушитель видит подсказку, прежде чем его кикнет (1..300).</summary>
+    public int KickDelaySec { get; set; } = 10;
+
+    /// <summary>Ключи внутри <c>names</c>, которых сервер не знает (опечатки).</summary>
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? UnknownKeys { get; set; }
+}
+
+/// <summary>
 /// Веб-панель: список комнат и одна кнопка «создать».
 /// </summary>
 /// <remarks>
@@ -470,6 +501,9 @@ public sealed class ServerConfig
     /// <summary>Сеть: адрес прослушивания, VPN-адаптеры, адрес в op9.</summary>
     public NetworkConfig Network { get; set; } = new();
 
+    /// <summary>Ники: белый список символов, длина, кик нарушителя.</summary>
+    public NamesConfig Names { get; set; } = new();
+
     public AdminConfig Admin { get; set; } = new();
 
     /// <summary>
@@ -662,6 +696,7 @@ public sealed class ServerConfig
         Debug ??= new DebugConfig();
         Web ??= new WebConfig();
         Web.Limits ??= new WebLimitsConfig();
+        Names ??= new NamesConfig();
 
         // Опечатки в именах ключей — до всего остального: из-за них «настроил, а не работает».
         ReportUnknownKeys();
@@ -696,6 +731,12 @@ public sealed class ServerConfig
         Admin.Ban.File = string.IsNullOrWhiteSpace(Admin.Ban.File)
             ? "banlist.json"
             : Admin.Ban.File.Trim();
+
+        // Ники: 20 символов по умолчанию (в нике видно и чат, и табло катки),
+        // 10 секунд на подсказку. Обе границы — чтобы опечатка в конфиге не
+        // выключила проверку молча.
+        Names.MaxLength = Check(Names.MaxLength, 1, 32, NamesConfig.DefaultMaxLength, "names.maxLength");
+        Names.KickDelaySec = Check(Names.KickDelaySec, 1, 300, 10, "names.kickDelaySec");
 
         // Пустая строка — «как в дефолте» (auto), а не тихий откат в manual:
         // иначе правка конфига руками молча выключала автостарт.
@@ -832,6 +873,15 @@ public sealed class ServerConfig
                 _issues.Add(new ConfigIssue(
                     "admin." + key,
                     "неизвестный ключ внутри admin — сервер его не читает",
+                    "проигнорирован"));
+        }
+
+        if (Names?.UnknownKeys is { Count: > 0 })
+        {
+            foreach (var key in Names.UnknownKeys.Keys)
+                _issues.Add(new ConfigIssue(
+                    "names." + key,
+                    "неизвестный ключ внутри names — сервер его не читает",
                     "проигнорирован"));
         }
     }
@@ -1127,6 +1177,21 @@ public sealed class ServerConfig
 
     // Порт лобби. Меняй, только если понимаешь, что делаешь.
     "lobbyPort": 7778
+  },
+
+  // ===== НИКИ =====
+  // Ник виден в чате и на табло катки, а клиент рисует его как rich-text.
+  // Разрешены: латиница, кириллица, цифры, пробел, _ и -; хотя бы одна буква или цифра.
+  // Нарушителя пускают в скрытое лобби, пишут подсказку и кикают через kickDelaySec.
+  "names": {
+    // false — пускать любые ники (проверка выключена)
+    "enforce": true,
+
+    // Максимум символов (1..32)
+    "maxLength": 20,
+
+    // Сколько секунд показать подсказку, потом кик (1..300)
+    "kickDelaySec": 10
   },
 
   // ===== СЕТЬ =====

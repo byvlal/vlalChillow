@@ -234,6 +234,19 @@ public sealed partial class GameMatchHost
             return;
         }
 
+        // Ник из пакета, а не из лобби: сюда можно прийти мимо 7778 модифицированным
+        // клиентом. В лобби такой ник уже отклонили бы; здесь только disconnect — ровно
+        // как для зарезервированного «Server» выше.
+        if (!string.IsNullOrEmpty(req.Room) && IsNickAllowed?.Invoke(req.Room) == false)
+        {
+            Console.WriteLine(
+                $"[match-host] JoinRoom отклонён: ник '{NickPolicy.Describe(req.Room)}' " +
+                $"не по правилам ({peer.Address})");
+            try { peer.Disconnect(); }
+            catch { /* уже мёртв */ }
+            return;
+        }
+
         // Админский id без кода: мимо лобби на 7777 не пройти — код обязателен везде.
         if (IsUnauthorizedAdmin?.Invoke(req.Room, peer.Address) == true)
         {
@@ -351,7 +364,9 @@ public sealed partial class GameMatchHost
                 {
                     if (st.UserId is { } u)
                         room.UserIds.Add(u);
-                    var nick = string.IsNullOrWhiteSpace(req.Room) ? $"actor{nr}" : req.Room;
+                    var nick = string.IsNullOrWhiteSpace(req.Room)
+                        ? $"actor{nr}"
+                        : NickPolicy.Canonical(req.Room);
                     room.Actors.Add((nr, nick, st.UserId ?? ""));
                     // Issue #39: владелец актёра запоминается в комнате, чтобы следующий заход
                     // этого же игрока занял тот же номер, даже если сокет уже пропал.

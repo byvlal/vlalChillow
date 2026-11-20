@@ -53,6 +53,13 @@ public sealed partial class GameMatchHost
     /// </summary>
     public Func<string?, IPAddress?, bool>? IsUnauthorizedAdmin { get; set; }
 
+    /// <summary>
+    /// Проверка ника из <c>JoinRoomRequest.room</c>: в лобби такой ник уже отклонили бы,
+    /// но на 7777 клиент присылает его заново. Ставит <c>GameNetHost</c> из конфига
+    /// (<c>names.enforce</c> / <c>names.maxLength</c>); null — проверки нет.
+    /// </summary>
+    public Func<string, bool>? IsNickAllowed { get; set; }
+
     /// <summary>IP-гейт самого раннего входа: до handshake, до комнаты, до актора.</summary>
     internal bool IsBannedAddress(IPAddress? address)
     {
