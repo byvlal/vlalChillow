@@ -315,10 +315,17 @@ public sealed partial class GameNetHost
         return false;
     }
 
-    private bool IsShadowPeer(NetPeer peer)
+    /// <summary>
+    /// Скрытый пир: забаненный (теневой сокет) или отклонённый по нику. Чат и команды от
+    /// него игнорируются, в росписи и в катке его нет.
+    /// </summary>
+    private bool IsHiddenPeer(NetPeer peer)
     {
         lock (_shadowGate)
-            return _shadowPeers.ContainsKey(peer);
+            if (_shadowPeers.ContainsKey(peer))
+                return true;
+
+        return IsNickRejected(peer);
     }
 
     /// <summary>

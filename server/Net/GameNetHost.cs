@@ -82,6 +82,10 @@ public sealed partial class GameNetHost : IDisposable
         // SINGLETON match host object: construct once. UDP 7777 may Stop after MatchOver
         // and Start again on /play — never construct a second GameMatchHost.
         _match = new GameMatchHost(_session.LobbyId, GameMatchHost.DefaultMatchPort, _advertiseLanIp);
+        // Проверка ника одна на лобби и катку. Делегат читает текущий конфиг на каждом
+        // входе, поэтому config reload меняет политику без пересоздания матч-хоста.
+        _match.IsNickAllowed = nick =>
+            !_config.Names.Enforce || NickPolicy.Check(nick, _config.Names.MaxLength).Ok;
         // Mid-match phones chat via ChatManager WorldObjectRpc — wire slash cmds (/set start).
         _match.OnMatchChatSlashCommand = HandleMatchChatSlashCommand;
         // Ordinary match chat → console + dashboard (the катка used to be a blind spot).
@@ -171,6 +175,7 @@ public sealed partial class GameNetHost : IDisposable
             Console.WriteLine($"[net] peer DISCONNECTED {peer.Address}:{peer.Port}: {info.Reason}");
             lock (_shadowGate)
                 _shadowPeers.Remove(peer);
+            ForgetNickReject(peer);
             ForgetPendingAdmin(peer);
             var left = _session.OnPeerDisconnected(peer, out var name);
             if (name is not null && left is not null)
@@ -682,6 +687,19 @@ public sealed partial class GameNetHost : IDisposable
         if (banDecision.AdminExempt)
             Console.WriteLine($"[ban] '{req.Profile.Name}' — админ или сервер, бан не применяется");
 
+        // Ник — это то, что видят все: в чате он идёт текстом, в катке — именем актора.
+        // Клиент рисует его как rich text, поэтому «<color=red>miro» — не ник, а разметка.
+        // Проверяем до любых side-effects и пускаем только в скрытое лобби с подсказкой:
+        // отказ «молча» выглядел бы как сломанный сервер.
+        if (_config.Names.Enforce && !NickPolicy.Check(req.Profile.Name, _config.Names.MaxLength).Ok)
+        {
+            HandleNickReject(peer, req);
+            return;
+        }
+        // Тот же сокет мог до этого сидеть в скрытом лобби с плохим ником — теперь ник
+        // исправлен, и таймер кика не должен сработать по вернувшемуся игроку.
+        ForgetNickReject(peer);
+
         // Адрес катки в JoinResponse получает ТОЛЬКО приглашённый.
         //
         // «Приглашён» = на его ник лежит бронь (её ставит его собственный /join)
@@ -797,7 +815,7 @@ public sealed partial class GameNetHost : IDisposable
         if (player is not { Joined: true })
         {
             // Забаненный в теневом лобби: не отвечаем и не спамим консоль на каждое сообщение.
-            if (IsShadowPeer(peer))
+            if (IsHiddenPeer(peer))
                 return;
             Console.WriteLine($"[lobby] chat from non-joined peer {peer.Address}");
             return;
@@ -877,9 +895,21 @@ public sealed partial class GameNetHost : IDisposable
         // В приватной росписи клиента чужих member id нет вообще: подписываем кадр
         // автором Server, а имя говорящего несёт сам текст. Тот же кадр OpChat,
         // которым сервер и так отвечает игрокам, — новых полей/опкодов нет.
+        //
+        // Ник и текст — это rich text для клиента: «<color=red>» в сообщении перекрасил
+        // бы весь чат. Ник уже проверен на входе, но подсказки и старые записи могут
+        // нести мусор, поэтому чистим оба поля здесь — до сборки кадра.
+        var name = NickPolicy.CleanChat(speaker.Name);
+        var text = NickPolicy.CleanChat(message);
+        if (text.Length == 0)
+        {
+            Console.WriteLine($"[chat] {name}: сообщение из одной разметки — не пересылаю");
+            return;
+        }
+
         var bytes = LobbyCodec.BuildChatEvent(
             LobbySession.ServerMemberId,
-            LobbySession.FormatRelayedChat(speaker.Name, message));
+            LobbySession.FormatRelayedChat(name, text));
 
         // Эхо автору тоже. Клиент не рисует собственное сообщение сам — ждёт кадр от
         // сервера, поэтому без эха игрок видел пустое окно и решал, что «чат не работает».
@@ -890,7 +920,7 @@ public sealed partial class GameNetHost : IDisposable
         // пишет через лобби-сокет, который клиент держит весь матч, — поэтому его текст
         // надо дослать в матч-чат, иначе его не видит никто из катки.
         if (speaker.Status == PlayerLobbyStatus.InMatch && _match.IsListening)
-            SendServerChatToMatch($"{speaker.Name}: {message}");
+            SendServerChatToMatch($"{name}: {text}");
     }
 
         /// <summary>op7 CustomProperties — same bag as live mode/level change (GameModeId + SelectedLevels).</summary>

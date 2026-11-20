@@ -250,7 +250,10 @@ public sealed class LobbySession
             if (req.Profile.Avatar is { Length: > 2_000_000 })
                 return JoinResult.Fail(JoinFailReason.ProfileValidationFailed, "avatar too large");
 
-            var nick = req.Profile.Name.Trim();
+            // Канонический вид: NFC, без невидимок, пробелы схлопнуты. Ту же форму
+            // считают аккаунты и LegacyNickHash — иначе « Miro  Ivan» и «Miro Ivan»
+            // были бы разными людьми с разными id.
+            var nick = NickPolicy.Canonical(req.Profile.Name);
             var takenOver = FindRejoinMembership(peer, player, nick);
             if (takenOver is not null)
             {
@@ -344,7 +347,7 @@ public sealed class LobbySession
                 return JoinResult.Fail(
                     JoinFailReason.ProfileValidationFailed, "name reserved for the server");
 
-            player.Name = req.Profile.Name.Trim();
+            player.Name = NickPolicy.Canonical(req.Profile.Name);
             player.Avatar = req.Profile.Avatar;
             player.Status = PlayerLobbyStatus.Lobby;
             player.Joined = false;

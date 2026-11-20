@@ -245,6 +245,8 @@ public sealed partial class GameMatchHost
                 return;
 
             var dropRelay = false;
+            // Чат с разметкой пересобирается: остальной кадр остаётся клиентским.
+            byte[]? chatPayloadOverride = null;
 
             // ChatManager mid-match text: length-prefixed UTF-8 payload (captures
             // 20260723_030750_1117 / 20260723_030756_1126). Lobby OpChat never sees these —
@@ -268,6 +270,25 @@ public sealed partial class GameMatchHost
                 // Команды сюда не отдаём: это не сообщения, их не должно быть в дашборде.
                 if (!CommandAccessPolicy.IsCommandText(chatText))
                 {
+                    // Клиент рисует чат как rich text: «<color=red>» в сообщении перекрасил
+                    // бы весь чат катки. Чистим текст и, если он изменился, подменяем
+                    // payload — автор, gaa и field остаются из клиентского кадра.
+                    var clean = NickPolicy.CleanChat(chatText);
+                    if (clean.Length == 0)
+                    {
+                        Console.WriteLine(
+                            "[match-host] ChatManager text — одна разметка, не релеим");
+                        return;
+                    }
+
+                    if (!string.Equals(clean, chatText, StringComparison.Ordinal))
+                    {
+                        chatPayloadOverride = MatchCodec.BuildChatManagerTextPayload(clean);
+                        Console.WriteLine(
+                            $"[match-host] ChatManager text очищен: '{chatText}' → '{clean}'");
+                        chatText = clean;
+                    }
+
                     try { OnMatchChatText?.Invoke(chatActorName, chatText); }
                     catch (Exception ex)
                     {
@@ -450,6 +471,7 @@ public sealed partial class GameMatchHost
             // ChatManager (id=7): always fan-out to every other INIT-ready peer (never drop a
             // team side). ViaServer includes sender; Others excludes only the speaker.
             var stime = NextServerTime();
+            var outPayload = chatPayloadOverride ?? parsed.Payload;
             var echo = MatchCodec.BuildWorldObjectRpc(
                 stime,
                 parsed.ObjectId,
@@ -457,7 +479,7 @@ public sealed partial class GameMatchHost
                 parsed.GaaTarget,
                 parsed.Field,
                 parsed.TimeValue,
-                parsed.Payload.Length > 0 ? parsed.Payload : null);
+                outPayload.Length > 0 ? outPayload : null);
             NetPeer? exceptSender = WorldObjectRpcRelayPolicy.ExcludesSender(parsed.GaaTarget)
                 ? peer
                 : null;
