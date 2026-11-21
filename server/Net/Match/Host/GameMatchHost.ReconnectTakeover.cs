@@ -16,11 +16,13 @@ public sealed partial class GameMatchHost
     private bool TryFindRejoinActor(
         MatchRoom room,
         string identityKey,
+        string? nick,
         out byte actorNr,
         out MatchPeerState? previousState)
     {
         lock (_roomGate)
-            actorNr = MatchReconnect.FindActorNr(room, _peers.Values, identityKey, out previousState);
+            actorNr = MatchReconnect.FindActorNr(
+                room, _peers.Values, identityKey, nick, out previousState);
         // previousState == null — призрак: владелец записан в комнате, сокета уже нет.
         return actorNr != 0;
     }

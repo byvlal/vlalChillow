@@ -18,6 +18,7 @@ public sealed partial class GameMatchHost
             return;
 
         string? leftName = null;
+        string? storedOwnerKey = null;
         // Remember fighting team for mid-match reconnect restore (new actorNr after rejoin).
         MatchTeam remembered = MatchTeam.None;
         List<short> pawnIds;
@@ -31,6 +32,8 @@ public sealed partial class GameMatchHost
             {
                 remembered = (MatchTeam)teamVar.Byte;
             }
+
+            room.ActorIdentities.TryGetValue(actorNr, out storedOwnerKey);
 
             if (userId is { } uid)
                 room.UserIds.Remove(uid);
@@ -68,7 +71,13 @@ public sealed partial class GameMatchHost
 
         // Issue #39: remember the team under the session-independent identity key — the
         // returning phone arrives with a NEW auth token, so the old uid would never match.
-        var memoryKey = string.IsNullOrEmpty(identityKey) ? userId : identityKey;
+        // Ключ включает ник: на одной установке может быть несколько аккаунтов, и команда
+        // одного профиля не должна восстанавливаться другому.
+        var memoryKey = storedOwnerKey;
+        if (memoryKey is not { Length: > 0 })
+            memoryKey = MatchIdentity.RejoinKey(identityKey, leftName);
+        if (memoryKey is not { Length: > 0 })
+            memoryKey = userId;
         if (memoryKey is { } reconnectKey
             && remembered is MatchTeam.Tr or MatchTeam.Ct)
         {

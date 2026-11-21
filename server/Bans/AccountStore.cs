@@ -132,8 +132,13 @@ public sealed class AccountStore
     private readonly string _path;
     private readonly List<Account> _accounts = new();
     private readonly Dictionary<int, Account> _byId = new();
+    // Текущий ник и прежние ники — разные индексы. Иначе алиас одного аккаунта
+    // перекрывает действующий ник другого и тот перестаёт находиться по своему же нику.
     private readonly Dictionary<string, Account> _byNick = new(StringComparer.OrdinalIgnoreCase);
-    private readonly Dictionary<string, Account> _byDevice = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, Account> _byAlias = new(StringComparer.OrdinalIgnoreCase);
+    // Одно устройство может доказать несколько аккаунтов (разные ники на одной установке).
+    // Список, а не один аккаунт: иначе второй аккаунт вытесняет первый из проверки банов.
+    private readonly Dictionary<string, List<Account>> _byDevice = new(StringComparer.OrdinalIgnoreCase);
     private int _nextId = FirstId;
     private bool _readOnly;
 
@@ -176,6 +181,11 @@ public sealed class AccountStore
     }
 
     /// <summary>Аккаунт по нику (текущему или прежнему). Регистр не важен.</summary>
+    /// <remarks>
+    /// Действующий ник всегда важнее прежнего: если два аккаунта делят строку, побеждает
+    /// тот, для кого она сейчас <see cref="Account.Nick"/>, а не тот, у кого она осталась
+    /// алиасом. Так алиас не может «украсть» чужой действующий ник.
+    /// </remarks>
     public Account? FindByNick(string? nick)
     {
         var normalized = ServerConfig.NormalizeNick(nick);
@@ -183,7 +193,16 @@ public sealed class AccountStore
             return null;
 
         lock (_gate)
-            return _byNick.TryGetValue(normalized, out var account) ? account : null;
+            return FindByNickLocked(normalized);
+    }
+
+    /// <summary>Ник под замком: сначала действующий владелец, затем самый свежий алиас.</summary>
+    private Account? FindByNickLocked(string normalized)
+    {
+        if (_byNick.TryGetValue(normalized, out var account))
+            return account;
+
+        return _byAlias.TryGetValue(normalized, out var alias) ? alias : null;
     }
 
     /// <summary>
@@ -225,14 +244,48 @@ public sealed class AccountStore
         }
     }
 
-    public Account? FindByDevice(string? device)
+    /// <summary>
+    /// Аккаунты, которые уже доказаны этим устройством. Один аккаунт — обычный случай;
+    /// на одной установке их может быть несколько (разные ники/профили).
+    /// </summary>
+    public IReadOnlyList<Account> FindAccountsByDevice(string? device)
     {
         var normalized = BanRecord.NormalizeDevice(device);
         if (normalized.Length == 0)
-            return null;
+            return Array.Empty<Account>();
 
         lock (_gate)
-            return _byDevice.TryGetValue(normalized, out var account) ? account : null;
+            return _byDevice.TryGetValue(normalized, out var accounts)
+                ? accounts.OrderByDescending(a => a.LastSeenUtcMs).ThenByDescending(a => a.Id).ToList()
+                : Array.Empty<Account>();
+    }
+
+    /// <summary>Самый свежий аккаунт устройства (для логов и старых вызовов).</summary>
+    public Account? FindByDevice(string? device)
+    {
+        var accounts = FindAccountsByDevice(device);
+        return accounts.Count > 0 ? accounts[0] : null;
+    }
+
+    /// <summary>Есть ли у устройства уже доказанный аккаунт с таким ником.</summary>
+    private static Account? DeviceAccountWithNickLocked(
+        List<Account> accounts, string normalizedNick)
+    {
+        // Действующий ник важнее алиаса — как и в FindByNickLocked.
+        foreach (var account in accounts)
+        {
+            if (string.Equals(account.Nick, normalizedNick, StringComparison.OrdinalIgnoreCase))
+                return account;
+        }
+
+        foreach (var account in accounts)
+        {
+            if (account.Aliases.Any(a => string.Equals(
+                    a, normalizedNick, StringComparison.OrdinalIgnoreCase)))
+                return account;
+        }
+
+        return null;
     }
 
     /// <summary>
@@ -247,7 +300,7 @@ public sealed class AccountStore
 
         lock (_gate)
         {
-            if (_byNick.TryGetValue(normalized, out var existing))
+            if (FindByNickLocked(normalized) is { } existing)
             {
                 TouchLocked(existing, normalized, device: null, nowUtc);
                 return existing;
@@ -260,15 +313,26 @@ public sealed class AccountStore
     }
 
     /// <summary>
-    /// Аккаунт для входа в катку. Сначала ищем по устройству: оно не зависит от ника.
-    /// Новое устройство под уже занятым ником получает <b>новый</b> аккаунт — так
-    /// невинный тёзка не наследует чужой бан. Аккаунт без устройств можно занять:
-    /// это тот же человек, который только что вошёл в лобби и ещё не играл.
+    /// Аккаунт для входа в катку. Личность доказывается ником и устройством:
+    /// <list type="number">
+    /// <item>у устройства уже есть аккаунт с этим ником (сейчас или в алиасах) — он;</item>
+    /// <item>ник свободен (аккаунт без устройств, например только что из лобби) — занять его;</item>
+    /// <item>ник уже занят чужим устройством — новый аккаунт, чтобы тёзка не наследовал бан;</item>
+    /// <item>ник новый — новый аккаунт.</item>
+    /// </list>
     /// </summary>
     /// <remarks>
+    /// <para>
+    /// Одно устройство может доказать несколько аккаунтов: смена ника на той же установке
+    /// больше не переименовывает старый аккаунт, а заводит рядом новый. Старый остаётся
+    /// со своим номером и находится по старому нику — номер не переиспользуется и не
+    /// «исчезает» при создании второго аккаунта.
+    /// </para>
+    /// <para>
     /// Пустой <paramref name="device"/> (legacy-handshake) не создаёт новый аккаунт на
     /// каждый реконнект: без устройства личность доказывается только ником, поэтому
     /// переиспользуем существующую запись.
+    /// </para>
     /// </remarks>
     public Account? EnsureForJoin(string? nick, string? device, DateTime nowUtc)
     {
@@ -280,25 +344,30 @@ public sealed class AccountStore
 
         lock (_gate)
         {
+            // 1. Это устройство уже владеет аккаунтом с таким ником (текущим или прежним).
+            //    Сильнее любого другого совпадения: возврат на старый ник находит старый
+            //    аккаунт, даже если кто-то другой успел взять ту же строку.
             if (normalizedDevice.Length > 0
-                && _byDevice.TryGetValue(normalizedDevice, out var byDevice))
+                && _byDevice.TryGetValue(normalizedDevice, out var deviceAccounts)
+                && DeviceAccountWithNickLocked(deviceAccounts, normalized) is { } byDeviceNick)
             {
-                TouchLocked(byDevice, normalized, normalizedDevice, nowUtc);
-                return byDevice;
+                TouchLocked(byDeviceNick, normalized, normalizedDevice, nowUtc);
+                return byDeviceNick;
             }
 
-            if (_byNick.TryGetValue(normalized, out var byNick))
+            // 2. Ник уже известен. Аккаунт без устройств можно занять (это тот же человек,
+            //    который только что вошёл в лобби); с этим же устройством — тот же человек;
+            //    с чужим устройством — новый номер, иначе тёзка наследует чужой бан.
+            if (FindByNickLocked(normalized) is { } byNick
+                && (normalizedDevice.Length == 0
+                    || byNick.Devices.Count == 0
+                    || byNick.HasDevice(normalizedDevice)))
             {
-                // У ника ещё нет ни одного устройства — это тот же человек, который
-                // только что вошёл в лобби. Пустое устройство тоже попадает сюда:
-                // legacy-клиент не умеет доказывать личность иначе, как ником.
-                if (normalizedDevice.Length == 0 || byNick.Devices.Count == 0)
-                {
-                    TouchLocked(byNick, normalized, normalizedDevice, nowUtc);
-                    return byNick;
-                }
+                TouchLocked(byNick, normalized, normalizedDevice, nowUtc);
+                return byNick;
             }
 
+            // 3. Новый ник или занятый чужим устройством — отдельный постоянный номер.
             var account = NewLocked(normalized, normalizedDevice, nowUtc);
             NotifyChanged();
             return account;
@@ -306,9 +375,22 @@ public sealed class AccountStore
     }
 
     /// <summary>
-    /// Публичный id для проверки бана на входе. Отдаём его только когда устройство
-    /// действительно принадлежит аккаунту: иначе новый человек под чужим ником получил
-    /// бы чужой id и чужой бан. <c>0</c> — id в проверке не участвует.
+    /// Все публичные id, которые доказаны устройством. Проверка бана смотрит каждый:
+    /// на одной установке может быть несколько аккаунтов, и бан любого должен закрывать
+    /// вход, даже если устройство сейчас представляется другим ником.
+    /// </summary>
+    public IReadOnlyList<int> ProbeIds(string? device)
+    {
+        return FindAccountsByDevice(device)
+            .Select(a => a.Id)
+            .Distinct()
+            .OrderBy(id => id)
+            .ToList();
+    }
+
+    /// <summary>
+    /// Самый свежий публичный id устройства (для старых вызовов). Для проверки банов
+    /// используйте <see cref="ProbeIds"/>: аккаунтов у устройства может быть несколько.
     /// </summary>
     public int ProbeId(string? device)
     {
@@ -335,7 +417,7 @@ public sealed class AccountStore
             foreach (var player in ordered)
             {
                 var nick = ServerConfig.NormalizeNick(player.Nick);
-                if (nick.Length == 0 || _byNick.ContainsKey(nick))
+                if (nick.Length == 0 || FindByNickLocked(nick) is not null)
                     continue;
 
                 var seen = player.LastSeenUtcMs > 0
@@ -348,7 +430,7 @@ public sealed class AccountStore
                     if (device.Length == 0 || account.HasDevice(device))
                         continue;
                     account.Devices.Add(device);
-                    _byDevice[device] = account;
+                    BindDeviceLocked(device, account);
                 }
                 created++;
             }
@@ -453,11 +535,22 @@ public sealed class AccountStore
             if (!string.Equals(account.Nick, normalizedNick, StringComparison.Ordinal))
             {
                 var oldNick = account.Nick;
-                if (oldNick.Length > 0
-                    && !account.Aliases.Any(a => string.Equals(
-                        a, oldNick, StringComparison.OrdinalIgnoreCase)))
+                if (oldNick.Length > 0)
                 {
-                    account.Aliases.Add(oldNick);
+                    // Старый действующий ник становится прежним: он должен продолжать
+                    // находиться, но не перекрывать чужой действующий ник.
+                    if (!account.Aliases.Any(a => string.Equals(
+                            a, oldNick, StringComparison.OrdinalIgnoreCase)))
+                    {
+                        account.Aliases.Add(oldNick);
+                    }
+
+                    if (_byNick.TryGetValue(oldNick, out var owner)
+                        && ReferenceEquals(owner, account))
+                    {
+                        _byNick.Remove(oldNick);
+                    }
+                    _byAlias[oldNick] = account;
                 }
 
                 account.Nick = normalizedNick;
@@ -466,16 +559,20 @@ public sealed class AccountStore
                 changed = true;
             }
 
-            if (!string.Equals(_byNick.GetValueOrDefault(normalizedNick)?.Id, account.Id))
-                changed = true;
-            IndexNickLocked(account);
+            _byNick[normalizedNick] = account;
+            _byAlias.Remove(normalizedNick);
+            foreach (var alias in account.Aliases)
+            {
+                if (alias.Length > 0)
+                    _byAlias[alias] = account;
+            }
         }
 
         var normalizedDevice = BanRecord.NormalizeDevice(device);
         if (normalizedDevice.Length > 0 && !account.HasDevice(normalizedDevice))
         {
             account.Devices.Add(normalizedDevice);
-            _byDevice[normalizedDevice] = account;
+            BindDeviceLocked(normalizedDevice, account);
             changed = true;
         }
 
@@ -500,7 +597,7 @@ public sealed class AccountStore
         IndexNickLocked(account);
 
         foreach (var device in account.Devices)
-            _byDevice[device] = account;
+            BindDeviceLocked(device, account);
     }
 
     private void IndexNickLocked(Account account)
@@ -511,8 +608,24 @@ public sealed class AccountStore
         foreach (var alias in account.Aliases)
         {
             if (alias.Length > 0)
-                _byNick[alias] = account;
+                _byAlias[alias] = account;
         }
+    }
+
+    /// <summary>
+    /// Привязать устройство к аккаунту, не отбирая его у других аккаунтов той же
+    /// установки: один телефон может доказать несколько ников.
+    /// </summary>
+    private void BindDeviceLocked(string device, Account account)
+    {
+        if (!_byDevice.TryGetValue(device, out var accounts))
+        {
+            accounts = new List<Account>();
+            _byDevice[device] = accounts;
+        }
+
+        if (!accounts.Any(a => a.Id == account.Id))
+            accounts.Add(account);
     }
 
     private void Load()
@@ -539,7 +652,8 @@ public sealed class AccountStore
             }
 
             // Порядок важен: _byNick должен указывать на самый свежий аккаунт с этим
-            // ником. Сортируем по LastSeen, чтобы последний вход победил.
+            // ником. Сортируем по LastSeen, чтобы последний вход победил. Алиасы живут
+            // отдельно и не могут перекрыть действующий ник другого аккаунта.
             foreach (var account in dto.Accounts
                          .Where(a => a is not null)
                          .OrderBy(a => a.LastSeenUtcMs)
@@ -567,6 +681,7 @@ public sealed class AccountStore
                 _accounts.Clear();
                 _byId.Clear();
                 _byNick.Clear();
+                _byAlias.Clear();
                 _byDevice.Clear();
                 _nextId = FirstId;
             }

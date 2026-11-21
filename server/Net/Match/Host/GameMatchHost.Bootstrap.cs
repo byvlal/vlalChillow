@@ -338,11 +338,16 @@ public sealed partial class GameMatchHost
             return;
 
         // Issue #39: memory about «same player» must survive a new session token.
+        // Ключ — устройство + ник: одна установка может держать несколько аккаунтов.
         var identityKey = st.IdentityKey ?? st.UserId;
+        var memoryKey = MatchIdentity.RejoinKey(st.IdentityKey, st.RosterName);
+        if (memoryKey.Length == 0)
+            memoryKey = st.UserId ?? "";
         var actorNr = joinerActorNr;
         Console.WriteLine(
             $"[match-host] reconnect-restore: scheduled team={team} actor={actorNr} " +
-            $"identity='{identityKey}' settle={ReconnectRestoreSettle.TotalMilliseconds:0}ms " +
+            $"identity='{identityKey}' memory='{memoryKey}' " +
+            $"settle={ReconnectRestoreSettle.TotalMilliseconds:0}ms " +
             $"timeout={ReconnectRestoreTimeout.TotalSeconds:0}s (never auto-Spectator)");
 
         _ = Task.Run(async () =>
@@ -391,7 +396,7 @@ public sealed partial class GameMatchHost
                 {
                     Console.WriteLine(
                         $"[match-host] reconnect-restore: peer left before timeout actor={actorNr}");
-                    ForgetReconnectMemory(identityKey);
+                    ForgetReconnectMemory(memoryKey);
                     return;
                 }
 
@@ -418,7 +423,7 @@ public sealed partial class GameMatchHost
                     // gate already delivered it once when the scene was proven; live CWO/Rpc
                     // relays cover everything that changed after that. A second full snapshot
                     // duplicated pawns/entities into the retained client scene (ghosts).
-                    ForgetReconnectMemory(identityKey);
+                    ForgetReconnectMemory(memoryKey);
                     return;
                 }
 
@@ -426,7 +431,7 @@ public sealed partial class GameMatchHost
                 {
                     Console.WriteLine(
                         $"[match-host] reconnect-restore: actor={actorNr} сам ушёл в Spectator — ok");
-                    ForgetReconnectMemory(identityKey);
+                    ForgetReconnectMemory(memoryKey);
                     return;
                 }
 

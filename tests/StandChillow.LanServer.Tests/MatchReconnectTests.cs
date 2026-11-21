@@ -50,6 +50,7 @@ public sealed class MatchReconnectTests
             ActorNr = 2,
             UserId = "LBHASH_firstsession",
             IdentityKey = "LBHASH",
+            RosterName = "влал",
         };
         var other = new MatchPeerState
         {
@@ -57,17 +58,76 @@ public sealed class MatchReconnectTests
             ActorNr = 3,
             UserId = "LBOTHER_x",
             IdentityKey = "LBOTHER",
+            RosterName = "другой",
         };
 
         var actor = MatchReconnect.FindActorNr(
-            room, new[] { other, oldState }, "LBHASH", out var found);
+            room, new[] { other, oldState }, "LBHASH", "влал", out var found);
 
         Assert.Equal((byte)2, actor);
         Assert.Same(oldState, found);
 
         // A different player must never steal somebody else's actor.
-        Assert.Equal(0, MatchReconnect.FindActorNr(room, new[] { other, oldState }, "LBNOBODY", out _));
-        Assert.Equal(0, MatchReconnect.FindActorNr(room, new[] { other, oldState }, "", out _));
+        Assert.Equal(0, MatchReconnect.FindActorNr(room, new[] { other, oldState }, "LBNOBODY", "влал", out _));
+        Assert.Equal(0, MatchReconnect.FindActorNr(room, new[] { other, oldState }, "", "влал", out _));
+    }
+
+    [Fact]
+    public void SameDeviceUnderAnotherNickIsNotAReconnect()
+    {
+        var room = NewRoom();
+        room.Actors.Add((2, "Senator", "LBHASH_firstsession"));
+        room.ActorIdentities[2] = MatchIdentity.RejoinKey("LBSAME", "Senator");
+        var live = new MatchPeerState
+        {
+            Room = room,
+            ActorNr = 2,
+            IdentityKey = "LBSAME",
+            RosterName = "Senator",
+        };
+
+        // Одна установка, другой ник — это другой аккаунт и другой актор.
+        Assert.Equal(
+            0, MatchReconnect.FindActorNr(room, new[] { live }, "LBSAME", "Senator2", out _));
+        Assert.Equal(
+            2, MatchReconnect.FindActorNr(room, new[] { live }, "LBSAME", "Senator", out var found));
+        Assert.Same(live, found);
+    }
+
+    [Fact]
+    public void LegacyReconnectWithoutNickStillFindsItsActorByDevice()
+    {
+        // Старый клиент не присылает ник: в росписи он «actor2». Такой реконнект
+        // узнаётся по одному устройству, как и до составного ключа.
+        var room = NewRoom();
+        room.Actors.Add((2, "actor2", "LBNONICK_firstsession"));
+        room.ActorIdentities[2] = MatchIdentity.RejoinKey("LBNONICK", "actor2");
+        var live = new MatchPeerState
+        {
+            Room = room,
+            ActorNr = 2,
+            IdentityKey = "LBNONICK",
+            RosterName = "actor2",
+        };
+
+        Assert.Equal(
+            2, MatchReconnect.FindActorNr(room, new[] { live }, "LBNONICK", "", out var found));
+        Assert.Same(live, found);
+
+        // А с ником чужого профиля актор не отдаётся даже без сверки в комнате.
+        Assert.Equal(
+            0, MatchReconnect.FindActorNr(room, new[] { live }, "LBNONICK", "Senator2", out _));
+    }
+
+    [Fact]
+    public void RejoinKeyMatchesStrictlyUnlessIncomingNickIsMissing()
+    {
+        var key = MatchIdentity.RejoinKey("LBSAME", "Senator");
+
+        Assert.True(MatchIdentity.SameRejoinPlayer(key, MatchIdentity.RejoinKey("LBSAME", "Senator")));
+        Assert.True(MatchIdentity.SameRejoinPlayer(key, "LBSAME"));
+        Assert.False(MatchIdentity.SameRejoinPlayer(key, MatchIdentity.RejoinKey("LBSAME", "Senator2")));
+        Assert.False(MatchIdentity.SameRejoinPlayer("LBSAME", MatchIdentity.RejoinKey("LBSAME", "Senator")));
     }
 
     [Fact]
@@ -88,6 +148,7 @@ public sealed class MatchReconnectTests
             ActorNr = 2,
             UserId = "LBHASH_firstsession",
             IdentityKey = "LBHASH",
+            RosterName = "влал",
         };
         var newState = new MatchPeerState
         {
@@ -184,22 +245,22 @@ public sealed class MatchReconnectTests
     {
         var room = NewRoom();
         room.Actors.Add((2, "влал", "LBHASH_oldsession"));
-        room.ActorIdentities[2] = "LBHASH";
+        room.ActorIdentities[2] = MatchIdentity.RejoinKey("LBHASH", "влал");
 
-        var actor = MatchReconnect.FindActorNr(room, Array.Empty<MatchPeerState>(), "LBHASH", out var state);
+        var actor = MatchReconnect.FindActorNr(room, Array.Empty<MatchPeerState>(), "LBHASH", "влал", out var state);
 
         Assert.Equal((byte)2, actor);
         Assert.Null(state); // отцеплять нечего — владельца-сокета уже нет
         Assert.True(MatchReconnect.IsGhostActor(room, 2, Array.Empty<MatchPeerState>()));
         Assert.Equal(
-            0, MatchReconnect.FindActorNr(room, Array.Empty<MatchPeerState>(), "LBOTHER", out _));
+            0, MatchReconnect.FindActorNr(room, Array.Empty<MatchPeerState>(), "LBOTHER", "влал", out _));
     }
 
     [Fact]
     public void Ghost_actor_is_not_a_ghost_while_a_socket_owns_it()
     {
         var room = NewRoom();
-        room.ActorIdentities[2] = "LBHASH";
+        room.ActorIdentities[2] = MatchIdentity.RejoinKey("LBHASH", "влал");
         var live = new MatchPeerState { Room = room, ActorNr = 2, IdentityKey = "LBHASH" };
         var otherRoom = new MatchPeerState { Room = NewRoom(), ActorNr = 2, IdentityKey = "LBHASH" };
 
@@ -214,7 +275,7 @@ public sealed class MatchReconnectTests
     {
         var room = NewRoom();
         room.Actors.Add((2, "влал", "LBHASH_oldsession"));
-        room.ActorIdentities[2] = "LBHASH";
+        room.ActorIdentities[2] = MatchIdentity.RejoinKey("LBHASH", "влал");
         room.OwnerlessSinceTick[2] = 1234;
         room.SpawnedPawns.Add(2);
         room.ActorProps[(2, MatchRoomPropKeys.Team)] = LobbyVariant.FromByte((byte)MatchTeam.Tr);
@@ -235,7 +296,7 @@ public sealed class MatchReconnectTests
         Assert.Equal<IEnumerable<short>>(new short[] { 777 }, adoption.RemovedPawnIds);
         Assert.Empty(room.LivingPawns);
         Assert.Single(room.Actors, a => a.Nr == 2);
-        Assert.Equal("LBHASH", room.ActorIdentities[2]);
+        Assert.Equal(MatchIdentity.RejoinKey("LBHASH", "влал"), room.ActorIdentities[2]);
         Assert.DoesNotContain((byte)2, room.OwnerlessSinceTick.Keys);
         // Frozen roster: ghost adoption still leaves the running round; old death is preserved.
         Assert.Contains((byte)2, room.Flow.DeadActors);

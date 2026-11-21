@@ -76,12 +76,28 @@ public sealed partial class GameMatchHost
             return BanDecision.Allowed;
 
         // Публичный id участвует, только если устройство уже привязано к аккаунту:
-        // чужой новый вход под тем же ником не должен получить чужой бан.
-        var publicId = Accounts?.ProbeId(device) ?? 0;
-        return Bans.Inspect(
-            new BanProbe(nick, address?.ToString(), device, publicId),
-            DateTime.UtcNow,
-            IsBanExempt);
+        // чужой новый вход под тем же ником не должен получить чужой бан. У одной
+        // установки может быть несколько аккаунтов (разные ники), поэтому проверяем
+        // каждый её номер: бан любого из них закрывает вход.
+        var publicIds = Accounts?.ProbeIds(device) ?? Array.Empty<int>();
+        if (publicIds.Count == 0)
+            publicIds = new[] { 0 };
+
+        BanDecision? learned = null;
+        foreach (var publicId in publicIds)
+        {
+            var decision = Bans.Inspect(
+                new BanProbe(nick, address?.ToString(), device, publicId),
+                DateTime.UtcNow,
+                IsBanExempt);
+            if (decision.Banned || decision.AdminExempt)
+                return decision;
+            // Оставляем первый ответ, если никто не забанен: в нём LearnedAlias
+            // (если проверка что-то выучила) и MatchedBy для лога.
+            learned ??= decision;
+        }
+
+        return learned ?? BanDecision.Allowed;
     }
 
     /// <summary>

@@ -86,17 +86,89 @@ public sealed class AccountStoreTests
     }
 
     [Fact]
-    public void SameDeviceUnderNewNickKeepsTheAccount()
+    public void SameDeviceUnderNewNickGetsSecondAccountAndKeepsTheFirst()
     {
         var store = NewStore();
         var first = store.EnsureForJoin("A", Device, Now);
-        var renamed = store.EnsureForJoin("B", Device, Now.AddMinutes(1));
+        var second = store.EnsureForJoin("B", Device, Now.AddMinutes(1));
 
-        Assert.Same(first, renamed);
-        Assert.Equal(1, store.Count);
-        Assert.Equal("B", renamed!.Nick);
-        Assert.Contains("A", renamed.Aliases);
-        Assert.NotNull(store.FindByNick("A"));
+        // Устройство доказало оба ника: это два постоянных аккаунта, а не переименование.
+        Assert.NotSame(first, second);
+        Assert.Equal(AccountStore.FirstId, first!.Id);
+        Assert.Equal(AccountStore.FirstId + 1, second!.Id);
+        Assert.Equal(2, store.Count);
+
+        // Оба находятся по своему нику и по номеру, устройство помнит оба.
+        Assert.Equal(first.Id, store.FindByNick("A")!.Id);
+        Assert.Equal(second.Id, store.FindByNick("B")!.Id);
+        Assert.Equal(first.Id, store.FindById(first.Id)!.Id);
+        Assert.Equal(second.Id, store.FindById(second.Id)!.Id);
+        Assert.Equal(new[] { first.Id, second.Id }, store.ProbeIds(Device));
+    }
+
+    [Fact]
+    public void ReturningToOldNickRestoresOldAccountAfterSecondWasCreated()
+    {
+        var store = NewStore();
+        var senator = store.EnsureForJoin("Senator", Device, Now);
+
+        // Новый ник приходит из лобби без устройства — сервер заводит отдельный аккаунт.
+        var senator2 = store.GetOrCreate("Senator2", Now.AddMinutes(1));
+        Assert.NotNull(senator2);
+        var joined = store.EnsureForJoin("Senator2", Device, Now.AddMinutes(2));
+        Assert.Same(senator2, joined);
+
+        // Старый аккаунт не исчез: номер на месте, ник на месте, возврат по нику — он.
+        Assert.Equal(2, store.Count);
+        Assert.Same(senator, store.FindById(senator!.Id));
+        Assert.Equal(senator.Id, store.FindByNick("Senator")!.Id);
+        Assert.Same(senator, store.EnsureForJoin("Senator", Device, Now.AddMinutes(3)));
+        Assert.Equal(senator.Id, store.FindByNick("Senator")!.Id);
+        Assert.Equal(senator2!.Id, store.FindByNick("Senator2")!.Id);
+    }
+
+    [Fact]
+    public void OldNickAndIdSurviveSaveAndReload()
+    {
+        var path = TempPath();
+        var first = new AccountStore(path);
+        var senator = first.EnsureForJoin("Senator", Device, Now);
+        var senator2 = first.EnsureForJoin("Senator2", Device, Now.AddMinutes(1));
+        first.Save();
+
+        var reloaded = new AccountStore(path);
+        var back = reloaded.EnsureForJoin("Senator", Device, Now.AddMinutes(2));
+
+        Assert.Equal(2, reloaded.Count);
+        Assert.Equal(senator!.Id, back!.Id);
+        Assert.Equal(senator.Id, reloaded.FindByNick("Senator")!.Id);
+        Assert.Equal(senator2!.Id, reloaded.FindByNick("Senator2")!.Id);
+        Assert.Equal(new[] { senator.Id, senator2.Id }, reloaded.ProbeIds(Device));
+    }
+
+    [Fact]
+    public void AliasDoesNotShadowAnotherAccountsCurrentNick()
+    {
+        // Старое состояние файла: A переименован в «A2» и носит «A» алиасом,
+        // а B сейчас действительно играет под ником «A».
+        var path = TempPath();
+        File.WriteAllText(path, """
+        {
+          "version": 1,
+          "nextId": 1000002,
+          "accounts": [
+            { "Id": 1000000, "Nick": "A2", "Aliases": ["A"], "Devices": [], "LastSeenUtcMs": 2000 },
+            { "Id": 1000001, "Nick": "A", "Aliases": [], "Devices": ["LBOTHER"], "LastSeenUtcMs": 1000 }
+          ]
+        }
+        """);
+
+        var store = new AccountStore(path);
+        var byNick = store.FindByNick("A");
+
+        Assert.NotNull(byNick);
+        Assert.Equal(AccountStore.FirstId + 1, byNick!.Id);
+        Assert.Equal(AccountStore.FirstId, store.FindByNick("A2")!.Id);
     }
 
     [Fact]

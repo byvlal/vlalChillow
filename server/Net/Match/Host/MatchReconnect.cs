@@ -32,15 +32,17 @@ internal static class MatchReconnect
         MatchRoom room,
         IEnumerable<MatchPeerState> peers,
         string? identityKey,
+        string? nick,
         out MatchPeerState? state)
     {
         state = null;
-        if (string.IsNullOrEmpty(identityKey))
+        var rejoinKey = MatchIdentity.RejoinKey(identityKey, nick);
+        if (rejoinKey.Length == 0)
             return 0;
 
         foreach (var (actorNr, key) in room.ActorIdentities)
         {
-            if (!MatchIdentity.SamePlayer(key, identityKey))
+            if (!MatchIdentity.SameRejoinPlayer(key, rejoinKey))
                 continue;
             foreach (var st in peers)
             {
@@ -58,7 +60,8 @@ internal static class MatchReconnect
         {
             if (!ReferenceEquals(st.Room, room) || st.ActorNr == 0)
                 continue;
-            if (!MatchIdentity.SamePlayer(st.IdentityKey, identityKey))
+            var key = MatchIdentity.RejoinKey(st.IdentityKey, st.RosterName);
+            if (!MatchIdentity.SameRejoinPlayer(key, rejoinKey))
                 continue;
             state = st;
             return st.ActorNr;
@@ -118,9 +121,10 @@ internal static class MatchReconnect
             room.UserIds.Remove(previousUid);
         if (newState.UserId is { Length: > 0 } newUid)
             room.UserIds.Add(newUid);
-        // Владелец actor — этот игрок; призрак больше не призрак.
-        if (newState.IdentityKey is { Length: > 0 } identityKey)
-            room.ActorIdentities[actorNr] = identityKey;
+        // Владелец actor — этот игрок; призрак больше не призрак. Ключ включает ник:
+        // на одной установке может быть несколько аккаунтов, и чужой актор им не принадлежит.
+        if (MatchIdentity.RejoinKey(newState.IdentityKey, rosterName) is { Length: > 0 } rejoinKey)
+            room.ActorIdentities[actorNr] = rejoinKey;
         room.OwnerlessSinceTick.Remove(actorNr);
 
         // Старое тело больше не принадлежит этому игроку: убираем его из трекинга и просим
