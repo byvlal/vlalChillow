@@ -143,6 +143,9 @@ internal static class MatchReconnect
         // the old body, or damage attribution to/from it, can otherwise author a death or
         // award a kill after the player already returned.
         room.Flow.PendingCombatDestroy.Remove(actorNr);
+        // A new session gets a new body: the old session's carried round-death must not follow
+        // the returning player into the next round. His own CWO is the fresh proof of life.
+        room.Flow.CarriedDeadActors.Remove(actorNr);
         room.LastCombatDamage.Remove(actorNr);
         foreach (var attacker in room.LastCombatDamage
                      .Where(kv => kv.Value.Victim == actorNr)
@@ -161,7 +164,7 @@ internal static class MatchReconnect
         var clearedRoundDeath = false;
         if (!cumulativeDeathCounters && !roundFrozen)
         {
-            room.Flow.DeadActors.Remove(actorNr);
+            MatchFlowRules.NoteSpawn(room.Flow, actorNr);
             clearedRoundDeath = true;
         }
         MatchFlowRules.RemoveFromRoundRoster(room.Flow, actorNr);

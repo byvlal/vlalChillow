@@ -75,6 +75,11 @@ public sealed partial class GameMatchHost
             }
 
             room.Flow.RoundEndCommittedRound = round;
+            // Round is over: a roster fighter with no body was dead or never spawned. Carry that
+            // per-player fact into the next round; his own CWO (not the phase) clears it. Done
+            // here, while live players still have their pawns (clients only respawn at C2=22).
+            MatchFlowRules.NoteRoundEndBodies(
+                room.Flow, room.LivingPawns.Values.Select(p => p.OwnerActorNr));
             scoreTr = room.Flow.ScoreTr;
             scoreCt = room.Flow.ScoreCt;
             coLossesTr = room.Flow.CoLossesTr;
