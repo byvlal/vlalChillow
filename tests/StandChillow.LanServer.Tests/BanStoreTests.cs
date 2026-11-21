@@ -4,8 +4,9 @@ using Xunit;
 namespace StandChillow.LanServer.Tests;
 
 /// <summary>
-/// <c>banlist.json</c>: сброс старых банов при переходе на v3, бэкап, очистка
-/// изученных адресов/устройств, roundtrip v3 и защита от файла будущей версии.
+/// <c>banlist.json</c>: сброс старых банов при переходе на v3, снятие старых ID
+/// аккаунтов при v3 → v4 с сохранением IP/устройств/ников, бэкап, roundtrip и защита
+/// от файла будущей версии.
 /// </summary>
 public sealed class BanStoreTests : IDisposable
 {
@@ -216,7 +217,7 @@ public sealed class BanStoreTests : IDisposable
     }
 
     [Fact]
-    public void V3RoundTripsBansAndPlayers()
+    public void CurrentVersionRoundTripsBansAndPlayers()
     {
         var expires = BanRecord.ToUnixMs(DateTime.UtcNow.AddHours(1));
         var store = new BanStore(_path);
@@ -274,7 +275,7 @@ public sealed class BanStoreTests : IDisposable
     }
 
     [Fact]
-    public void CurrentV3FileKeepsItsBans()
+    public void V3KeepsEverythingButDropsOldAccountIds()
     {
         var expires = BanRecord.ToUnixMs(DateTime.UtcNow.AddDays(1));
         var v3 = $$"""
@@ -283,8 +284,17 @@ public sealed class BanStoreTests : IDisposable
           "bans": [
             {
               "nick": "Ktulxy",
+              "aliases": [ "Ktulxy2" ],
               "ips": [ "203.0.113.9" ],
-              "expiresUtcMs": {{expires}}
+              "devices": [ "{{Device}}" ],
+              "matchIds": [ 1000005, 1000042 ],
+              "reason": "софт",
+              "bannedBy": "влал",
+              "createdUtcMs": 0,
+              "expiresUtcMs": {{expires}},
+              "durationSeconds": 3600,
+              "utcOffsetMinutes": 0,
+              "createdLocalIso": ""
             }
           ],
           "players": []
@@ -297,24 +307,70 @@ public sealed class BanStoreTests : IDisposable
 
         Assert.Equal(BanStore.CurrentVersion, store.LastLoadedVersion);
         Assert.False(store.IsReadOnly);
-        Assert.Single(bans);
-        Assert.Equal("Ktulxy", bans[0].Nick);
+        Assert.True(File.Exists(_path + ".v3.bak"));
+        Assert.Equal(v3, File.ReadAllText(_path + ".v3.bak"));
         Assert.False(File.Exists(_path + ".v1.bak"));
         Assert.False(File.Exists(_path + ".v2.bak"));
+
+        var ban = Assert.Single(bans);
+        Assert.Equal("Ktulxy", ban.Nick);
+        Assert.Contains("Ktulxy2", ban.Aliases);
+        Assert.Contains("203.0.113.9", ban.Ips);
+        Assert.Contains(Device, ban.Devices);
+        Assert.Empty(ban.MatchIds);
+        Assert.Equal(expires, ban.ExpiresUtcMs);
+
+        // В файле старых номеров тоже больше нет — только IP/устройство/ник.
+        var saved = File.ReadAllText(_path);
+        Assert.Contains($"\"version\": {BanStore.CurrentVersion}", saved);
+        Assert.DoesNotContain("matchIds", saved);
+        Assert.DoesNotContain("1000005", saved);
+        Assert.DoesNotContain("1000042", saved);
+        Assert.Contains("203.0.113.9", saved);
+    }
+
+    [Fact]
+    public void V4BanKeepsItsAccountId()
+    {
+        var expires = BanRecord.ToUnixMs(DateTime.UtcNow.AddDays(1));
+        var v4 = $$"""
+        {
+          "version": 4,
+          "bans": [
+            {
+              "nick": "Ktulxy",
+              "ips": [ "203.0.113.9" ],
+              "matchIds": [ 1000005 ],
+              "expiresUtcMs": {{expires}}
+            }
+          ],
+          "players": []
+        }
+        """;
+        File.WriteAllText(_path, v4);
+
+        var store = new BanStore(_path);
+        var (bans, _) = store.Load();
+
+        // Баны после миграции снова несут номер аккаунта: его не снимаем.
+        Assert.Equal(BanStore.CurrentVersion, store.LastLoadedVersion);
+        var ban = Assert.Single(bans);
+        Assert.Contains(1000005, ban.MatchIds);
+        Assert.False(File.Exists(_path + ".v4.bak"));
     }
 
     [Fact]
     public void NewerVersionIsReadOnlyAndIsNotOverwritten()
     {
-        const string v4 = "{\"version\":4,\"bans\":[],\"players\":[]}";
-        File.WriteAllText(_path, v4);
+        const string v5 = "{\"version\":5,\"bans\":[],\"players\":[]}";
+        File.WriteAllText(_path, v5);
 
         var store = new BanStore(_path);
         store.Load();
 
         Assert.True(store.IsReadOnly);
         Assert.False(store.Save(Array.Empty<BanRecord>(), Array.Empty<SeenPlayer>()));
-        Assert.Equal(v4, File.ReadAllText(_path));
-        Assert.False(File.Exists(_path + ".v3.bak"));
+        Assert.Equal(v5, File.ReadAllText(_path));
+        Assert.False(File.Exists(_path + ".v4.bak"));
     }
 }

@@ -347,28 +347,68 @@ public sealed class WebPanelHost : IDisposable
     /// на постоянные номера аккаунтов.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// Миграция разовая: записи, которые уже лежат на номерах аккаунтов, не трогаются.
     /// Ник в записи помогает опознать человека, но если его нет — номер находится
     /// сканом старых хешей в <c>accounts.json</c>. Неизвестные аватары не удаляются,
     /// а уезжают в <c>avatars/legacy/</c>.
+    /// </para>
+    /// <para>
+    /// Если в <c>accounts.json</c> лежит карта перенумерации, номера переводятся по ней,
+    /// а не поиском по нику: старый номер мог уже достаться другому аккаунту. Каждый
+    /// файл отмечается выполненным только после записи, поэтому обрыв на середине
+    /// продолжается с того же места. Когда отмечены все шаги, карта удаляется.
+    /// </para>
     /// </remarks>
     private void MigrateLegacyIds(GameNetHost host)
     {
         try
         {
-            var stats = _stats.RemapAccountIds(host.MapLegacyAccountId);
-            if (stats > 0)
-                Console.WriteLine($"[account] статистика переведена на аккаунты: {stats} записей");
+            var accounts = host.Accounts;
+            var renumber = accounts is { HasPendingRenumber: true };
+            Func<int, string, int> map = renumber
+                ? host.MapRenumberedAccountId
+                : host.MapLegacyAccountId;
 
-            var history = _history.RemapAccountIds(host.MapLegacyAccountId);
-            if (history > 0)
-                Console.WriteLine($"[account] история матчей переведена на аккаунты: {history} матчей");
+            if (!renumber || !accounts!.IsRenumberStepDone("stats"))
+            {
+                var stats = _stats.RemapAccountIds(map);
+                if (stats > 0)
+                    Console.WriteLine(
+                        $"[account] {(renumber ? "перенумерация: " : "")}статистика — {stats} записей");
+                if (renumber)
+                    accounts!.MarkRenumberStepDone("stats");
+            }
 
-            var reports = _reports.RemapAccountIds(host.MapLegacyAccountId);
-            if (reports > 0)
-                Console.WriteLine($"[account] жалобы переведены на аккаунты: {reports} записей");
+            if (!renumber || !accounts!.IsRenumberStepDone("history"))
+            {
+                var history = _history.RemapAccountIds(map);
+                if (history > 0)
+                    Console.WriteLine(
+                        $"[account] {(renumber ? "перенумерация: " : "")}история матчей — {history} матчей");
+                if (renumber)
+                    accounts!.MarkRenumberStepDone("history");
+            }
 
-            _avatars.RemapIds(host.MapLegacyAccountId);
+            if (!renumber || !accounts!.IsRenumberStepDone("reports"))
+            {
+                var reports = _reports.RemapAccountIds(map);
+                if (reports > 0)
+                    Console.WriteLine(
+                        $"[account] {(renumber ? "перенумерация: " : "")}жалобы — {reports} записей");
+                if (renumber)
+                    accounts!.MarkRenumberStepDone("reports");
+            }
+
+            if (!renumber || !accounts!.IsRenumberStepDone("avatars"))
+            {
+                _avatars.RemapIds(host.MapRenumberedAccountId);
+                if (renumber)
+                    accounts!.MarkRenumberStepDone("avatars");
+            }
+
+            if (renumber && accounts!.AllRenumberStepsDone)
+                accounts.FinishRenumber();
         }
         catch (Exception ex)
         {

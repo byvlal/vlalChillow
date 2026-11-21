@@ -178,69 +178,99 @@ public sealed class AvatarCache
     /// переносятся в <c>legacy/</c>, а не удаляются: там их ещё можно опознать руками.
     /// Возвращает число перенесённых файлов.
     /// </summary>
+    /// <remarks>
+    /// Перенумерация может менять номера местами (1 000 000 ↔ 1 000 001), поэтому
+    /// переименование идёт в две фазы: сначала все источники уводятся во временные
+    /// имена, и только потом раскладываются по целям. В одну фазу первый файл занял бы
+    /// имя второго и второй уехал бы в архив.
+    /// </remarks>
     public int RemapIds(Func<int, int> map)
     {
-        var moved = 0;
-        List<FileInfo> files;
         lock (_gate)
-            files = new DirectoryInfo(_dir).EnumerateFiles().ToList();
-
-        foreach (var file in files)
         {
-            if (!int.TryParse(Path.GetFileNameWithoutExtension(file.Name), out var oldId)
-                || oldId <= 0)
-                continue;
+            var files = new DirectoryInfo(_dir).EnumerateFiles().ToList();
+            var plan = new List<(string Path, string Name, string Ext, int Mapped)>();
 
-            // Старый хеш ника может быть больше FirstId и выглядеть как номер аккаунта,
-            // поэтому map зовём всегда. Настоящий номер она возвращает без изменений,
-            // и файл пропускается — повторная миграция ничего не двигает.
-            var mapped = map(oldId);
-            if (mapped == oldId)
-                continue;
-
-            var legacyDir = Path.Combine(_dir, "legacy");
-            try
+            foreach (var file in files)
             {
-                if (mapped is < StandChillow.LanServer.Bans.AccountStore.FirstId
-                    or > StandChillow.LanServer.Bans.AccountStore.MaxId)
-                {
-                    Directory.CreateDirectory(legacyDir);
-                    var fallback = Path.Combine(legacyDir, file.Name);
-                    if (!File.Exists(fallback))
-                        File.Move(file.FullName, fallback);
-                    else
-                        File.Delete(file.FullName);
-                    moved++;
+                if (!int.TryParse(Path.GetFileNameWithoutExtension(file.Name), out var oldId)
+                    || oldId <= 0)
                     continue;
-                }
 
-                var target = Path.Combine(_dir, mapped + file.Extension);
-                if (File.Exists(target))
-                {
-                    // Новый id уже занят более свежим аватаром — старый в архив.
-                    Directory.CreateDirectory(legacyDir);
-                    var fallback = Path.Combine(legacyDir, file.Name);
-                    if (!File.Exists(fallback))
-                        File.Move(file.FullName, fallback);
-                    else
-                        File.Delete(file.FullName);
-                }
-                else
-                {
-                    File.Move(file.FullName, target);
-                }
+                // Старый хеш ника может быть больше FirstId и выглядеть как номер аккаунта,
+                // поэтому map зовём всегда. Настоящий номер она возвращает без изменений,
+                // и файл пропускается — повторная миграция ничего не двигает.
+                var mapped = map(oldId);
+                if (mapped == oldId)
+                    continue;
 
-                moved++;
+                plan.Add((file.FullName, file.Name, file.Extension, mapped));
             }
-            catch (Exception ex)
+
+            if (plan.Count == 0)
+                return 0;
+
+            // Фаза 1: освобождаем все цели. Временное имя начинается с точки и не
+            // разбирается как номер, поэтому повторный запуск его не тронет.
+            var temps = new List<(string Temp, string Name, string Ext, int Mapped)>();
+            foreach (var item in plan)
             {
-                Console.WriteLine($"[avatar] WARN не перенёс {file.Name}: {ex.Message}");
+                var temp = Path.Combine(_dir, $".remap-{Guid.NewGuid():N}.tmp");
+                try
+                {
+                    File.Move(item.Path, temp);
+                    temps.Add((temp, item.Name, item.Ext, item.Mapped));
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[avatar] WARN не подготовил {item.Name}: {ex.Message}");
+                }
             }
+
+            // Фаза 2: раскладываем по новым номерам. Занятую цель не затираем:
+            // там уже лежит более свежий аватар, старый уезжает в архив.
+            var moved = 0;
+            foreach (var item in temps)
+            {
+                try
+                {
+                    if (item.Mapped is < StandChillow.LanServer.Bans.AccountStore.FirstId
+                        or > StandChillow.LanServer.Bans.AccountStore.MaxId)
+                    {
+                        Archive(item.Temp, item.Name);
+                        moved++;
+                        continue;
+                    }
+
+                    var target = Path.Combine(_dir, item.Mapped + item.Ext);
+                    if (File.Exists(target))
+                        Archive(item.Temp, item.Name);
+                    else
+                        File.Move(item.Temp, target);
+
+                    moved++;
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"[avatar] WARN не перенёс {item.Name}: {ex.Message}");
+                }
+            }
+
+            if (moved > 0)
+                Console.WriteLine($"[avatar] переведено на аккаунты: {moved} файлов ({_dir})");
+            return moved;
         }
 
-        if (moved > 0)
-            Console.WriteLine($"[avatar] переведено на аккаунты: {moved} файлов ({_dir})");
-        return moved;
+        void Archive(string source, string name)
+        {
+            var legacyDir = Path.Combine(_dir, "legacy");
+            Directory.CreateDirectory(legacyDir);
+            var fallback = Path.Combine(legacyDir, name);
+            if (!File.Exists(fallback))
+                File.Move(source, fallback);
+            else
+                File.Delete(source);
+        }
     }
 
     /// <summary>

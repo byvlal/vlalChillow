@@ -467,6 +467,38 @@ public sealed class BanRegistryTests
     }
 
     [Fact]
+    public void MigratedRecordWithoutAccountIdBansByIpAndDeviceOnly()
+    {
+        var now = DateTime.UtcNow;
+        var expires = BanRecord.ToUnixMs(now.AddHours(1));
+        var registry = NewRegistry();
+
+        // Так выглядит запись после бановой миграции v4: номер аккаунта снят,
+        // IP, устройство и ник остались.
+        registry.Load(new[]
+        {
+            new BanRecord
+            {
+                Nick = "Ktulxy",
+                Ips = new List<string> { "203.0.113.9" },
+                Devices = new List<string> { Device },
+                MatchIds = new List<int>(),
+                ExpiresUtcMs = expires,
+            },
+        });
+
+        // Тот же старый номер достался другому человеку — его не баним.
+        Assert.False(registry.Inspect(
+            new BanProbe("Невинный", "198.51.100.7", OtherDevice, 1000005), now).Banned);
+
+        // А читер по-прежнему ловится по устройству и по адресу.
+        Assert.True(registry.Inspect(
+            new BanProbe("НовыйНик", null, Device), now).Banned);
+        Assert.True(registry.Inspect(
+            new BanProbe("ЕщёНик", "203.0.113.9", OtherDevice), now).Banned);
+    }
+
+    [Fact]
     public void LoadIndexesDevicesFromTheFile()
     {
         var now = DateTime.UtcNow;

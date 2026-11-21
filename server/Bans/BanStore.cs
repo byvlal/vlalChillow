@@ -20,6 +20,13 @@ namespace StandChillow.LanServer.Bans;
 /// соберут только реальные входы под новой логикой.
 /// </para>
 /// <para>
+/// Схема v4 — разовая перенумерация аккаунтов: у всех уже выданных банов снимаются
+/// теги <c>matchIds</c>. IP, устройства, ники и алиасы остаются, поэтому читеры
+/// продолжают ловиться по железу и адресу, а невинный, которому после перенумерации
+/// достанется старый номер, не наследует чужой бан. Баны, выданные после v4, снова
+/// получают ID аккаунта — миграция уже произошла, номер принадлежит тому же человеку.
+/// </para>
+/// <para>
 /// Запись атомарная: сначала <c>banlist.json.tmp</c>, потом замена. Битый файл не
 /// роняет сервер — логируется и стартует пустым, а не падает на первом входе.
 /// </para>
@@ -27,10 +34,10 @@ namespace StandChillow.LanServer.Bans;
 public sealed class BanStore
 {
     /// <summary>
-    /// Текущая схема файла. v3 сбрасывает старые баны и чистит изученные IP/устройства
-    /// в справочнике: до неё сервер мог приклеить чужой адрес к чужому бану.
+    /// Текущая схема файла. v3 сбросила баны v1/v2 и почистила изученные IP/устройства;
+    /// v4 снимает старые ID аккаунтов с уже выданных банов, сохраняя IP/устройства/ники.
     /// </summary>
-    public const int CurrentVersion = 3;
+    public const int CurrentVersion = 4;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -56,8 +63,9 @@ public sealed class BanStore
 
     /// <summary>
     /// Читает файл; отсутствие/битый JSON — пустые списки и строка в лог.
-    /// Старые v1/v2 копируются в <c>banlist.json.vN.bak</c>, баны сбрасываются,
-    /// справочник переписывается без IP/устройств.
+    /// v1/v2 копируются в <c>banlist.json.vN.bak</c>, баны сбрасываются, справочник
+    /// переписывается без IP/устройств. v3 → v4: копия и снятие старых ID с банов,
+    /// IP/устройства/ники остаются.
     /// </summary>
     public (List<BanRecord> Bans, List<SeenPlayer> Players) Load()
     {
@@ -88,7 +96,7 @@ public sealed class BanStore
             }
             else if (version < CurrentVersion)
             {
-                MigrateToV3(version, bans, players);
+                Migrate(version, bans, players);
             }
 
             Console.WriteLine(
@@ -104,46 +112,97 @@ public sealed class BanStore
     }
 
     /// <summary>
-    /// v1/v2 → v3: бэкап, обнуление банов, очистка IP/устройств в справочнике.
+    /// Довести файл до текущей схемы: v1/v2 → v3 (сброс старых банов и очистка
+    /// справочника), затем v3 → v4 (снять старые ID с банов, остальное сохранить).
     /// </summary>
     /// <remarks>
     /// Бэкап — best-effort: если скопировать не удалось, активный файл всё равно
-    /// переписывается. Старые баны по условию задачи не мигрируются — их место
-    /// занимает новая логика, а не подозрительные записи прошлой.
+    /// переписывается. Важно не запускать v3-сброс на файле v3: он бы уничтожил
+    /// уже нормальные баны. Поэтому шаги идут по отдельности, а не одним
+    /// <c>version &lt; CurrentVersion</c>.
     /// </remarks>
-    private void MigrateToV3(int fromVersion, List<BanRecord> bans, List<SeenPlayer> players)
+    private void Migrate(int fromVersion, List<BanRecord> bans, List<SeenPlayer> players)
     {
-        var backup = Path + $".v{fromVersion}.bak";
-        if (File.Exists(backup))
-            backup = Path + $".v{fromVersion}.{DateTime.Now:yyyyMMdd-HHmmss}.bak";
+        Backup(fromVersion);
 
-        try
+        if (fromVersion < 3)
         {
-            File.Copy(Path, backup);
-            Console.WriteLine($"[ban] миграция v{fromVersion}→v{CurrentVersion}: бэкап {backup}");
-        }
-        catch (Exception ex)
-        {
+            var oldBans = bans.Count;
+            bans.Clear();
+
+            var sanitized = SanitizePlayers(players, out var cleaned, out var merged);
+            players.Clear();
+            players.AddRange(sanitized);
+
             Console.WriteLine(
-                $"[ban] миграция v{fromVersion}→v{CurrentVersion}: бэкап {backup} не удался " +
-                $"({ex.Message}) — старые баны всё равно сбрасываю");
+                $"[ban] миграция v{fromVersion}→v3: старых банов сброшено {oldBans}, " +
+                $"личностей {players.Count}, IP/Devices очищено у {cleaned}, " +
+                $"дублей ников склеено {merged}");
         }
 
-        var oldBans = bans.Count;
-        bans.Clear();
-
-        var sanitized = SanitizePlayers(players, out var cleaned, out var merged);
-        players.Clear();
-        players.AddRange(sanitized);
+        if (fromVersion < 4)
+        {
+            var (records, ids, withoutKeys) = ClearMatchIds(bans);
+            Console.WriteLine(
+                $"[ban] миграция v3→v4: старые ID сняты у {records} банов (тегов {ids}); " +
+                $"без IP/устройства осталось {withoutKeys} — это бан только по нику");
+        }
 
         if (Save(bans, players))
         {
             LastLoadedVersion = CurrentVersion;
             Console.WriteLine(
-                $"[ban] миграция v{fromVersion}→v{CurrentVersion}: старых банов сброшено {oldBans}, " +
-                $"личностей {players.Count}, IP/Devices очищено у {cleaned}, " +
-                $"дублей ников склеено {merged}, активный файл v{CurrentVersion}");
+                $"[ban] миграция v{fromVersion}→v{CurrentVersion}: активный файл v{CurrentVersion}");
         }
+    }
+
+    /// <summary>Копия файла до миграции. Имя — по исходной версии, чтобы не затереть старую копию.</summary>
+    private void Backup(int version)
+    {
+        var backup = Path + $".v{version}.bak";
+        if (File.Exists(backup))
+            backup = Path + $".v{version}.{DateTime.Now:yyyyMMdd-HHmmss}.bak";
+
+        try
+        {
+            File.Copy(Path, backup);
+            Console.WriteLine($"[ban] миграция v{version}: бэкап {backup}");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine(
+                $"[ban] миграция v{version}: бэкап {backup} не удался ({ex.Message}) — продолжаю");
+        }
+    }
+
+    /// <summary>
+    /// Снять старые ID аккаунтов со всех банов. Запись, у которой нет ни IP, ни
+    /// устройства, остаётся баном по нику — ключи не выдумываем.
+    /// </summary>
+    private static (int Records, int Ids, int WithoutKeys) ClearMatchIds(List<BanRecord> bans)
+    {
+        var records = 0;
+        var ids = 0;
+        var withoutKeys = 0;
+
+        foreach (var record in bans)
+        {
+            if (record is null)
+                continue;
+
+            record.MatchIds ??= new List<int>();
+            if (record.MatchIds.Count > 0)
+            {
+                records++;
+                ids += record.MatchIds.Count;
+                record.MatchIds.Clear();
+            }
+
+            if (record.Ips is not { Count: > 0 } && record.Devices is not { Count: > 0 })
+                withoutKeys++;
+        }
+
+        return (records, ids, withoutKeys);
     }
 
     /// <summary>

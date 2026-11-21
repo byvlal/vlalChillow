@@ -82,6 +82,16 @@ public sealed class Account
     }
 }
 
+/// <summary>Итог разовой перенумерации: карта старый→новый и сколько номеров реально изменилось.</summary>
+public sealed class RenumberOutcome
+{
+    public static readonly RenumberOutcome None = new();
+
+    public IReadOnlyDictionary<int, int> Map { get; init; } = new Dictionary<int, int>();
+    public int Changed { get; init; }
+    public bool Applied { get; init; }
+}
+
 /// <summary>
 /// Постоянный реестр аккаунтов: <c>accounts.json</c> рядом с конфигом.
 /// </summary>
@@ -91,6 +101,12 @@ public sealed class Account
 /// (1 000 000), следующий — 1 000 001, и так далее. Номер никогда не переиспользуется,
 /// даже если запись удалили: <c>admin.ids</c>, баны и статистика не должны внезапно
 /// указывать на другого человека.
+/// </para>
+/// <para>
+/// Разовая перенумерация v1 → v2 — исключение из «только вверх»: она уплотняет уже
+/// выданные номера по первому входу, чтобы вернуть владельцу сервера его 1 000 000.
+/// Старый → новый номер сохраняется в файле, пока все ссылки (справочник, баны,
+/// статистика, история, жалобы, аватары) не переписаны; после этого карта удаляется.
 /// </para>
 /// <para>
 /// Ник — не личность. Новый человек с тем же ником получает тот же аккаунт в лобби
@@ -115,8 +131,23 @@ public sealed class AccountStore
     /// </summary>
     public const int MaxId = 100_000_000;
 
-    /// <summary>Текущая схема файла.</summary>
-    public const int CurrentVersion = 1;
+    /// <summary>Текущая схема файла: v2 — разовая перенумерация с сохранённой картой.</summary>
+    public const int CurrentVersion = 2;
+
+    /// <summary>
+    /// Шаги, которые нужно переписать при перенумерации. Пока шаг не отмечен, его
+    /// хранилище ещё может содержать старые номера; после отметки повторно не трогаем.
+    /// </summary>
+    public static readonly string[] RenumberSteps =
+    {
+        "directory",
+        "custom",
+        "bans",
+        "stats",
+        "history",
+        "reports",
+        "avatars",
+    };
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -139,8 +170,12 @@ public sealed class AccountStore
     // Одно устройство может доказать несколько аккаунтов (разные ники на одной установке).
     // Список, а не один аккаунт: иначе второй аккаунт вытесняет первый из проверки банов.
     private readonly Dictionary<string, List<Account>> _byDevice = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<int, int> _renumberMap = new();
+    private readonly HashSet<string> _renumberDone = new(StringComparer.Ordinal);
     private int _nextId = FirstId;
+    private int _loadedVersion = 1;
     private bool _readOnly;
+    private bool _renumberBlocked;
 
     public AccountStore(string path)
     {
@@ -169,6 +204,115 @@ public sealed class AccountStore
     public bool IsReadOnly
     {
         get { lock (_gate) return _readOnly; }
+    }
+
+    /// <summary>Есть ли незавершённая перенумерация: карта старый→новый ещё нужна.</summary>
+    public bool HasPendingRenumber
+    {
+        get { lock (_gate) return !_readOnly && _renumberMap.Count > 0; }
+    }
+
+    /// <summary>
+    /// Файл ещё v1 и перенумерация не начиналась. Только в этом состоянии числовой
+    /// литерал в <c>admin.ids</c> опасен: после миграции номера уже новые и трогать
+    /// их не нужно.
+    /// </summary>
+    public bool NeedsRenumber
+    {
+        get
+        {
+            lock (_gate)
+                return _loadedVersion < CurrentVersion && _renumberMap.Count == 0;
+        }
+    }
+
+    /// <summary>Копия карты старый→новый (пусто, если перенумерация не нужна или уже завершена).</summary>
+    public IReadOnlyDictionary<int, int> RenumberMap
+    {
+        get { lock (_gate) return new Dictionary<int, int>(_renumberMap); }
+    }
+
+    /// <summary>Все ли шаги перенумерации отмечены выполненными.</summary>
+    public bool AllRenumberStepsDone
+    {
+        get
+        {
+            lock (_gate)
+                return _renumberMap.Count > 0
+                       && RenumberSteps.All(step => _renumberDone.Contains(step));
+        }
+    }
+
+    /// <summary>Выполнен ли конкретный шаг перенумерации (файл уже переписан).</summary>
+    public bool IsRenumberStepDone(string step)
+    {
+        lock (_gate)
+            return _renumberDone.Contains(step);
+    }
+
+    /// <summary>
+    /// Запретить перенумерацию в этом запуске: в <c>admin.ids</c> найден числовой ID,
+    /// который нельзя безопасно переписать автоматически. Файл останется v1, следующий
+    /// старт попробует снова после правки конфига.
+    /// </summary>
+    public void BlockRenumber(string reason)
+    {
+        lock (_gate)
+        {
+            if (_renumberBlocked)
+                return;
+
+            // Блокировать уже выполненную (или начатую) перенумерацию нельзя: файл
+            // откатился бы на v1 и потерял сохранённую карту.
+            if (_loadedVersion >= CurrentVersion || _renumberMap.Count > 0)
+            {
+                Console.WriteLine(
+                    $"[account] перенумерация уже не нужна, блокировка пропущена: {reason}");
+                return;
+            }
+
+            _renumberBlocked = true;
+            Console.WriteLine($"[account] перенумерация пропущена: {reason}");
+        }
+    }
+
+    /// <summary>
+    /// Отметить шаг перенумерации выполненным и сразу сохранить карту, чтобы обрыв
+    /// процесса не заставил переписывать этот файл ещё раз.
+    /// </summary>
+    public void MarkRenumberStepDone(string step)
+    {
+        lock (_gate)
+        {
+            if (_renumberMap.Count == 0 || !_renumberDone.Add(step))
+                return;
+            SaveLocked();
+        }
+    }
+
+    /// <summary>
+    /// Завершить перенумерацию: удалить карту из файла. Номера уже новые, старые
+    /// ссылки больше не нужны.
+    /// </summary>
+    public void FinishRenumber()
+    {
+        lock (_gate)
+        {
+            if (_renumberMap.Count == 0)
+                return;
+
+            _renumberMap.Clear();
+            _renumberDone.Clear();
+            SaveLocked();
+            Console.WriteLine("[account] перенумерация завершена: карта старый→новый удалена");
+        }
+    }
+
+    /// <summary>Перевести старый номер по сохранённой карте. <c>0</c> — пары нет.</summary>
+    public int MapRenumberedId(int oldId)
+    {
+        lock (_gate)
+            return _renumberMap.TryGetValue(oldId, out var mapped) ? mapped : 0;
     }
 
     public Account? FindById(int id)
@@ -443,6 +587,112 @@ public sealed class AccountStore
     }
 
     /// <summary>
+    /// Разовая перенумерация v1 → v2: уплотнить номера с <see cref="FirstId"/> по
+    /// порядку первого входа. Аккаунты из <paramref name="preferredFirst"/> (владелец
+    /// и другие админы) идут первыми, чтобы вернуть владельцу его 1 000 000; остальные —
+    /// по <see cref="Account.CreatedUtcMs"/>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Метод идемпотентен: на файле v2 без сохранённой карты он ничего не делает, а на
+    /// файле с картой возвращает её же и не двигает номера повторно. Карта пишется в
+    /// <c>accounts.json</c> вместе с новыми номерами и живёт до <see cref="FinishRenumber"/>.
+    /// </para>
+    /// <para>
+    /// Если в <c>admin.ids</c> найден числовой ID, который нельзя безопасно переписать,
+    /// вызывающий должен заранее позвать <see cref="BlockRenumber"/>: тогда файл
+    /// останется v1 и следующий старт попробует снова.
+    /// </para>
+    /// </remarks>
+    public RenumberOutcome RenumberIfNeeded(IReadOnlyCollection<int>? preferredFirst = null)
+    {
+        lock (_gate)
+        {
+            if (_readOnly || _renumberBlocked)
+                return RenumberOutcome.None;
+
+            // Уже есть сохранённая карта: номера новые, но не все файлы переписаны.
+            // Возвращаем её, чтобы продолжить с того же места после рестарта.
+            if (_renumberMap.Count > 0)
+            {
+                return new RenumberOutcome
+                {
+                    Map = new Dictionary<int, int>(_renumberMap),
+                    Applied = false,
+                };
+            }
+
+            if (_loadedVersion >= CurrentVersion)
+                return RenumberOutcome.None;
+
+            if (_accounts.Count == 0)
+            {
+                _loadedVersion = CurrentVersion;
+                SaveLocked();
+                return RenumberOutcome.None;
+            }
+
+            // Порядок админов важен: первый в списке (владелец) получает FirstId.
+            // HashSet потерял бы его, поэтому храним номер позиции.
+            var preferred = new Dictionary<int, int>();
+            foreach (var id in preferredFirst ?? Array.Empty<int>())
+            {
+                if (!preferred.ContainsKey(id))
+                    preferred[id] = preferred.Count;
+            }
+
+            var ordered = _accounts
+                .OrderBy(a => preferred.TryGetValue(a.Id, out var rank) ? rank : int.MaxValue)
+                .ThenBy(a => a.CreatedUtcMs)
+                .ThenBy(a => a.Id)
+                .ToList();
+
+            var map = new Dictionary<int, int>(ordered.Count);
+            for (var i = 0; i < ordered.Count; i++)
+                map[ordered[i].Id] = FirstId + i;
+
+            var preferredCount = ordered.Count(a => preferred.ContainsKey(a.Id));
+            var changed = map.Count(kv => kv.Key != kv.Value);
+            foreach (var account in ordered)
+                account.Id = map[account.Id];
+
+            _accounts.Sort((a, b) => a.Id.CompareTo(b.Id));
+            RebuildIdIndexLocked();
+            _nextId = FirstId + _accounts.Count;
+            _loadedVersion = CurrentVersion;
+            _renumberDone.Clear();
+
+            if (changed > 0)
+            {
+                _renumberMap.Clear();
+                foreach (var (oldId, newId) in map)
+                    _renumberMap[oldId] = newId;
+            }
+
+            SaveLocked();
+
+            if (changed == 0)
+            {
+                Console.WriteLine(
+                    $"[account] миграция v1→v2: номера уже идут подряд ({_accounts.Count}), " +
+                    $"перенумерация не нужна");
+                return RenumberOutcome.None;
+            }
+
+            Console.WriteLine(
+                $"[account] миграция v1→v2: перенумеровано {changed} из {_accounts.Count} аккаунтов; " +
+                $"первый {FirstId}, следующий {_nextId}; админских первыми: " +
+                $"{preferredCount}");
+            return new RenumberOutcome
+            {
+                Map = new Dictionary<int, int>(_renumberMap),
+                Changed = changed,
+                Applied = true,
+            };
+        }
+    }
+
+    /// <summary>
     /// Перевести старый хеш ника в аккаунт. Порядок: ник записи (самый надёжный
     /// признак), затем реальный account ID (старый хеш мог случайно попасть в
     /// диапазон новых номеров), затем скан по <see cref="LegacyNickHash"/> всех
@@ -470,37 +720,53 @@ public sealed class AccountStore
     public bool Save()
     {
         lock (_gate)
+            return SaveLocked();
+    }
+
+    /// <summary>
+    /// Запись под уже взятым <c>_gate</c>. Версия 1, если перенумерация запрещена:
+    /// иначе следующий старт решил бы, что миграция уже сделана, и не попробовал бы снова.
+    /// </summary>
+    private bool SaveLocked()
+    {
+        if (_readOnly)
         {
-            if (_readOnly)
-            {
-                Console.WriteLine(
-                    $"[account] {_path}: файл новее поддерживаемой схемы — сохранение пропущено");
-                return false;
-            }
+            Console.WriteLine(
+                $"[account] {_path}: файл новее поддерживаемой схемы — сохранение пропущено");
+            return false;
+        }
 
-            try
-            {
-                var directory = Path.GetDirectoryName(_path);
-                if (!string.IsNullOrWhiteSpace(directory))
-                    Directory.CreateDirectory(directory);
+        try
+        {
+            var directory = Path.GetDirectoryName(_path);
+            if (!string.IsNullOrWhiteSpace(directory))
+                Directory.CreateDirectory(directory);
 
-                var dto = new FileDto
-                {
-                    Version = CurrentVersion,
-                    NextId = _nextId,
-                    Accounts = _accounts.OrderBy(a => a.Id).ToList(),
-                };
-                var json = JsonSerializer.Serialize(dto, JsonOptions);
-                var temp = _path + ".tmp";
-                File.WriteAllText(temp, json);
-                File.Move(temp, _path, overwrite: true);
-                return true;
-            }
-            catch (Exception ex)
+            var dto = new FileDto
             {
-                Console.WriteLine($"[account] не смог сохранить {_path}: {ex.Message}");
-                return false;
-            }
+                Version = _renumberBlocked ? 1 : CurrentVersion,
+                NextId = _nextId,
+                Accounts = _accounts.OrderBy(a => a.Id).ToList(),
+                Renumber = _renumberMap.Count > 0
+                    ? _renumberMap
+                        .OrderBy(kv => kv.Key)
+                        .Select(kv => new RenumberEntry { Old = kv.Key, New = kv.Value })
+                        .ToList()
+                    : null,
+                RenumberDone = _renumberDone.Count > 0
+                    ? _renumberDone.OrderBy(step => step, StringComparer.Ordinal).ToList()
+                    : null,
+            };
+            var json = JsonSerializer.Serialize(dto, JsonOptions);
+            var temp = _path + ".tmp";
+            File.WriteAllText(temp, json);
+            File.Move(temp, _path, overwrite: true);
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[account] не смог сохранить {_path}: {ex.Message}");
+            return false;
         }
     }
 
@@ -628,6 +894,14 @@ public sealed class AccountStore
             accounts.Add(account);
     }
 
+    /// <summary>После смены номеров: индекс по id должен указывать на новые ключи.</summary>
+    private void RebuildIdIndexLocked()
+    {
+        _byId.Clear();
+        foreach (var account in _accounts)
+            _byId[account.Id] = account;
+    }
+
     private void Load()
     {
         try
@@ -643,12 +917,27 @@ public sealed class AccountStore
             if (dto?.Accounts is null)
                 return;
 
-            if (dto.Version > CurrentVersion)
+            _loadedVersion = dto.Version > 0 ? dto.Version : 1;
+            if (_loadedVersion > CurrentVersion)
             {
                 _readOnly = true;
                 Console.WriteLine(
-                    $"[account] {_path}: версия {dto.Version} новее поддерживаемой " +
+                    $"[account] {_path}: версия {_loadedVersion} новее поддерживаемой " +
                     $"{CurrentVersion} — читаю, но сохранять не буду");
+            }
+
+            // Карта разовой перенумерации: нужна, пока не переписаны все хранилища.
+            foreach (var pair in dto.Renumber ?? new List<RenumberEntry>())
+            {
+                if (pair.Old <= 0 || pair.New < FirstId || pair.New > MaxId)
+                    continue;
+                _renumberMap[pair.Old] = pair.New;
+            }
+
+            foreach (var step in dto.RenumberDone ?? new List<string>())
+            {
+                if (!string.IsNullOrWhiteSpace(step))
+                    _renumberDone.Add(step);
             }
 
             // Порядок важен: _byNick должен указывать на самый свежий аккаунт с этим
@@ -683,7 +972,11 @@ public sealed class AccountStore
                 _byNick.Clear();
                 _byAlias.Clear();
                 _byDevice.Clear();
+                _renumberMap.Clear();
+                _renumberDone.Clear();
                 _nextId = FirstId;
+                _loadedVersion = 1;
+                _renumberBlocked = false;
             }
         }
     }
@@ -700,6 +993,16 @@ public sealed class AccountStore
         }
     }
 
+    /// <summary>Одна пара разовой перенумерации: было → стало.</summary>
+    public sealed class RenumberEntry
+    {
+        [JsonPropertyName("old")]
+        public int Old { get; set; }
+
+        [JsonPropertyName("new")]
+        public int New { get; set; }
+    }
+
     private sealed class FileDto
     {
         [JsonPropertyName("version")]
@@ -710,5 +1013,13 @@ public sealed class AccountStore
 
         [JsonPropertyName("accounts")]
         public List<Account>? Accounts { get; set; } = new();
+
+        /// <summary>Карта старый→новый, пока перенумерация не завершена.</summary>
+        [JsonPropertyName("renumber")]
+        public List<RenumberEntry>? Renumber { get; set; }
+
+        /// <summary>Какие хранилища уже переписаны на новые номера.</summary>
+        [JsonPropertyName("renumberDone")]
+        public List<string>? RenumberDone { get; set; }
     }
 }

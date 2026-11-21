@@ -79,9 +79,14 @@ nick-only match bans that attempt and learns nothing, so an innocent player who 
 nickname does not inherit the ban. `admin.ban.byDevice` turns the userId key off;
 `admin.ban.bindAliases` turns learning off while bans keep working. `banlist.json` lives beside
 `config.json` and is git-ignored; v1/v2 are backed up to `banlist.json.vN.bak` and reset to v3
-on first start (old bans dropped, directory kept without old IPs/devices). `accounts.json` is
-the separate account registry (`version`, `nextId`, `accounts`) and is never reset by that
-migration.
+on first start (old bans dropped, directory kept without old IPs/devices). v3 → v4 then keeps
+every record but clears `MatchIds` once: account numbers are being renumbered, and an old
+number may now belong to someone else. IP, devices, nicks and aliases stay, so a cheater is
+still caught by hardware or address; bans issued after v4 store the account id again.
+`accounts.json` is the separate account registry (`version`, `nextId`, `accounts`); its one-time
+v1 → v2 renumber compacts ids from `1_000_000` with the owner/admin first and saves an old→new
+map that drives directory, custom ids, bans, stats, history, reports and avatars. The map is
+deleted after every step is written.
 
 ## Match host split (was 2568-line god-file)
 
