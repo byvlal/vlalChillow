@@ -125,6 +125,112 @@ public sealed class MatchRoundIntegrityTests
         Assert.False(MatchFlowRules.IsActorDead(flow, props, 2));
     }
 
+    /// <summary>
+    /// Exact phantom from the live probe: T died in round 1, never sent a new
+    /// <c>CreateWorldObject</c>, and the blanket <c>DeadActors.Clear()</c> at C2=22 made him
+    /// «alive» for round 2 — the round then ran to the 109s timeout instead of a wipe.
+    /// Per-player state keeps him dead until his own CWO, and only then revives him.
+    /// </summary>
+    [Fact]
+    public void CarriedDeath_WithoutRespawn_ResolvesWipeNextRound()
+    {
+        var props = Props((2, MatchTeam.Ct, null), (3, MatchTeam.Tr, null));
+        var flow = new MatchFlowState { Phase = MatchFlowPhase.PurchasePhase };
+        flow.DeadActors.Add(3); // round 1: T eliminated
+
+        // C2=22 round 2: round-local deaths reset for respawn, per-player fact is kept.
+        MatchFlowRules.BeginRound(flow);
+        Assert.Empty(flow.DeadActors);
+        Assert.Contains((byte)3, flow.CarriedDeadActors);
+
+        MatchFlowRules.FreezeRoundRoster(flow, props);
+        // Only CT sent his body this round; the T never came back.
+        MatchFlowRules.SeedCarriedDeathsWithoutPawn(flow, livingPawnOwners: new byte[] { 2 });
+
+        Assert.True(MatchFlowRules.IsActorDead(flow, props, 3));
+        var resolved = MatchFlowRules.TryResolveWipe(
+            flow, props, bombPlanted: false, out var winner, out var reason);
+        Assert.True(resolved);
+        Assert.Equal(MatchTeam.Ct, winner);
+        Assert.Equal("wipe-tr", reason);
+    }
+
+    /// <summary>
+    /// The same carried death is cancelled by the player's own spawn proof (CWO), in either
+    /// order: before the combat freeze or after it. Death state is per player, so it is
+    /// reversible — never a one-way «phase says dead».
+    /// </summary>
+    [Fact]
+    public void CarriedDeath_IsClearedByThePlayersOwnSpawn()
+    {
+        var props = Props((2, MatchTeam.Ct, null), (3, MatchTeam.Tr, null));
+
+        // Spawn during buy, before the freeze.
+        var flow = new MatchFlowState { Phase = MatchFlowPhase.WarmupWillFinish };
+        flow.DeadActors.Add(3);
+        MatchFlowRules.BeginRound(flow);
+        MatchFlowRules.NoteSpawn(flow, 3);
+        MatchFlowRules.FreezeRoundRoster(flow, props);
+        MatchFlowRules.SeedCarriedDeathsWithoutPawn(flow, livingPawnOwners: new byte[] { 2, 3 });
+
+        flow.Phase = MatchFlowPhase.PurchasePhase;
+        Assert.False(MatchFlowRules.IsActorDead(flow, props, 3));
+        Assert.False(MatchFlowRules.TryResolveWipe(
+            flow, props, bombPlanted: false, out _, out _));
+
+        // Same player, CWO arrives after the freeze already seeded him: clears it again.
+        var late = new MatchFlowState { Phase = MatchFlowPhase.PurchasePhase };
+        late.DeadActors.Add(3);
+        MatchFlowRules.BeginRound(late);
+        MatchFlowRules.FreezeRoundRoster(late, props);
+        MatchFlowRules.SeedCarriedDeathsWithoutPawn(late, livingPawnOwners: new byte[] { 2 });
+        Assert.True(MatchFlowRules.IsActorDead(late, props, 3));
+
+        MatchFlowRules.NoteSpawn(late, 3);
+        Assert.False(MatchFlowRules.IsActorDead(late, props, 3));
+    }
+
+    /// <summary>
+    /// A player who was alive at the end of the previous round is never carried dead. If his
+    /// CWO is delayed by ping, the freeze/wipe tick has no per-player evidence against him and
+    /// must keep him alive — this is the regression the phase-based rule would cause.
+    /// </summary>
+    [Fact]
+    public void LivePlayer_WithPingDelayedSpawn_IsNotSeededDead()
+    {
+        var props = Props((2, MatchTeam.Ct, null), (3, MatchTeam.Tr, null));
+        var flow = new MatchFlowState { Phase = MatchFlowPhase.PurchasePhase };
+
+        // Nobody died last round; the T simply has not spawned yet at the freeze tick.
+        MatchFlowRules.BeginRound(flow);
+        MatchFlowRules.FreezeRoundRoster(flow, props);
+        MatchFlowRules.SeedCarriedDeathsWithoutPawn(flow, livingPawnOwners: new byte[] { 2 });
+
+        Assert.False(MatchFlowRules.IsActorDead(flow, props, 3));
+        Assert.False(MatchFlowRules.TryResolveWipe(
+            flow, props, bombPlanted: false, out _, out _));
+    }
+
+    /// <summary>
+    /// Round end is the safe moment to snapshot bodies: clients only Destroy+Create at the next
+    /// C2=22, so a live player still owns his pawn. A roster fighter without one was dead or
+    /// never spawned and is carried into the next round until his own CWO.
+    /// </summary>
+    [Fact]
+    public void RoundEnd_CarriesOnlyRosterFightersWithoutABody()
+    {
+        var flow = new MatchFlowState();
+        flow.RoundRoster[2] = MatchTeam.Ct;
+        flow.RoundRoster[3] = MatchTeam.Tr;
+        flow.RoundRoster[4] = MatchTeam.Tr;
+
+        MatchFlowRules.NoteRoundEndBodies(flow, livingPawnOwners: new byte[] { 2, 4 });
+
+        Assert.DoesNotContain((byte)2, flow.CarriedDeadActors);
+        Assert.Contains((byte)3, flow.CarriedDeadActors);
+        Assert.DoesNotContain((byte)4, flow.CarriedDeadActors);
+    }
+
     [Theory]
     [InlineData(MatchRoomPropKeys.Death)]
     [InlineData(MatchRoomPropKeys.Kills)]

@@ -59,23 +59,70 @@ public sealed partial class GameNetHost
         // было перевести на номера ещё до первого входа.
         _accounts = new AccountStore(
             System.IO.Path.Combine(AppContext.BaseDirectory, "accounts.json"));
+
         var seeded = _accounts.SeedFromPlayers(BuildAccountSeeds(stored));
         if (seeded > 0)
             Console.WriteLine($"[account] засеяно из старых данных: {seeded} аккаунтов");
+
+        // Числовой ID в admin.ids после перенумерации может достаться другому человеку.
+        // Не угадываем: пропускаем перенумерацию и просим заменить значение на хеш ника.
+        // Пустой реестр перенумеровывать нечего, а уже перенумерованный файл трогать поздно.
+        if (_accounts.NeedsRenumber && _accounts.Count > 0 && HasUnsafeNumericAdminIds())
+            _accounts.BlockRenumber("admin.ids содержит числовой ID в диапазоне аккаунтов");
+
+        var preferred = ResolvePreferredAdminAccountIds();
+        _accounts.RenumberIfNeeded(preferred);
         _accounts.Save();
         _accounts.Changed = OnAccountsChanged;
 
-        var remapped = _directory.RemapAccountIds(MapLegacyAccountId);
-        if (remapped > 0)
-            Console.WriteLine($"[account] справочник переведён на аккаунты: {remapped} записей");
+        if (_accounts.HasPendingRenumber)
+        {
+            // Разовая перенумерация: каждый шаг отмечаем только после записи файла.
+            if (!_accounts.IsRenumberStepDone("directory"))
+            {
+                var remapped = _directory.RemapAccountIds(MapRenumberedAccountId);
+                if (remapped > 0)
+                    Console.WriteLine(
+                        $"[account] перенумерация: справочник — {remapped} записей");
+                PersistBans();
+                _accounts.MarkRenumberStepDone("directory");
+            }
 
-        var custom = _customIds.RemapAccounts(MapLegacyAccountId);
-        if (custom > 0)
-            Console.WriteLine($"[account] кастомные ID переведены на аккаунты: {custom} записей");
+            if (!_accounts.IsRenumberStepDone("custom"))
+            {
+                var custom = _customIds.RemapAccounts(MapRenumberedAccountId);
+                if (custom > 0)
+                    Console.WriteLine(
+                        $"[account] перенумерация: кастомные ID — {custom} записей");
+                _accounts.MarkRenumberStepDone("custom");
+            }
 
-        var bans = _bans.RemapAccountIds(MapLegacyAccountId);
-        if (bans > 0)
-            Console.WriteLine($"[account] теги банов переведены на аккаунты: {bans} записей");
+            if (!_accounts.IsRenumberStepDone("bans"))
+            {
+                var bans = _bans.RemapAccountIds(MapRenumberedAccountId);
+                if (bans > 0)
+                    Console.WriteLine(
+                        $"[account] перенумерация: теги банов — {bans} записей");
+                PersistBans();
+                _accounts.MarkRenumberStepDone("bans");
+            }
+        }
+        else
+        {
+            // Обычная миграция старых хешей ника на аккаунты (файл уже v2 или
+            // перенумерация не нужна).
+            var remapped = _directory.RemapAccountIds(MapLegacyAccountId);
+            if (remapped > 0)
+                Console.WriteLine($"[account] справочник переведён на аккаунты: {remapped} записей");
+
+            var custom = _customIds.RemapAccounts(MapLegacyAccountId);
+            if (custom > 0)
+                Console.WriteLine($"[account] кастомные ID переведены на аккаунты: {custom} записей");
+
+            var bans = _bans.RemapAccountIds(MapLegacyAccountId);
+            if (bans > 0)
+                Console.WriteLine($"[account] теги банов переведены на аккаунты: {bans} записей");
+        }
 
         MigrateAdminIds();
         PersistBans();
@@ -132,6 +179,94 @@ public sealed partial class GameNetHost
 
         return seeds;
     }
+
+    /// <summary>
+    /// Есть ли в <c>admin.ids</c> числовой номер в диапазоне аккаунтов, который не
+    /// является старым хешем ника. После перенумерации такой номер может достаться
+    /// другому человеку, поэтому перенумерацию безопаснее пропустить до правки конфига.
+    /// </summary>
+    private bool HasUnsafeNumericAdminIds()
+    {
+        var accounts = _accounts;
+        if (accounts is null)
+            return false;
+
+        foreach (var id in _config.Admin.Ids)
+        {
+            if (id is < AccountStore.FirstId or > AccountStore.MaxId)
+                continue;
+
+            // Старый хеш ника тоже может выглядеть как номер аккаунта — это не литерал.
+            if (accounts.FindAccountIdsByLegacyId(id).Count > 0)
+                continue;
+
+            Console.WriteLine(
+                $"[admin] admin.ids: {id} — числовой ID в диапазоне аккаунтов, но не старый хеш ника. " +
+                "Перенумерация аккаунтов пропущена, чтобы не выдать права чужому. " +
+                "Замени значение на старый хеш ника (например, 25354325) или удали его и перезапусти сервер.");
+            return true;
+        }
+
+        return false;
+    }
+
+    /// <summary>
+    /// Аккаунты админов (владельца) для перенумерации: они получают первые номера.
+    /// Регистр и алиасы учитываются, как в <see cref="MigrateAdminIds"/>.
+    /// </summary>
+    private List<int> ResolvePreferredAdminAccountIds()
+    {
+        var result = new List<int>();
+        var accounts = _accounts;
+        if (accounts is null)
+            return result;
+
+        foreach (var id in _config.Admin.Ids)
+        {
+            if (id is >= AccountStore.FirstId and <= AccountStore.MaxId
+                && accounts.FindById(id) is { } byId)
+            {
+                if (!result.Contains(byId.Id))
+                    result.Add(byId.Id);
+                continue;
+            }
+
+            foreach (var account in accounts.FindAccountIdsByLegacyId(id)
+                         .Select(accounts.FindById)
+                         .Where(a => a is not null)
+                         .OrderByDescending(a => a!.LastSeenUtcMs)
+                         .ThenByDescending(a => a!.Id))
+            {
+                if (!result.Contains(account!.Id))
+                    result.Add(account.Id);
+            }
+        }
+
+        return result;
+    }
+
+    /// <summary>
+    /// Точный перевод старого номера при перенумерации. В отличие от
+    /// <see cref="MapLegacyAccountId"/>, сначала смотрит сохранённую карту: после
+    /// перенумерации старый номер может уже принадлежать другому аккаунту.
+    /// </summary>
+    internal int MapRenumberedAccountId(int oldId, string? nick = null)
+    {
+        // Карту спрашиваем у реестра на каждом вызове: после завершения миграции она
+        // удаляется, и старый номер больше нельзя переводить повторно.
+        var accounts = _accounts;
+        if (accounts is not null && accounts.HasPendingRenumber)
+        {
+            var mapped = accounts.MapRenumberedId(oldId);
+            if (mapped != 0)
+                return mapped;
+        }
+
+        return MapLegacyAccountId(oldId, nick);
+    }
+
+    /// <summary>То же без ника — для аватаров.</summary>
+    internal int MapRenumberedAccountId(int oldId) => MapRenumberedAccountId(oldId, null);
 
     /// <summary>
     /// Старый id (хеш ника) → account ID. Повторяет тот же путь, что миграция

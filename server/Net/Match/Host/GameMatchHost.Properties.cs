@@ -168,6 +168,7 @@ public sealed partial class GameMatchHost
                             $"[match-host] mid-round joiner actor={actorNr} team={team} — " +
                             "outside this round's roster (dead for the round; not counted alive)");
                     }
+                    LogJoinTiming(room, actorNr, team, peer, source: "SetProperty");
                     TryBeginMatchFlowIfBothTeams(room);
                     TryAssignBomberOnTrJoin(room, actorNr);
                 }
@@ -333,6 +334,7 @@ public sealed partial class GameMatchHost
                 {
                     Console.WriteLine(
                         $"[match-host] team bag actor={actorNr} — await joiner CreateWorldObject");
+                    LogJoinTiming(room, actorNr, (MatchTeam)v.Byte, peer, source: "SetProperties");
                     TryBeginMatchFlowIfBothTeams(room);
                     TryAssignBomberOnTrJoin(room, actorNr);
                 }
@@ -372,6 +374,37 @@ public sealed partial class GameMatchHost
         {
             Console.WriteLine($"[match-host] SetProperties parse failed: {ex.Message}");
         }
+    }
+
+    /// <summary>
+    /// [repro] One line per authored <c>team</c>: which phase it landed in, how much buy time was
+    /// left, and whether the actor already had a body. Diagnostic only — the handler logic above
+    /// is unchanged.
+    /// </summary>
+    private void LogJoinTiming(MatchRoom room, byte actorNr, MatchTeam team, NetPeer peer, string source)
+    {
+        MatchFlowPhase phase;
+        double remainingMs;
+        bool pawned;
+        bool inRoster;
+        bool bootstrapped;
+        bool trustedReconnect;
+        lock (_roomGate)
+        {
+            phase = room.Flow.Phase;
+            remainingMs = room.Flow.PhaseEndsUtc == DateTime.MinValue
+                ? 0
+                : (room.Flow.PhaseEndsUtc - DateTime.UtcNow).TotalMilliseconds;
+            pawned = room.LivingPawns.Values.Any(p => p.OwnerActorNr == actorNr);
+            inRoster = room.Flow.RoundRoster.ContainsKey(actorNr);
+            bootstrapped = _peers.TryGetValue(peer, out var st) && st.BootstrapSent;
+            trustedReconnect = _peers.TryGetValue(peer, out st) && st.ReconnectIdentityTrusted;
+        }
+        Console.WriteLine(
+            $"[join-timing] actor={actorNr} team={team} via={source} phase={phase} " +
+            $"phaseRemainingMs={remainingMs:0} hasPawn={(pawned ? "yes" : "no")} " +
+            $"inFrozenRoster={(inRoster ? "yes" : "no")} bootstrapped={(bootstrapped ? "yes" : "no")} " +
+            $"reconnect={(trustedReconnect ? "yes" : "no")}");
     }
 
     /// <summary>

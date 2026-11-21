@@ -32,15 +32,17 @@ internal static class MatchReconnect
         MatchRoom room,
         IEnumerable<MatchPeerState> peers,
         string? identityKey,
+        string? nick,
         out MatchPeerState? state)
     {
         state = null;
-        if (string.IsNullOrEmpty(identityKey))
+        var rejoinKey = MatchIdentity.RejoinKey(identityKey, nick);
+        if (rejoinKey.Length == 0)
             return 0;
 
         foreach (var (actorNr, key) in room.ActorIdentities)
         {
-            if (!MatchIdentity.SamePlayer(key, identityKey))
+            if (!MatchIdentity.SameRejoinPlayer(key, rejoinKey))
                 continue;
             foreach (var st in peers)
             {
@@ -58,7 +60,8 @@ internal static class MatchReconnect
         {
             if (!ReferenceEquals(st.Room, room) || st.ActorNr == 0)
                 continue;
-            if (!MatchIdentity.SamePlayer(st.IdentityKey, identityKey))
+            var key = MatchIdentity.RejoinKey(st.IdentityKey, st.RosterName);
+            if (!MatchIdentity.SameRejoinPlayer(key, rejoinKey))
                 continue;
             state = st;
             return st.ActorNr;
@@ -118,9 +121,10 @@ internal static class MatchReconnect
             room.UserIds.Remove(previousUid);
         if (newState.UserId is { Length: > 0 } newUid)
             room.UserIds.Add(newUid);
-        // Владелец actor — этот игрок; призрак больше не призрак.
-        if (newState.IdentityKey is { Length: > 0 } identityKey)
-            room.ActorIdentities[actorNr] = identityKey;
+        // Владелец actor — этот игрок; призрак больше не призрак. Ключ включает ник:
+        // на одной установке может быть несколько аккаунтов, и чужой актор им не принадлежит.
+        if (MatchIdentity.RejoinKey(newState.IdentityKey, rosterName) is { Length: > 0 } rejoinKey)
+            room.ActorIdentities[actorNr] = rejoinKey;
         room.OwnerlessSinceTick.Remove(actorNr);
 
         // Старое тело больше не принадлежит этому игроку: убираем его из трекинга и просим
@@ -143,6 +147,9 @@ internal static class MatchReconnect
         // the old body, or damage attribution to/from it, can otherwise author a death or
         // award a kill after the player already returned.
         room.Flow.PendingCombatDestroy.Remove(actorNr);
+        // A new session gets a new body: the old session's carried round-death must not follow
+        // the returning player into the next round. His own CWO is the fresh proof of life.
+        room.Flow.CarriedDeadActors.Remove(actorNr);
         room.LastCombatDamage.Remove(actorNr);
         foreach (var attacker in room.LastCombatDamage
                      .Where(kv => kv.Value.Victim == actorNr)
@@ -161,7 +168,7 @@ internal static class MatchReconnect
         var clearedRoundDeath = false;
         if (!cumulativeDeathCounters && !roundFrozen)
         {
-            room.Flow.DeadActors.Remove(actorNr);
+            MatchFlowRules.NoteSpawn(room.Flow, actorNr);
             clearedRoundDeath = true;
         }
         MatchFlowRules.RemoveFromRoundRoster(room.Flow, actorNr);

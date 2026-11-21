@@ -225,7 +225,7 @@ public sealed partial class GameMatchHost
             room.Flow.PhaseEndsUtc = ends;
             room.Flow.RoundIndex = 0;
             room.Flow.PendingEndReason = null;
-            room.Flow.DeadActors.Clear();
+            MatchFlowRules.ResetRoundDeaths(room.Flow);
             room.Flow.PendingCombatDestroy.Clear();
             room.Flow.RoundEndCommittedRound = 0;
             room.Flow.TeamsSwapped = false;
@@ -270,10 +270,12 @@ public sealed partial class GameMatchHost
             room.Flow.AlliesBuyClientZeroSec = 0;
             room.Flow.PendingEndReason = null;
             room.Flow.PrepSpawnExtensionUsed = false;
-            room.Flow.DeadActors.Clear();
+            // Round-local death resets so everyone may respawn; players who do not come back
+            // stay dead per-player (CarriedDeadActors) until their own CWO proves the spawn.
+            MatchFlowRules.BeginRound(room.Flow);
             room.Flow.PendingCombatDestroy.Clear();
             room.LastCombatDamage.Clear();
-            // death is cumulative across the match; DeadActors is round-local.
+            // death is a cumulative match counter; DeadActors/CarriedDeadActors are round-local.
             bomberId = PickBomberActorNr(room);
             room.Flow.BomberActorNr = bomberId;
         }
@@ -370,7 +372,33 @@ public sealed partial class GameMatchHost
             // Issue #39: a ghost actor (no owning socket) is not a fighter this round.
             var ghosts = GhostActorNumbers(room);
             MatchFlowRules.FreezeRoundRoster(room.Flow, room.ActorProps, ghosts);
+            // Per-player state, not the phase: only a fighter who was already dead and has not
+            // sent his own CWO since is marked dead here. A live player whose spawn is delayed by
+            // ping is not in CarriedDeadActors at all, so he can never be seeded by the tick.
+            MatchFlowRules.SeedCarriedDeathsWithoutPawn(
+                room.Flow, room.LivingPawns.Values.Select(p => p.OwnerActorNr));
             (trCount, ctCount) = CountFightingTeamRoster(room, ghosts);
+        }
+
+        // [repro] Who the round is judged by and whether each of them actually spawned.
+        // Diagnostic only — no behaviour here.
+        lock (_roomGate)
+        {
+            var roster = room.Flow.RoundRoster
+                .OrderBy(kv => kv.Key)
+                .Select(kv =>
+                {
+                    var pawned = room.LivingPawns.Values.Any(p => p.OwnerActorNr == kv.Key);
+                    var dead = room.Flow.DeadActors.Contains(kv.Key);
+                    return $"{kv.Key}:{kv.Value}(pawn={(pawned ? "yes" : "no")},dead={(dead ? "yes" : "no")})";
+                });
+            var pawnOwners = room.LivingPawns.Values
+                .Select(p => p.OwnerActorNr).Distinct().OrderBy(nr => nr);
+            var deaths = room.Flow.DeadActors.OrderBy(nr => nr);
+            Console.WriteLine(
+                $"[roster] freeze C2=31 round={room.Flow.RoundIndex} " +
+                $"roster=[{string.Join(" ", roster)}] pawnOwners=[{string.Join(",", pawnOwners)}] " +
+                $"DeadActors=[{string.Join(",", deaths)}]");
         }
 
         var nowSec = ServerTimeSeconds();

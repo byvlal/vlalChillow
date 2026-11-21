@@ -115,12 +115,13 @@ public sealed partial class GameMatchHost
                     room.LivingPawns.Remove(oldId);
 
                 room.SpawnedPawns.Add(owner);
-                // OBSERVE before relay: respawn cancels combat-death grace and clears DeadActors
+                // OBSERVE before relay: the player's own body is the spawn proof. It cancels the
+                // combat-death grace and clears both the round death and the carried-dead mark,
                 // so the fighter counts alive for wipe / bomber picks (authority, not invent).
                 room.Flow.PendingCombatDestroy.Remove(owner);
-                clearedDead = room.Flow.DeadActors.Remove(owner);
+                clearedDead = MatchFlowRules.NoteSpawn(room.Flow, owner);
                 // death is a cumulative match counter. Per-round alive state is tracked by
-                // MatchFlowState.DeadActors, which was cleared above and is removed on respawn.
+                // MatchFlowState.DeadActors / CarriedDeadActors and cleared by this CWO.
                 room.LivingPawns[parsed.ObjectId] = new MatchLivingPawn
                 {
                     ObjectId = parsed.ObjectId,

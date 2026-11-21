@@ -275,6 +275,12 @@ public sealed partial class GameMatchHost
         if (banDecision.AdminExempt)
             Console.WriteLine($"[ban] JoinRoom '{req.Room}' — админ или сервер, бан не применяется");
 
+        // Ник — ключ аккаунта и часть ключа реконнекта. Считаем его один раз: та же
+        // каноническая форма уходит и в роспись, и в поиск прежнего актора.
+        var joinNick = string.IsNullOrWhiteSpace(req.Room)
+            ? ""
+            : NickPolicy.Canonical(req.Room);
+
         // CreateOnly / JoinOrCreate may register under the password they send.
         // JoinOnly: ensure Dedik LAN room (Play may race slightly before EnsureLanRoom).
         if (req.Mode is JoinRoomMode.CreateOnly or JoinRoomMode.JoinOrCreate)
@@ -307,7 +313,7 @@ public sealed partial class GameMatchHost
             result = JoinRoomResult.RoomNotFound;
         }
         else if (st.IdentityKey is { Length: > 0 } identityKey
-                 && TryFindRejoinActor(room, identityKey, out var rejoinActor, out var rejoinState))
+                 && TryFindRejoinActor(room, identityKey, joinNick, out var rejoinActor, out var rejoinState))
         {
             // Issue #39: same player, new session token, old socket not timed out yet.
             // Restore the SAME actor instead of allocating a second one (which made the
@@ -364,13 +370,12 @@ public sealed partial class GameMatchHost
                 {
                     if (st.UserId is { } u)
                         room.UserIds.Add(u);
-                    var nick = string.IsNullOrWhiteSpace(req.Room)
-                        ? $"actor{nr}"
-                        : NickPolicy.Canonical(req.Room);
+                    var nick = joinNick.Length == 0 ? $"actor{nr}" : joinNick;
                     room.Actors.Add((nr, nick, st.UserId ?? ""));
                     // Issue #39: владелец актёра запоминается в комнате, чтобы следующий заход
                     // этого же игрока занял тот же номер, даже если сокет уже пропал.
-                    if (st.IdentityKey is { Length: > 0 } ownerKey)
+                    // Ключ — устройство + ник: на одной установке бывает несколько аккаунтов.
+                    if (MatchIdentity.RejoinKey(st.IdentityKey, nick) is { Length: > 0 } ownerKey)
                         room.ActorIdentities[nr] = ownerKey;
                     room.OwnerlessSinceTick.Remove(nr);
                     st.RosterName = nick;
@@ -379,7 +384,7 @@ public sealed partial class GameMatchHost
                 st.ActorNr = nr;
                 actor = nr;
                 result = JoinRoomResult.Found;
-                if (st.IdentityKey is { Length: > 0 } reconnectKey)
+                if (MatchIdentity.RejoinKey(st.IdentityKey, st.RosterName) is { Length: > 0 } reconnectKey)
                 {
                     var remembered = false;
                     var prevTeam = MatchTeam.None;

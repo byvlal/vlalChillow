@@ -438,7 +438,7 @@ public sealed partial class GameMatchHost
             room.Flow.PhaseEndsUtc = ends;
             room.Flow.RoundIndex = 0;
             room.Flow.PendingEndReason = null;
-            room.Flow.DeadActors.Clear();
+            MatchFlowRules.ResetRoundDeaths(room.Flow);
             room.Flow.PendingCombatDestroy.Clear();
             room.Flow.RoundEndCommittedRound = 0;
         }
@@ -498,10 +498,12 @@ public sealed partial class GameMatchHost
             room.Flow.PhaseEndsUtc = ends;
             room.Flow.PendingEndReason = null;
             room.Flow.PrepSpawnExtensionUsed = false;
-            room.Flow.DeadActors.Clear();
+            // Round-local death resets so everyone may respawn; players who do not come back
+            // stay dead per-player (CarriedDeadActors) until their own CWO proves the spawn.
+            MatchFlowRules.BeginRound(room.Flow);
             room.Flow.PendingCombatDestroy.Clear();
             room.LastCombatDamage.Clear();
-            // death is cumulative across the match; DeadActors is round-local.
+            // death is a cumulative match counter; DeadActors/CarriedDeadActors are round-local.
             bomberId = PickBomberActorNr(room);
             room.Flow.BomberActorNr = bomberId;
         }
@@ -684,11 +686,31 @@ public sealed partial class GameMatchHost
             room.Flow.PendingEndReason = null;
             room.Flow.DeadActors.Clear();
             // #33: wipe is judged against who entered this round, not every stale team prop.
-            // Spawn evidence wins: a mid-round joiner has a team prop but no pawn — he is dead
-            // by design and must not keep his side "alive" past the kill that ended the round.
             // Issue #39: a ghost actor (no owning socket) is not a fighter this round.
             MatchFlowRules.FreezeRoundRoster(room.Flow, room.ActorProps, GhostActorNumbers(room));
+            // Per-player state, not the phase: only a fighter who was already dead and has not
+            // sent his own CWO since is marked dead. A live player's ping-delayed spawn is not
+            // in CarriedDeadActors, so the freeze tick cannot kill him.
+            MatchFlowRules.SeedCarriedDeathsWithoutPawn(
+                room.Flow, room.LivingPawns.Values.Select(p => p.OwnerActorNr));
             room.Flow.PendingCombatDestroy.Clear();
+        }
+
+        // [repro] Frozen round identity + real pawn presence (diagnostic only).
+        lock (_roomGate)
+        {
+            var roster = room.Flow.RoundRoster
+                .OrderBy(kv => kv.Key)
+                .Select(kv =>
+                {
+                    var pawned = room.LivingPawns.Values.Any(p => p.OwnerActorNr == kv.Key);
+                    var dead = room.Flow.DeadActors.Contains(kv.Key);
+                    return $"{kv.Key}:{kv.Value}(pawn={(pawned ? "yes" : "no")},dead={(dead ? "yes" : "no")})";
+                });
+            Console.WriteLine(
+                $"[roster] freeze RoundLive round={room.Flow.RoundIndex} " +
+                $"roster=[{string.Join(" ", roster)}] " +
+                $"pawnOwners=[{string.Join(",", room.LivingPawns.Values.Select(p => p.OwnerActorNr).Distinct().OrderBy(nr => nr))}]");
         }
 
         if (txBomberFix && bomberId > 0)

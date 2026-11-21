@@ -95,6 +95,20 @@ public sealed class MatchFlowState
     /// </summary>
     public HashSet<byte> DeadActors { get; } = new();
     /// <summary>
+    /// Fighters that were already dead when the current round started and have not sent their
+    /// own <c>CreateWorldObject</c> since. Round-local <see cref="DeadActors"/> is reset at C2=22
+    /// so respawns are allowed, but a fighter who never comes back must not become «alive» just
+    /// because the phase advanced: the client shows no body, so the round is a man down.
+    /// </summary>
+    /// <remarks>
+    /// This is the per-player counterpart of the phase tick. A player alive at the end of the
+    /// previous round is never carried here — his delayed CWO cannot be mistaken for death. Only
+    /// a player who was already dead (or had no body when the round ended) is carried, and his
+    /// own CWO removes the mark. Gold <c>death</c> is a cumulative counter (1,2,3…), never a
+    /// round flag, so it cannot answer «did he respawn» — this set can.
+    /// </remarks>
+    public HashSet<byte> CarriedDeadActors { get; } = new();
+    /// <summary>
     /// Fighters that actually entered the current round (actor → team), frozen when combat
     /// starts (C2=31 for the bomb family, Live for classic Ranked).
     /// </summary>
@@ -302,6 +316,80 @@ public static class MatchFlowRules
     /// </remarks>
     public static void RemoveFromRoundRoster(MatchFlowState flow, byte actorNr) =>
         flow.RoundRoster.Remove(actorNr);
+
+    /// <summary>
+    /// C2=22 / PreStart: open a new round. Round-local <see cref="MatchFlowState.DeadActors"/>
+    /// resets so every fighter may respawn, but the per-player facts move to
+    /// <see cref="MatchFlowState.CarriedDeadActors"/>: a fighter who was dead at round end stays
+    /// dead until his own <c>CreateWorldObject</c> proves the respawn. This is what keeps a
+    /// phantom (died, never came back) from being counted alive for the rest of the match.
+    /// </summary>
+    /// <remarks>
+    /// A player who was alive at round end is never carried, so a ping-delayed CWO cannot be
+    /// mistaken for death — the decision is his own last known body, not the server phase.
+    /// </remarks>
+    public static void BeginRound(MatchFlowState flow)
+    {
+        flow.CarriedDeadActors.UnionWith(flow.DeadActors);
+        flow.DeadActors.Clear();
+    }
+
+    /// <summary>Fresh match / warmup: forget every per-player death fact from the last match.</summary>
+    public static void ResetRoundDeaths(MatchFlowState flow)
+    {
+        flow.DeadActors.Clear();
+        flow.CarriedDeadActors.Clear();
+    }
+
+    /// <summary>
+    /// The fighter's own body arrived (<c>CreateWorldObject</c>) — he spawned, therefore he is
+    /// alive again. Clears both the round death and the carried mark. Returns <c>true</c> when a
+    /// round death was actually cleared (diagnostics only).
+    /// </summary>
+    public static bool NoteSpawn(MatchFlowState flow, byte actorNr)
+    {
+        var wasDead = flow.DeadActors.Remove(actorNr);
+        flow.CarriedDeadActors.Remove(actorNr);
+        return wasDead;
+    }
+
+    /// <summary>
+    /// Snapshot per-player bodies when a round ends: a roster fighter with no living pawn was
+    /// dead or never spawned, and stays that way into the next round until his own CWO. Called
+    /// before the pause, while every live player still has his pawn (clients only Destroy+Create
+    /// at the next C2=22), so «no pawn» is a real state and not a transition race.
+    /// </summary>
+    public static void NoteRoundEndBodies(
+        MatchFlowState flow,
+        IEnumerable<byte> livingPawnOwners)
+    {
+        var owners = livingPawnOwners.ToHashSet();
+        foreach (var actor in flow.RoundRoster.Keys)
+        {
+            if (!owners.Contains(actor))
+                flow.CarriedDeadActors.Add(actor);
+        }
+        flow.CarriedDeadActors.UnionWith(flow.DeadActors);
+    }
+
+    /// <summary>
+    /// Combat is starting: a carried-dead fighter who still has no body cannot be counted alive.
+    /// Keyed to his own spawn evidence, not to the phase tick: a fighter who already spawned is
+    /// gone from <see cref="MatchFlowState.CarriedDeadActors"/> (see <see cref="NoteSpawn"/>), so
+    /// a ping-delayed CWO is never mistaken for a death. A CWO arriving after this point clears
+    /// the mark again — the same per-player rule in reverse.
+    /// </summary>
+    public static void SeedCarriedDeathsWithoutPawn(
+        MatchFlowState flow,
+        IEnumerable<byte> livingPawnOwners)
+    {
+        var owners = livingPawnOwners.ToHashSet();
+        foreach (var actor in flow.CarriedDeadActors)
+        {
+            if (!owners.Contains(actor))
+                flow.DeadActors.Add(actor);
+        }
+    }
 
     /// <summary>
     /// Is this actor part of the round that is being played? An empty roster means «not frozen
