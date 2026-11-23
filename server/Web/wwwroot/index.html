@@ -1615,6 +1615,29 @@ body.so-side-open .so-side{transform:none}
 .so-admban__n{font-family:var(--so-display);font-size:18px;color:#fff;letter-spacing:.05em}
 .so-admban__m{font-size:12.5px;color:var(--so-muted);margin-top:4px;line-height:1.5}
 .so-admban__x{margin-left:auto;flex:0 0 auto}
+.so-admban--col{display:block}
+.so-admban__head{display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+.so-admperms{display:flex;flex-wrap:wrap;gap:8px 16px;margin-top:12px}
+.so-admperm{
+  display:inline-flex;align-items:center;gap:7px;font-size:12.5px;
+  color:var(--so-text);cursor:pointer;
+}
+.so-admperm input{accent-color:var(--so-acc);width:15px;height:15px;cursor:pointer}
+.so-admperm--fixed{color:var(--so-muted);cursor:default}
+.so-admips{
+  display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-top:14px;
+  padding-top:12px;border-top:1px solid var(--so-line);
+}
+.so-admips .so-card__label{margin:0 4px 0 0}
+.so-admip{
+  display:inline-flex;align-items:center;gap:6px;padding:4px 8px 3px;border-radius:6px;
+  background:rgba(217,164,65,.14);border:1px solid rgba(217,164,65,.5);
+  color:#ffd76e;font-size:12px;letter-spacing:.04em;
+}
+.so-admip__x{
+  border:0;background:none;color:inherit;font-size:15px;line-height:1;
+  padding:0;cursor:pointer;
+}
 
 /* ── жалобы, публичные профили, администрация ── */
 .so-badge-adm{
@@ -2837,28 +2860,25 @@ img.so-pubav{object-fit:cover;}
 
     <h1 class="so-playhead__h">АДМИН <em>ПАНЕЛЬ</em></h1>
 
-    <!-- доступ закрыт: не админ или нет сессии сайта -->
-    <section class="so-card" id="adm-notadmin" aria-label="Доступ закрыт" style="margin-top:30px;max-width:620px">
-      <div class="so-card__t">ДОСТУП ЗАКРЫТ</div>
-      <p class="so-card__d" style="margin-top:10px" id="adm-notadmin-d">
-        Админ панель доступна только аккаунтам из списка <b>admin.ids</b> в config.json.
-        Сервер отклоняет все попытки остальных войти или выполнить админское действие.
-      </p>
-    </section>
-
-    <!-- вход по коду этого запуска -->
-    <section class="so-card" id="adm-auth" aria-label="Код этого запуска" hidden style="margin-top:30px;max-width:620px">
-      <div class="so-card__t">КОД ЭТОГО ЗАПУСКА</div>
+    <!-- вход: id и личный пароль; сессия сайта для панели не нужна -->
+    <section class="so-card" id="adm-auth" aria-label="Вход в админ панель" hidden style="margin-top:30px;max-width:620px">
+      <div class="so-card__t">ВХОД В ПАНЕЛЬ</div>
       <p class="so-card__d" style="margin-top:10px">
-        Код лежит в <b>auth.txt</b> рядом с config.json и печатается сервером в консоль при
-        старте. Тот же код, что админы вводят в чат лобби. После перезапуска сервера код
-        новый — авторизоваться надо заново.
+        Нужен твой числовой id и личный пароль из <b>auth/&lt;id&gt;/password.txt</b>
+        рядом с config.json. Это отдельный вход: сессия сайта и вход в игру на него
+        не влияют, а пароль не показывается никому, включая других админов.
       </p>
       <div class="so-formrow" style="margin-top:18px">
-        <input class="so-input" id="adm-code" autocomplete="off" spellcheck="false"
-               placeholder="код из auth.txt" aria-label="Код этого запуска">
+        <input class="so-input so-input--slim" id="adm-login-id" inputmode="numeric"
+               autocomplete="username" spellcheck="false" placeholder="id"
+               aria-label="ID администратора">
+        <input class="so-input" id="adm-password" type="password"
+               autocomplete="current-password" placeholder="личный пароль"
+               aria-label="Личный пароль">
         <button class="so-btn so-btn--sm" id="adm-login">ВОЙТИ</button>
       </div>
+      <p class="so-note">Вход живёт 7 дней. Забыл пароль — его меняет мега-админ или
+         консоль сервера: <b>admin passwd regen &lt;id&gt;</b>.</p>
       <p class="so-err" id="adm-auth-err"></p>
     </section>
 
@@ -2875,9 +2895,15 @@ img.so-pubav{object-fit:cover;}
       </div>
 
       <div class="so-admtabs" role="tablist" aria-label="Разделы админ панели">
-        <button class="so-tab" id="adm-tab-custom" aria-selected="true" aria-controls="adm-panel-custom">Кастомизация</button>
-        <button class="so-tab" id="adm-tab-bans" aria-selected="false" aria-controls="adm-panel-bans">Баны</button>
+        <button class="so-tab" id="adm-tab-custom" aria-selected="true" aria-controls="adm-panel-custom" hidden>Кастомизация</button>
+        <button class="so-tab" id="adm-tab-bans" aria-selected="false" aria-controls="adm-panel-bans" hidden>Баны</button>
+        <button class="so-tab" id="adm-tab-admins" aria-selected="false" aria-controls="adm-panel-admins" hidden>Админы и права</button>
       </div>
+
+      <p class="so-note" id="adm-noperms" hidden style="margin-top:18px">
+        Операционных прав пока нет: их выдаёт мега-админ. Тебе всегда доступны только
+        обзор и журнал.
+      </p>
 
       <!-- вкладка: кастомизация -->
       <section class="so-card" id="adm-panel-custom" role="tabpanel" style="margin-top:18px;max-width:620px">
@@ -2955,6 +2981,18 @@ img.so-pubav{object-fit:cover;}
         <div class="so-card__t" style="margin-top:30px;font-size:17px">АКТИВНЫЕ БАНЫ</div>
         <p class="so-note" id="adm-bans-empty" style="margin-top:10px">Активных банов нет.</p>
         <div class="so-admbans" id="adm-bans"></div>
+      </section>
+
+      <!-- вкладка: админы и права (только мега) -->
+      <section class="so-card" id="adm-panel-admins" role="tabpanel" hidden style="margin-top:18px;max-width:780px">
+        <div class="so-card__t">АДМИНЫ И ПРАВА</div>
+        <p class="so-card__d" style="margin-top:10px">
+          Права выдаёт только мега-админ. <b>dashboard</b> и <b>journal</b> есть у каждого
+          и не отнимаются; остальные включаются поштучно. Мега-права привязаны к IP —
+          добавь адрес, с которого заходишь, и он получит полный доступ.
+        </p>
+        <div class="so-admbans" id="adm-admins"></div>
+        <p class="so-err" id="adm-admins-err"></p>
       </section>
     </div>
   </main>
@@ -3098,7 +3136,7 @@ img.so-pubav{object-fit:cover;}
             <span class="so-note" id="rp-admin-sum" style="margin:0 0 0 auto"></span>
           </div>
           <p class="so-card__d" style="margin-top:8px">
-            Видны только админам, которые подтвердили код этого запуска в
+            Видны только админам, которые вошли по личному паролю в
             <a href="#/admin" style="color:var(--so-acc)">админ панели</a>.
           </p>
           <div class="so-chips" id="rp-admin-filters" role="group" aria-label="Фильтр жалоб" style="margin-top:16px">
@@ -3831,12 +3869,23 @@ function fmtTime(sec){
 }
 
 /* ═══════════ админ панель (#/admin) ═══════════ */
-/* Всё серверно: страница только показывает. Каждый чих сервер проверяет трижды:
-   сессия сайта → живой admin.ids → код этого запуска (админ-кука). */
+/* Всё серверно: страница только показывает. Вход — отдельный личный пароль,
+   сессия сайта и код из лобби на него не влияют. */
 var adminState = null;   /* ответ GET api/admin */
-var adminTab = 'custom';
+var adminTab = '';
+var adminAdmins = null;  /* ответ GET api/admin/admins */
 var adminTarget = null;  /* найденный для бана игрок */
 var adminBidTimer = 0;
+var ADMIN_PERMS = [
+  ['bans', 'баны'],
+  ['reports', 'жалобы'],
+  ['customization', 'кастомизация'],
+  ['rooms', 'комнаты'],
+  ['players', 'игроки'],
+  ['config', 'команды /set, /end'],
+  ['admins', 'управление админами'],
+  ['rollback', 'откат действий']
+];
 
 function adminStatusText(status){
   if (status === 'match') return 'в игре';
@@ -3848,39 +3897,53 @@ function adminStatusClass(status){
   if (status === 'lobby') return 'so-admst so-admst--lobby';
   return 'so-admst';
 }
+function adminHas(permission){
+  var st = adminState || {};
+  if (st.mega) return true;
+  return !!(st.permissions && st.permissions.indexOf(permission) >= 0);
+}
 
 function loadAdminState(){
   return api('GET', 'api/admin').then(function(res){
-    adminState = res.ok && res.data ? res.data : { admin: false, authed: false };
+    if (res.ok && res.data){
+      adminState = res.data;
+      renderAdmin();
+      return adminState;
+    }
+
+    /* 401 — просто не вошёл; 403 — сессию отозвали/забанили, скажем почему.
+       Никаких данных панели при этом не остаётся. */
+    adminState = { admin: false, authed: false };
+    adminAdmins = null;
+    adminTarget = null;
     renderAdmin();
+    if (res.status === 403 && res.data && res.data.message){
+      var err = $('adm-auth-err');
+      if (err) err.textContent = res.data.message;
+    }
     return adminState;
   });
 }
 
 function renderAdmin(){
-  var notadmin = $('adm-notadmin');
   var auth = $('adm-auth');
   var panel = $('adm-panel');
-  if (!notadmin || !auth || !panel) return;
+  if (!auth || !panel) return;
 
   var st = adminState || { admin: false, authed: false };
+  var signedIn = !!(st.admin && st.authed);
+  auth.hidden = signedIn;
+  panel.hidden = !signedIn;
 
-  /* Текст «доступ закрыт» зависит от того, есть ли вообще сессия сайта. */
-  var d = $('adm-notadmin-d');
-  if (d && !st.admin){
-    d.innerHTML = !me
-      ? 'Сначала войди на сайт — код из чата лобби на странице <b>#/profile</b>. ' +
-        'Панель открывается только аккаунтам из списка <b>admin.ids</b> в config.json; ' +
-        'сервер отклоняет всех остальных.'
-      : 'Твоего аккаунта нет в списке <b>admin.ids</b> в config.json. Сервер отклоняет все ' +
-        'попытки не-админов войти или выполнить админское действие.';
+  if (!signedIn){
+    /* Не вошёл — в DOM не должно остаться ни ника, ни аватара прошлой сессии. */
+    $('adm-nick').textContent = '';
+    $('adm-id').textContent = '';
+    var stale = $('adm-avatar'), staleFb = $('adm-avatar-fb');
+    if (stale){ stale.hidden = true; stale.removeAttribute('src'); }
+    if (staleFb) staleFb.hidden = true;
+    return;
   }
-
-  notadmin.hidden = !!st.admin;
-  auth.hidden = !(st.admin && !st.authed);
-  panel.hidden = !(st.admin && st.authed);
-
-  if (!st.admin || !st.authed) return;
 
   $('adm-nick').innerHTML = nickWithBadge(st.nick, true);
   $('adm-id').textContent = idLine(st.customId, st.id);
@@ -3896,12 +3959,24 @@ function renderAdmin(){
     img.hidden = false; fb.hidden = true;
   }
 
+  /* Вкладки только по правам: лишних кнопок, которые сервер всё равно отклонит, нет. */
+  var canCustom = adminHas('customization');
+  var canBans = adminHas('bans');
+  var canAdmins = !!st.mega;
+  $('adm-tab-custom').hidden = !canCustom;
+  $('adm-tab-bans').hidden = !canBans;
+  $('adm-tab-admins').hidden = !canAdmins;
+  $('adm-noperms').hidden = canCustom || canBans || canAdmins;
+
+  var allowed = { custom: canCustom, bans: canBans, admins: canAdmins };
+  if (!allowed[adminTab])
+    adminTab = canCustom ? 'custom' : (canBans ? 'bans' : (canAdmins ? 'admins' : ''));
+
   var cid = $('adm-cid');
   if (cid) cid.value = st.customId || '';
   renderAdminCidNow();
   renderAdminBanRange();
   switchAdminTab(adminTab);
-  if (adminTab === 'bans') loadAdminBans();
 }
 
 function renderAdminCidNow(){
@@ -3913,45 +3988,164 @@ function renderAdminCidNow(){
 }
 
 function switchAdminTab(tab){
-  adminTab = tab === 'bans' ? 'bans' : 'custom';
+  var allowed = {
+    custom: adminHas('customization'),
+    bans: adminHas('bans'),
+    admins: !!(adminState && adminState.mega)
+  };
+  adminTab = allowed[tab] ? tab : '';
+
   var custom = $('adm-panel-custom'), bans = $('adm-panel-bans');
+  var admins = $('adm-panel-admins');
   var tCustom = $('adm-tab-custom'), tBans = $('adm-tab-bans');
-  if (!custom || !bans || !tCustom || !tBans) return;
+  var tAdmins = $('adm-tab-admins');
+  if (!custom || !bans || !admins || !tCustom || !tBans || !tAdmins) return;
 
   custom.hidden = adminTab !== 'custom';
   bans.hidden = adminTab !== 'bans';
+  admins.hidden = adminTab !== 'admins';
   tCustom.setAttribute('aria-selected', String(adminTab === 'custom'));
   tBans.setAttribute('aria-selected', String(adminTab === 'bans'));
+  tAdmins.setAttribute('aria-selected', String(adminTab === 'admins'));
 
   if (adminTab === 'bans') loadAdminBans();
+  if (adminTab === 'admins') loadAdminAdmins();
 }
 
 function adminLogin(){
-  var input = $('adm-code');
+  var idInput = $('adm-login-id');
+  var passInput = $('adm-password');
   var err = $('adm-auth-err');
-  var code = input ? input.value.trim() : '';
+  var id = idInput ? idInput.value.trim() : '';
+  var password = passInput ? passInput.value : '';
   if (err) err.textContent = '';
-  if (!code){
-    if (err) err.textContent = 'введи код из auth.txt';
+
+  if (!/^[0-9]+$/.test(id) || Number(id) <= 0){
+    if (err) err.textContent = 'id — число больше нуля (его показывает /whoami)';
+    return;
+  }
+  if (!password){
+    if (err) err.textContent = 'введи личный пароль из auth/<id>/password.txt';
     return;
   }
 
-  return api('POST', 'api/admin/login', { code: code }).then(function(res){
+  return api('POST', 'api/admin/login', { id: Number(id), password: password }).then(function(res){
     if (!res.ok || !res.data){
-      if (err) err.textContent = (res.data && res.data.message) || 'код не подошёл';
+      if (err) err.textContent = (res.data && res.data.message) || 'id или пароль не подходят';
       return;
     }
     adminState = res.data;
-    if (input) input.value = '';
+    if (passInput) passInput.value = '';
     renderAdmin();
   });
 }
 
 function adminLogout(){
   return api('POST', 'api/admin/logout').then(function(){
-    adminState = { admin: adminState && adminState.admin, authed: false };
+    adminState = { admin: false, authed: false };
+    adminAdmins = null;
     adminTarget = null;
     renderAdmin();
+  });
+}
+
+/* ── админы и права: только мега-админ ── */
+function loadAdminAdmins(){
+  var box = $('adm-admins');
+  var err = $('adm-admins-err');
+  if (!box) return Promise.resolve();
+  if (err) err.textContent = '';
+
+  return api('GET', 'api/admin/admins').then(function(res){
+    if (!res.ok || !res.data){
+      if (err) err.textContent = (res.data && res.data.message) || 'список админов не загрузился';
+      return;
+    }
+    adminAdmins = res.data;
+    renderAdminAdmins();
+  });
+}
+
+function renderAdminAdmins(){
+  var box = $('adm-admins');
+  if (!box) return;
+
+  var data = adminAdmins;
+  if (!data || !data.admins || !data.admins.length){
+    box.innerHTML = '<p class="so-note">Админов нет: впиши id в admin.ids.</p>';
+    return;
+  }
+
+  box.innerHTML = data.admins.map(function(a){
+    var perms = a.permissions || [];
+    var mega = a.megaIps && a.megaIps.length > 0;
+    var checks = ADMIN_PERMS.map(function(p){
+      return '<label class="so-admperm"><input type="checkbox" data-adm-perm="'
+        + p[0] + '"' + (perms.indexOf(p[0]) >= 0 ? ' checked' : '') + '> ' + p[1] + '</label>';
+    }).join('');
+
+    var megaIps = '';
+    if (data.mega && a.megaIps){
+      megaIps = '<div class="so-admips"><span class="so-card__label">MEGA IP</span>'
+        + a.megaIps.map(function(ip){
+            return '<span class="so-admip">' + esc(ip)
+              + ' <button type="button" class="so-admip__x" data-adm-mega-del="' + esc(ip)
+              + '" aria-label="Убрать IP">×</button></span>';
+          }).join('')
+        + '<input class="so-input so-input--slim" data-adm-mega-input spellcheck="false"'
+        + ' placeholder="192.168.1.10" aria-label="IP для мега-прав">'
+        + '<button type="button" class="so-btn so-btn--sm so-btn--ghost" data-adm-mega-add>'
+        + 'ДОБАВИТЬ</button></div>';
+    }
+
+    return '<div class="so-admban so-admban--col" data-adm-id="' + a.id + '">'
+      + '<div class="so-admban__head">'
+      + '<div class="so-admban__n">' + esc(a.nick || ('id #' + a.id))
+      + ' <span class="so-admcard__id">#' + a.id + '</span>'
+      + (mega ? ' <span class="so-badge-adm">MEGA</span>' : '')
+      + (a.live === false ? ' <span class="so-admst so-admst--warn">не в admin.ids</span>' : '')
+      + '</div>'
+      + '<span class="so-admcard__id">v' + a.authVersion + '</span>'
+      + '</div>'
+      + '<div class="so-admperms"><span class="so-admperm so-admperm--fixed">'
+      + 'dashboard, journal — всегда</span>' + checks + '</div>'
+      + megaIps
+      + '<div class="so-formrow" style="margin-top:12px">'
+      + '<button type="button" class="so-btn so-btn--sm" data-adm-perm-save>СОХРАНИТЬ ПРАВА</button>'
+      + '</div></div>';
+  }).join('');
+}
+
+function adminSavePermissions(card){
+  var id = Number(card.getAttribute('data-adm-id'));
+  var list = [];
+  Array.prototype.forEach.call(card.querySelectorAll('[data-adm-perm]'), function(cb){
+    if (cb.checked) list.push(cb.getAttribute('data-adm-perm'));
+  });
+
+  var err = $('adm-admins-err');
+  if (err) err.textContent = '';
+  return api('POST', 'api/admin/permissions', { id: id, permissions: list }).then(function(res){
+    if (!res.ok || !res.data){
+      if (err) err.textContent = (res.data && res.data.message) || 'права не изменились';
+      return;
+    }
+    adminAdmins = res.data;
+    renderAdminAdmins();
+  });
+}
+
+function adminSetMegaIp(card, action, ip){
+  var id = Number(card.getAttribute('data-adm-id'));
+  var err = $('adm-admins-err');
+  if (err) err.textContent = '';
+  return api('POST', 'api/admin/mega', { id: id, ip: ip, action: action }).then(function(res){
+    if (!res.ok || !res.data){
+      if (err) err.textContent = (res.data && res.data.message) || 'IP не изменён';
+      return;
+    }
+    adminAdmins = res.data;
+    renderAdminAdmins();
   });
 }
 
@@ -5884,14 +6078,44 @@ function init(){
     location.hash = '#/admin';
   });
 
-  /* админ панель: вход, вкладки, кастомизация, баны */
+  /* админ панель: вход, вкладки, кастомизация, баны, права */
   $('adm-login').addEventListener('click', adminLogin);
-  $('adm-code').addEventListener('keydown', function(e){
+  $('adm-login-id').addEventListener('keydown', function(e){
+    if (e.key === 'Enter') adminLogin();
+  });
+  $('adm-password').addEventListener('keydown', function(e){
     if (e.key === 'Enter') adminLogin();
   });
   $('adm-logout').addEventListener('click', adminLogout);
   $('adm-tab-custom').addEventListener('click', function(){ switchAdminTab('custom'); });
   $('adm-tab-bans').addEventListener('click', function(){ switchAdminTab('bans'); });
+  $('adm-tab-admins').addEventListener('click', function(){ switchAdminTab('admins'); });
+  $('adm-admins').addEventListener('click', function(e){
+    var card = e.target && e.target.closest ? e.target.closest('[data-adm-id]') : null;
+    if (!card) return;
+
+    if (e.target.closest('[data-adm-perm-save]')){
+      adminSavePermissions(card);
+      return;
+    }
+
+    var del = e.target.closest('[data-adm-mega-del]');
+    if (del){
+      adminSetMegaIp(card, 'remove', del.getAttribute('data-adm-mega-del'));
+      return;
+    }
+
+    if (e.target.closest('[data-adm-mega-add]')){
+      var input = card.querySelector('[data-adm-mega-input]');
+      var ip = input ? input.value.trim() : '';
+      var err = $('adm-admins-err');
+      if (!ip){
+        if (err) err.textContent = 'введи IP, например 192.168.1.10';
+        return;
+      }
+      adminSetMegaIp(card, 'add', ip);
+    }
+  });
   $('adm-cid').addEventListener('input', adminFilterCid);
   $('adm-cid').addEventListener('keydown', function(e){
     if (e.key === 'Enter') adminSaveCid(false);

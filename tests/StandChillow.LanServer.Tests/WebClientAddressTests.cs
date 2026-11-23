@@ -32,12 +32,28 @@ public sealed class WebClientAddressTests
     }
 
     [Fact]
-    public void Proxy_on_lan_trusts_forwarded_for()
+    public void Proxy_on_lan_needs_an_explicit_trust_entry()
     {
+        // LAN-клиент не должен называться чужим адресом: иначе он подделает
+        // X-Forwarded-For и получит чужой мега-IP.
         var resolved = WebClientAddress.Resolve(
             ProxyOnLan, With("X-Forwarded-For", "198.51.100.7"));
 
-        Assert.Equal(Visitor, resolved);
+        Assert.Equal(ProxyOnLan, resolved);
+    }
+
+    [Theory]
+    [InlineData("192.168.1.10")]
+    [InlineData("192.168.1.0/24")]
+    public void Explicit_trusted_proxy_gets_the_forwarded_address(string entry)
+    {
+        var headers = With("X-Forwarded-For", "198.51.100.7");
+
+        Assert.Equal(
+            Visitor,
+            WebClientAddress.Resolve(ProxyOnLan, headers, new[] { entry }));
+        Assert.True(WebClientAddress.IdentifiesVisitor(
+            ProxyOnLan, headers, new[] { entry }));
     }
 
     [Fact]
@@ -114,15 +130,36 @@ public sealed class WebClientAddressTests
 
     [Theory]
     [InlineData("127.0.0.1")]
+    [InlineData("::1")]
+    public void Trusted_peers_by_default_are_loopback_only(string peer)
+    {
+        Assert.True(
+            WebClientAddress.IsTrustedProxyPeer(IPAddress.Parse(peer)));
+    }
+
+    [Theory]
     [InlineData("10.0.0.5")]
     [InlineData("172.16.0.5")]
     [InlineData("172.31.255.255")]
     [InlineData("192.168.7.30")]
     [InlineData("169.254.1.5")]
-    public void Trusted_peers(string peer)
+    public void Private_lan_peers_are_not_trusted_without_the_list(string peer)
     {
-        Assert.True(
+        Assert.False(
             WebClientAddress.IsTrustedProxyPeer(IPAddress.Parse(peer)));
+    }
+
+    [Theory]
+    [InlineData("10.0.0.5")]
+    [InlineData("172.16.0.5")]
+    [InlineData("172.31.255.255")]
+    [InlineData("192.168.7.30")]
+    [InlineData("169.254.1.5")]
+    public void Explicit_list_trusts_lan_peers(string peer)
+    {
+        var trusted = new[] { "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "169.254.0.0/16" };
+        Assert.True(
+            WebClientAddress.IsTrustedProxyPeer(IPAddress.Parse(peer), trusted));
     }
 
     [Theory]
@@ -138,8 +175,8 @@ public sealed class WebClientAddressTests
     [Fact]
     public void Mapped_ipv6_peer_is_recognised()
     {
-        // Dual-mode сокет: IPv4-клиент приходит как ::ffff:192.168.1.10.
-        var peer = IPAddress.Parse("::ffff:192.168.1.10");
+        // Dual-mode сокет: IPv4-loopback приходит как ::ffff:127.0.0.1.
+        var peer = IPAddress.Parse("::ffff:127.0.0.1");
         Assert.True(WebClientAddress.IsTrustedProxyPeer(peer));
 
         var resolved = WebClientAddress.Resolve(
@@ -182,10 +219,11 @@ public sealed class WebClientAddressTests
         };
 
         var visitors = new[] { "198.51.100.7", "198.51.100.8", "203.0.113.9", "203.0.113.10" };
+        var trusted = new[] { "192.168.1.0/24" };
         foreach (var visitor in visitors)
         {
             var address = WebClientAddress.Resolve(
-                ProxyOnLan, With("X-Forwarded-For", visitor));
+                ProxyOnLan, With("X-Forwarded-For", visitor), trusted);
             Assert.NotNull(address);
 
             // Страница гостя: запрос + четыре её параллельных запроса.
@@ -200,13 +238,17 @@ public sealed class WebClientAddressTests
     [Fact]
     public void Only_a_trusted_proxy_naming_a_client_identifies_visitors()
     {
-        // Заголовок от своего прокси — посетителей различаем.
+        // Заголовок от явно доверенного прокси — посетителей различаем.
         Assert.True(WebClientAddress.IdentifiesVisitor(
-            ProxyOnLan, With("X-Forwarded-For", "198.51.100.7")));
+            ProxyOnLan, With("X-Forwarded-For", "198.51.100.7"),
+            new[] { "192.168.1.10" }));
         Assert.True(WebClientAddress.IdentifiesVisitor(
             ProxyOnHost, With("X-Real-IP", "198.51.100.7")));
 
-        // Нет заголовка / пришёл напрямую из интернета / мусор — адрес общий.
+        // LAN-прокси без записи в trustedProxies, нет заголовка, пришёл напрямую
+        // из интернета или мусор — адрес общий.
+        Assert.False(WebClientAddress.IdentifiesVisitor(
+            ProxyOnLan, With("X-Forwarded-For", "198.51.100.7")));
         Assert.False(WebClientAddress.IdentifiesVisitor(ProxyOnLan, null));
         Assert.False(WebClientAddress.IdentifiesVisitor(
             DirectFromInternet, With("X-Forwarded-For", "198.51.100.7")));

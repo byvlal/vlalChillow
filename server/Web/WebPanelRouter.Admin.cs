@@ -1,106 +1,172 @@
+using System.Net;
 using System.Text;
 using System.Text.Json;
+using StandChillow.LanServer.Auth;
 using StandChillow.LanServer.Bans;
 using StandChillow.LanServer.Net;
 
 namespace StandChillow.LanServer.Web;
 
 /// <summary>
-/// Админ панель веб-сайта: состояние, вход по коду этого запуска, кастомизация,
-/// баны. Данные отдаёт <see cref="GameNetHost"/>, права проверяет затвор ниже.
+/// Админ панель веб-сайта: состояние, вход по личному паролю, кастомизация, баны,
+/// права. Данные отдаёт <see cref="GameNetHost"/>, доступ проверяет <see cref="AdminGate"/>.
 /// </summary>
 /// <remarks>
 /// <para>
-/// Тройной затвор на каждый эндпоинт: сессия сайта (кто ты) → <b>живой</b> конфиг
-/// <c>admin.ids</c> (кто админ — перечитывание конфига сразу снимает доступ) →
-/// админ-кука этого запуска (код из auth.txt, в памяти до рестарта). Любая ветка не
-/// пройдена — 401/403, данных нет.
+/// Затвор один: админ-кука с паролем → живой id из <c>admin.ids</c> → право на действие.
+/// Сессия сайта для админки не нужна: вход в панель — это отдельный пароль, и он не
+/// зависит от кода из лобби. Без куки не отдаётся ни один байт данных.
 /// </para>
 /// <para>
-/// Анонимный <c>GET /api/admin</c> не ошибка, а честное «ты не админ»: страница на
-/// <c>#/admin</c> должна открываться всем, содержимое показывается только после входа.
-/// Все остальные эндпоинты (вход, поиск, кастомизация, баны) — затвор полностью.
+/// Права выдаёт только мега-админ: его IP есть в <c>megaIps</c> записи. Обычный админ
+/// видит <c>dashboard</c> и <c>journal</c>, пока мега-админ не выдаст операционные.
 /// </para>
 /// </remarks>
 public sealed partial class WebPanelRouter
 {
-    /// <summary>
-    /// Тройной затвор админ-эндпоинта. Ответ-отказ (401/403/503) или <c>null</c>,
-    /// если обе сессии получены и валидны.
-    /// </summary>
-    private WebResponse? AdminGate(WebRequestContext request, out SiteSession site, out AdminSession admin)
+    private readonly AdminLoginLimiter _adminLoginLimiter = new();
+
+    /// <summary>Затвор админ-эндпоинта: кука → живой админ → право.</summary>
+    private WebResponse? AdminGate(
+        WebRequestContext request, out AdminSession admin, string permission)
     {
-        site = null!;
         admin = null!;
 
-        var session = SessionOf(request);
+        if (_options.AdminSessionStore is null
+            || _options.AdminStore is null
+            || _options.IsAdminLive is null)
+            return ApiError(503, "admin_disabled", "админ панель не настроена на этом сервере");
+
+        var now = DateTime.UtcNow;
+        var session = _options.AdminSessionStore.Find(
+            AdminCookie.ReadToken(request.Headers), now);
         if (session is null)
-            return ApiError(401, "no_auth", "нужно ввести код из лобби");
+            return ApiError(401, "no_admin_auth", "войди в админ панель: id и личный пароль");
 
-        if (BannedRefusal(session) is { } banned)
-            return banned;
+        if (!_options.IsAdminLive(session.PlayerId))
+            return ApiError(403, "not_admin", "этого id больше нет в admin.ids");
 
-        if (_options.IsAdminLive?.Invoke(session.PlayerId) != true)
-            return ApiError(403, "not_admin", "админ панель доступна только админам сервера");
+        if (_options.IsBanned?.Invoke(session.PlayerId) == true)
+        {
+            _options.AdminSessionStore.DropByPlayer(session.PlayerId);
+            return ApiError(403, "banned", "аккаунт забанен");
+        }
 
-        var adminSession = _options.AdminSessionStore?.Find(AdminCookie.ReadToken(request.Headers));
-        if (adminSession is null || adminSession.PlayerId != session.PlayerId)
-            return ApiError(403, "no_admin_auth", "введи код этого запуска из auth.txt");
+        var record = _options.AdminStore.Find(session.PlayerId);
+        if (record is null)
+            return ApiError(403, "not_admin", "для этого id нет записи админа");
 
-        site = session;
-        admin = adminSession;
+        if (!_options.AdminStore.HasPermission(
+                session.PlayerId, request.RemoteAddress, permission))
+            return ApiError(403, "no_permission",
+                $"нет права «{permission}» — его выдаёт мега-админ");
+
+        admin = session;
+        return null;
+    }
+
+    /// <summary>Затвор, где достаточно любого из прав (поиск игрока нужен и банам).</summary>
+    private WebResponse? AdminGateAny(
+        WebRequestContext request, out AdminSession admin, params string[] permissions)
+    {
+        admin = null!;
+
+        if (_options.AdminSessionStore is null
+            || _options.AdminStore is null
+            || _options.IsAdminLive is null)
+            return ApiError(503, "admin_disabled", "админ панель не настроена на этом сервере");
+
+        var session = _options.AdminSessionStore.Find(
+            AdminCookie.ReadToken(request.Headers), DateTime.UtcNow);
+        if (session is null)
+            return ApiError(401, "no_admin_auth", "войди в админ панель: id и личный пароль");
+
+        if (!_options.IsAdminLive(session.PlayerId))
+            return ApiError(403, "not_admin", "этого id больше нет в admin.ids");
+
+        if (_options.IsBanned?.Invoke(session.PlayerId) == true)
+        {
+            _options.AdminSessionStore.DropByPlayer(session.PlayerId);
+            return ApiError(403, "banned", "аккаунт забанен");
+        }
+
+        if (_options.AdminStore.Find(session.PlayerId) is null)
+            return ApiError(403, "not_admin", "для этого id нет записи админа");
+
+        foreach (var permission in permissions)
+        {
+            if (_options.AdminStore.HasPermission(
+                    session.PlayerId, request.RemoteAddress, permission))
+            {
+                admin = session;
+                return null;
+            }
+        }
+
+        return ApiError(403, "no_permission",
+            $"нет ни одного из прав: {string.Join(", ", permissions)}");
+    }
+
+    /// <summary>Только мега-админ: IP должен совпасть с megaIps.</summary>
+    private WebResponse? MegaGate(WebRequestContext request, out AdminSession admin)
+    {
+        if (AdminGate(request, out admin, AdminPermissions.Dashboard) is { } denied)
+            return denied;
+
+        if (_options.AdminStore?.IsMega(admin.PlayerId, request.RemoteAddress) != true)
+            return ApiError(403, "not_mega",
+                "это действие доступно только мега-админу с его IP");
+
         return null;
     }
 
     // ── Состояние ───────────────────────────────────────────────────────────────
 
-    /// <summary>Состояние админ-панели для этой сессии сайта (без данных, если не админ).</summary>
+    /// <summary>Состояние админ-панели. Без входа — 401, без права — 403, данных нет.</summary>
     private WebResponse AdminState(WebRequestContext request)
     {
-        var session = SessionOf(request);
-        if (session is null)
-            return AdminStateJson(null, null, authed: false);
+        if (AdminGate(request, out var admin, AdminPermissions.Dashboard) is { } denied)
+            return denied;
 
-        if (BannedRefusal(session) is { } banned)
-            return banned;
+        var record = _options.AdminStore?.Find(admin.PlayerId);
+        if (record is null)
+            return ApiError(403, "not_admin", "для этого id нет записи админа");
 
-        if (_options.IsAdminLive?.Invoke(session.PlayerId) != true)
-            return AdminStateJson(null, null, authed: false);
-
-        var adminSession = _options.AdminSessionStore?.Find(AdminCookie.ReadToken(request.Headers));
-        if (adminSession is null || adminSession.PlayerId != session.PlayerId)
-            return AdminStateJson(session.PlayerId, session.Nick, authed: false);
-
-        return AdminStateJson(session.PlayerId, session.Nick, authed: true);
+        return AdminStateJson(record, request.RemoteAddress);
     }
 
-    /// <summary>
-    /// JSON состояния. <paramref name="id"/> — <c>null</c> для не-админа (данных нет:
-    /// ни ника, ни факта админства).
-    /// </summary>
-    private WebResponse AdminStateJson(int? id, string? nick, bool authed)
+    /// <summary>JSON состояния вошедшего админа: без записи сюда не попадают.</summary>
+    private WebResponse AdminStateJson(AdminRecord record, IPAddress? ip)
     {
         using var stream = new MemoryStream();
         using (var writer = new Utf8JsonWriter(stream, JsonText.WriterOptions))
         {
             writer.WriteStartObject();
             writer.WriteBoolean("ok", true);
-            writer.WriteBoolean("admin", id is not null);
-            writer.WriteBoolean("authed", authed);
+            writer.WriteBoolean("admin", true);
+            writer.WriteBoolean("authed", true);
 
-            if (id is not null)
-            {
-                writer.WriteNumber("id", id.Value);
-                writer.WriteString("nick", nick ?? "");
-                writer.WriteString("customId", _options.CustomIdGet?.Invoke(id.Value));
+            var permissions = _options.AdminStore?.PermissionsFor(record.Id, ip)
+                ?? AdminPermissions.Normalize(record.Permissions);
+            var mega = _options.AdminStore?.IsMega(record.Id, ip) == true;
 
-                var (enabled, minMinutes, maxDays) = _options.BanSettings?.Invoke() ?? (false, 10, 14);
-                writer.WriteStartObject("bans");
-                writer.WriteBoolean("enabled", enabled);
-                writer.WriteNumber("minMinutes", minMinutes);
-                writer.WriteNumber("maxDays", maxDays);
-                writer.WriteEndObject();
-            }
+            writer.WriteNumber("id", record.Id);
+            writer.WriteString("nick", record.Nick ?? "");
+            writer.WriteString("role", mega ? "mega" : "admin");
+            writer.WriteBoolean("mega", mega);
+            writer.WriteString("customId", _options.CustomIdGet?.Invoke(record.Id));
+
+            writer.WriteStartArray("permissions");
+            foreach (var permission in permissions)
+                writer.WriteStringValue(permission);
+            writer.WriteEndArray();
+
+            var (enabled, minMinutes, maxDays) = _options.BanSettings?.Invoke() ?? (false, 10, 14);
+            writer.WriteStartObject("bans");
+            writer.WriteBoolean("enabled", enabled);
+            writer.WriteNumber("minMinutes", minMinutes);
+            writer.WriteNumber("maxDays", maxDays);
+            writer.WriteEndObject();
 
             writer.WriteEndObject();
         }
@@ -110,21 +176,12 @@ public sealed partial class WebPanelRouter
 
     // ── Вход / выход ────────────────────────────────────────────────────────────
 
-    /// <summary>Вход в админ панель: код этого запуска (тот же, что в auth.txt и в чате лобби).</summary>
+    /// <summary>Вход в админ панель по id и личному паролю. Сессия сайта не нужна.</summary>
     private WebResponse AdminLogin(WebRequestContext request)
     {
-        var session = SessionOf(request);
-        if (session is null)
-            return ApiError(401, "no_auth", "нужно ввести код из лобби");
-
-        if (BannedRefusal(session) is { } refused)
-            return refused;
-
-        // Не-админ даже код вводить не должен: спека — отклонять всех, кто не админ.
-        if (_options.IsAdminLive?.Invoke(session.PlayerId) != true)
-            return ApiError(403, "not_admin", "админ панель доступна только админам сервера");
-
-        if (_options.AdminSessionStore is null || _options.AdminCodeMatches is null)
+        if (_options.AdminSessionStore is null
+            || _options.AdminStore is null
+            || _options.IsAdminLive is null)
             return ApiError(503, "admin_disabled", "вход в админ панель не настроен на этом сервере");
 
         AdminLoginRequest? parsed;
@@ -137,27 +194,46 @@ public sealed partial class WebPanelRouter
             return ApiError(400, "bad_json", "тело запроса — не JSON");
         }
 
-        var code = parsed?.Code?.Trim();
-        if (string.IsNullOrEmpty(code))
-            return ApiError(400, "empty_code", "введи код из auth.txt");
+        if (parsed is null || parsed.Id <= 0)
+            return ApiError(400, "bad_id", "id — число больше нуля");
+        if (string.IsNullOrWhiteSpace(parsed.Password))
+            return ApiError(400, "empty_password", "введи личный пароль из auth/<id>/password.txt");
 
-        // Константное сравнение внутри Matches: время ответа не выдаёт длину/близость кода.
-        if (!_options.AdminCodeMatches(code))
+        var now = DateTime.UtcNow;
+        if (!_adminLoginLimiter.TryBegin(request.RemoteAddress, now))
         {
+            var wait = _adminLoginLimiter.RetryAfterSec(request.RemoteAddress, now);
             Console.WriteLine(
-                $"[web] админ-код отклонён: '{session.Nick}' (ID {session.PlayerId}) с {request.RemoteAddress}");
-            return ApiError(403, "bad_code", "код не подходит — он в auth.txt рядом с config.json, и он новый после каждого рестарта");
+                $"[web] лимит попыток входа: {request.RemoteAddress} — ещё {wait} с");
+            return ApiError(429, "too_many_attempts",
+                $"слишком много попыток — подожди {wait} секунд");
         }
 
-        var adminSession = _options.AdminSessionStore.Create(session.PlayerId, session.Nick, DateTime.UtcNow);
-        if (adminSession is null)
-            return ApiError(503, "too_many_sessions", "на сервере кончились админ-сессии — попробуй позже");
+        var record = _options.AdminStore.Verify(parsed.Id, parsed.Password, now);
+        if (record is null || !_options.IsAdminLive(record.Id))
+        {
+            _adminLoginLimiter.Fail(request.RemoteAddress, now);
+            Console.WriteLine(
+                $"[web] вход отклонён: id #{parsed.Id} с {request.RemoteAddress} " +
+                "(неверный пароль или id не админ)");
+            // Один и тот же ответ: не подсказываем, существует ли id.
+            return ApiError(401, "bad_credentials", "id или пароль не подходят");
+        }
 
+        _adminLoginLimiter.Reset(request.RemoteAddress);
+        var adminSession = _options.AdminSessionStore.Create(
+            record.Id, record.Nick, record.AuthVersion, now);
+        if (adminSession is null)
+            return ApiError(503, "too_many_sessions",
+                "на сервере кончились админ-сессии — попробуй позже");
+
+        _options.AdminStore.Journal("auth", "login", record.Id, record.Id);
         Console.WriteLine(
-            $"[web] админ-авторизация: '{session.Nick}' (ID {session.PlayerId}) с {request.RemoteAddress}");
+            $"[web] админ-вход: #{record.Id} с {request.RemoteAddress} " +
+            $"(мега: {_options.AdminStore.IsMega(record.Id, request.RemoteAddress)})");
 
         return WithCookie(
-            AdminStateJson(session.PlayerId, session.Nick, authed: true),
+            AdminStateJson(record, request.RemoteAddress),
             AdminCookie.Build(adminSession.Token, _options.CookiePath, _options.SecureCookies));
     }
 
@@ -168,10 +244,128 @@ public sealed partial class WebPanelRouter
         if (token is { Length: > 0 })
             _options.AdminSessionStore?.Drop(token);
 
-        // Куку гасим всегда — как у сессии сайта.
         return WithCookie(
             WebResponse.Json("{\"ok\":true}"),
             AdminCookie.BuildExpired(_options.CookiePath, _options.SecureCookies));
+    }
+
+    // ── Админы и права (только мега) ────────────────────────────────────────────
+
+    /// <summary>Список админов. Только с правом <c>admins</c>; megaIps — только мега.</summary>
+    private WebResponse AdminList(WebRequestContext request)
+    {
+        if (AdminGate(request, out var admin, AdminPermissions.Admins) is { } denied)
+            return denied;
+
+        return AdminListJson(admin.PlayerId, request.RemoteAddress);
+    }
+
+    /// <summary>Список без повторной проверки: вызывающий уже прошёл затвор.</summary>
+    private WebResponse AdminListJson(int viewerId, IPAddress? address)
+    {
+        var viewerMega = _options.AdminStore?.IsMega(viewerId, address) == true;
+        var records = _options.AdminStore?.Records() ?? Array.Empty<AdminRecord>();
+
+        using var stream = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(stream, JsonText.WriterOptions))
+        {
+            writer.WriteStartObject();
+            writer.WriteBoolean("ok", true);
+            writer.WriteBoolean("mega", viewerMega);
+            writer.WriteStartArray("admins");
+            foreach (var record in records)
+            {
+                writer.WriteStartObject();
+                writer.WriteNumber("id", record.Id);
+                writer.WriteString("nick", record.Nick ?? "");
+                writer.WriteString("role", record.Role);
+                writer.WriteString("addedBy", record.AddedBy);
+                writer.WriteNumber("authVersion", record.AuthVersion);
+                writer.WriteBoolean("live", _options.IsAdminLive?.Invoke(record.Id) == true);
+                writer.WriteStartArray("permissions");
+                foreach (var permission in AdminPermissions.Normalize(record.Permissions))
+                    writer.WriteStringValue(permission);
+                writer.WriteEndArray();
+                if (viewerMega)
+                {
+                    writer.WriteStartArray("megaIps");
+                    foreach (var ip in record.MegaIps)
+                        writer.WriteStringValue(ip);
+                    writer.WriteEndArray();
+                }
+                writer.WriteEndObject();
+            }
+            writer.WriteEndArray();
+            writer.WriteEndObject();
+        }
+
+        return WebResponse.Json(Encoding.UTF8.GetString(stream.ToArray()));
+    }
+
+    /// <summary>Выдать/отнять операционные права. Только мега-админ.</summary>
+    private WebResponse AdminSetPermissions(WebRequestContext request)
+    {
+        if (MegaGate(request, out var admin) is { } denied)
+            return denied;
+
+        AdminPermissionsRequest? parsed;
+        try
+        {
+            parsed = JsonSerializer.Deserialize<AdminPermissionsRequest>(request.Body, JsonOptions);
+        }
+        catch (JsonException)
+        {
+            return ApiError(400, "bad_json", "тело запроса — не JSON");
+        }
+
+        if (parsed is null || parsed.Id <= 0)
+            return ApiError(400, "bad_id", "id — число больше нуля");
+
+        string? error = null;
+        if (_options.AdminStore?.SetPermissions(
+                admin.PlayerId, parsed.Id, parsed.Permissions, DateTime.UtcNow,
+                out error) != true)
+            return ApiError(400, "permissions_refused", error ?? "права не изменены");
+
+        Console.WriteLine(
+            $"[web] права #{parsed.Id} → {AdminPermissions.Describe(parsed.Permissions)} " +
+            $"(кто: #{admin.PlayerId})");
+        return AdminListJson(admin.PlayerId, request.RemoteAddress);
+    }
+
+    /// <summary>Добавить/убрать мега-IP. Только мега-админ.</summary>
+    private WebResponse AdminMegaIp(WebRequestContext request)
+    {
+        if (MegaGate(request, out var admin) is { } denied)
+            return denied;
+
+        AdminMegaRequest? parsed;
+        try
+        {
+            parsed = JsonSerializer.Deserialize<AdminMegaRequest>(request.Body, JsonOptions);
+        }
+        catch (JsonException)
+        {
+            return ApiError(400, "bad_json", "тело запроса — не JSON");
+        }
+
+        if (parsed is null || parsed.Id <= 0)
+            return ApiError(400, "bad_id", "id — число больше нуля");
+
+        var action = (parsed.Action ?? "").Trim().ToLowerInvariant();
+        var ok = action switch
+        {
+            "add" => _options.AdminStore?.AddMegaIp(
+                admin.PlayerId, parsed.Id, parsed.Ip, DateTime.UtcNow, out _) == true,
+            "remove" => _options.AdminStore?.RemoveMegaIp(
+                admin.PlayerId, parsed.Id, parsed.Ip, DateTime.UtcNow, out _) == true,
+            _ => false,
+        };
+
+        if (!ok)
+            return ApiError(400, "mega_refused", "не удалось изменить megaIps");
+
+        return AdminListJson(admin.PlayerId, request.RemoteAddress);
     }
 
     // ── Кастомизация ────────────────────────────────────────────────────────────
@@ -179,7 +373,7 @@ public sealed partial class WebPanelRouter
     /// <summary>Поставить/сбросить свой кастомный ID. Только себе — чужой не трогаем.</summary>
     private WebResponse AdminSetCustomId(WebRequestContext request)
     {
-        if (AdminGate(request, out var session, out _) is { } denied)
+        if (AdminGate(request, out var admin, AdminPermissions.Customization) is { } denied)
             return denied;
 
         if (_options.CustomIdSet is null)
@@ -199,14 +393,17 @@ public sealed partial class WebPanelRouter
         if (value.Length > CustomIdStore.MaxLength)
             return ApiError(400, "bad_custom_id", $"максимум {CustomIdStore.MaxLength} символов");
 
-        var error = _options.CustomIdSet(session.PlayerId, value.Length == 0 ? null : value);
+        var error = _options.CustomIdSet(admin.PlayerId, value.Length == 0 ? null : value);
         if (error is not null)
             return ApiError(400, "bad_custom_id", error);
 
         var action = value.Length == 0 ? "сбросил" : "поставил";
-        Console.WriteLine($"[web] кастомный ID: '{session.Nick}' (ID {session.PlayerId}) {action} «{value}»");
+        Console.WriteLine($"[web] кастомный ID: #{admin.PlayerId} {action} «{value}»");
 
-        return AdminStateJson(session.PlayerId, session.Nick, authed: true);
+        var record = _options.AdminStore?.Find(admin.PlayerId);
+        if (record is null)
+            return ApiError(403, "not_admin", "для этого id нет записи админа");
+        return AdminStateJson(record, request.RemoteAddress);
     }
 
     // ── Баны ────────────────────────────────────────────────────────────────────
@@ -214,7 +411,7 @@ public sealed partial class WebPanelRouter
     /// <summary>Превью игрока по id: ник, статус (катка/лобби/не в сети), аватар, бан.</summary>
     private WebResponse AdminLookupPlayer(WebRequestContext request)
     {
-        if (AdminGate(request, out _, out _) is { } denied)
+        if (AdminGateAny(request, out _, AdminPermissions.Bans, AdminPermissions.Players) is { } denied)
             return denied;
 
         if (_options.AdminLookup is null)
@@ -251,7 +448,8 @@ public sealed partial class WebPanelRouter
     /// <summary>Аватар найденного игрока — те же байты, что клиент прислал в лобби.</summary>
     private WebResponse AdminAvatar(WebRequestContext request)
     {
-        if (AdminGate(request, out _, out _) is { } denied)
+        if (AdminGateAny(request, out _, AdminPermissions.Bans, AdminPermissions.Players,
+                AdminPermissions.Dashboard) is { } denied)
             return denied;
 
         if (_options.AvatarById is null)
@@ -272,7 +470,7 @@ public sealed partial class WebPanelRouter
     /// <summary>Активные баны — для списка с кнопкой «разбанить».</summary>
     private WebResponse AdminBansList(WebRequestContext request)
     {
-        if (AdminGate(request, out _, out _) is { } denied)
+        if (AdminGate(request, out _, AdminPermissions.Bans) is { } denied)
             return denied;
 
         var now = DateTime.UtcNow;
@@ -308,7 +506,7 @@ public sealed partial class WebPanelRouter
     /// <summary>Забанить игрока по id: срок («6d»), причина, «кто банит» — из админ-сессии.</summary>
     private WebResponse AdminBan(WebRequestContext request)
     {
-        if (AdminGate(request, out var session, out _) is { } denied)
+        if (AdminGate(request, out var admin, AdminPermissions.Bans) is { } denied)
             return denied;
 
         if (_options.WebBan is null)
@@ -332,14 +530,16 @@ public sealed partial class WebPanelRouter
         if (value <= 0 || unit is not ("m" or "h" or "d"))
             return ApiError(400, "bad_duration", "срок — число и единица: минуты, часы или дни");
 
-        // Причина необязательна, но безграничной быть не должна: в объявление всем.
         var reason = (parsed.Reason ?? "").Trim();
         if (reason.Length > 200)
             reason = reason[..200].Trim();
 
-        var (error, record) = _options.WebBan(parsed.Id, $"{value}{unit}", reason, session.Nick);
+        var (error, record) = _options.WebBan(parsed.Id, $"{value}{unit}", reason, admin.Nick);
         if (error is not null || record is null)
             return ApiError(400, "ban_refused", error ?? "бан не удался");
+
+        _options.AdminStore?.Journal("ban", "ban", admin.PlayerId, parsed.Id,
+            after: new { duration = BanDuration.FormatShort(record.Duration), reason });
 
         Console.WriteLine(
             $"[web] бан из панели: '{record.DisplayNick}' на {BanDuration.FormatShort(record.Duration)} " +
@@ -364,7 +564,7 @@ public sealed partial class WebPanelRouter
     /// <summary>Разбан по id: снимает все записи этого человека, объявление всем.</summary>
     private WebResponse AdminUnban(WebRequestContext request)
     {
-        if (AdminGate(request, out _, out _) is { } denied)
+        if (AdminGate(request, out var admin, AdminPermissions.Bans) is { } denied)
             return denied;
 
         if (_options.WebUnban is null)
@@ -387,6 +587,8 @@ public sealed partial class WebPanelRouter
         if (error is not null)
             return ApiError(404, "not_found", error);
 
+        _options.AdminStore?.Journal("ban", "unban", admin.PlayerId, parsed.Id,
+            after: new { removed });
         return WebResponse.Json($"{{\"ok\":true,\"removed\":{removed}}}");
     }
 
@@ -411,7 +613,9 @@ public sealed partial class WebPanelRouter
         return false;
     }
 
-    private sealed record AdminLoginRequest(string? Code);
+    private sealed record AdminLoginRequest(int Id, string? Password);
+    private sealed record AdminPermissionsRequest(int Id, List<string>? Permissions);
+    private sealed record AdminMegaRequest(int Id, string? Ip, string? Action);
     private sealed record AdminCustomIdRequest(string? CustomId);
     private sealed record AdminBanRequest(int Id, string? Reason, int DurationValue, string? DurationUnit);
     private sealed record AdminUnbanRequest(int Id);

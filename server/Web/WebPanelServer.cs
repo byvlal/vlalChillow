@@ -176,7 +176,8 @@ public sealed class WebPanelServer : IDisposable
                 // их одним клиентом нельзя — толпа выжигает общий лимит, и 429 получают
                 // все, даже те, кто только открыл сайт. Прокси ставит реальный адрес в
                 // X-Forwarded-For; WebClientAddress решает, когда ему можно верить.
-                var remote = WebClientAddress.Resolve(peer, head.Headers);
+                var remote = WebClientAddress.Resolve(
+                    peer, head.Headers, _options.TrustedProxies);
 
                 // Различаем ли мы посетителей вообще? Заголовок от доверенного прокси даёт
                 // каждому гостю свой адрес; без него (панель открыта наружу мимо прокси, или
@@ -184,7 +185,8 @@ public sealed class WebPanelServer : IDisposable
                 // Такому адресу даём только посекундный лимит частоты и никогда не включаем
                 // долгую паузу — иначе один поток погасил бы сайт всем, кто идёт через тот же
                 // адрес. Это гарантия на стороне сервера: от конфига прокси она не зависит.
-                var identifiesVisitor = WebClientAddress.IdentifiesVisitor(peer, head.Headers);
+                var identifiesVisitor = WebClientAddress.IdentifiesVisitor(
+                    peer, head.Headers, _options.TrustedProxies);
 
                 // Тело больше лимита: это 413 «слишком большое», а не 400. В счётчик
                 // отказов не идёт — панель просто так не принимает ничего крупного.
@@ -650,6 +652,12 @@ public sealed class WebPanelOptions
 
     public int Port { get; init; } = 8080;
     public WebLimits Limits { get; init; } = new();
+
+    /// <summary>
+    /// IP/CIDR прокси, которым доверяем <c>X-Forwarded-For</c>. Пусто — только loopback.
+    /// Иначе LAN-клиент подделает адрес и получит мега-права чужого IP.
+    /// </summary>
+    public IReadOnlyList<string> TrustedProxies { get; init; } = Array.Empty<string>();
 
     /// <summary>Копия лимитов с уже применёнными ограничениями конфига.</summary>
     public sealed class WebLimits

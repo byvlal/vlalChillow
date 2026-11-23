@@ -1,5 +1,6 @@
 using System.Net;
 using System.Runtime.InteropServices;
+using StandChillow.LanServer.Auth;
 using StandChillow.LanServer.Config;
 using StandChillow.LanServer.Dashboard;
 using StandChillow.LanServer.Lan;
@@ -47,7 +48,14 @@ public static class HostBootstrap
         // Кэш аватаров создаётся до панели и живёт дольше игрового хоста: лобби пишет,
         // сайт читает — картинка в профиле переживает выход игрока.
         var avatars = new AvatarCache(Path.Combine(AppContext.BaseDirectory, "avatars"));
-        using var web = new WebPanelHost(serverConfig, avatars);
+
+        // Админы: пароли, права и журнал. Один объект на процесс — веб-панель и игра
+        // видят смену пароля и прав сразу, без перезапуска.
+        var adminStore = new AdminStore(
+            AdminStore.ResolveDirectory(ServerConfig.LastLoadedPath), Console.WriteLine);
+        Console.WriteLine($"[auth] хранилище админов: {adminStore.Directory}");
+
+        using var web = new WebPanelHost(serverConfig, avatars, adminStore);
         if (web.TryStart(out var webError))
         {
             Console.WriteLine($"[web] открыт: http://{serverConfig.Web.BindAddress}:{web.Port}/");
@@ -172,7 +180,8 @@ public static class HostBootstrap
                 plugins.NotifyMatchStarted("host");
             },
             config: serverConfig,
-            avatars: avatars);
+            avatars: avatars,
+            adminStore: adminStore);
         gameRef = game;
         plugins.AttachHost(game);
         plugins.LoadAll();

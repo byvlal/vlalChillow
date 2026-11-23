@@ -70,18 +70,20 @@ public sealed partial class GameNetHost
     /// <summary>
     /// Пускать ли игрока к команде. Решает <c>config.json</c>:
     /// <c>admin.ids</c>, <c>admin.adminOnlyCommands</c>, <c>admin.anyoneCanStart</c>,
-    /// а админство — ещё и код этого запуска (<see cref="IsAdminAuthorized"/>).
+    /// личный пароль (<see cref="IsAdminAuthorized"/>) и право на действие
+    /// (<see cref="HasAdminPermission"/>).
     /// </summary>
     private bool IsCommandAllowedFor(ConnectedPlayer player, string message, out string denyReason)
     {
         // Id считает сервер из состояния сессии, а не из пакета клиента. Адрес, который
-        // код запуска не предъявлял, админом не становится — ровно как показывает /whoami.
+        // пароль не вводил, админом не становится — ровно как показывает /whoami.
         var allowed = CommandAccessPolicy.IsAllowed(
             _config,
             player.PublicId,
             message,
             out denyReason,
-            id => IsAdminAuthorized(id, player.Peer.Address));
+            id => IsAdminAuthorized(id, player.Peer.Address),
+            (id, permission) => HasAdminPermission(id, player.Peer.Address, permission));
         if (allowed)
             return true;
 
@@ -172,6 +174,13 @@ public sealed partial class GameNetHost
             || cmd.Equals("код", StringComparison.OrdinalIgnoreCase))
         {
             HandleAuthCommand(reply, args, player);
+            return true;
+        }
+
+        if (cmd.Equals("admin", StringComparison.OrdinalIgnoreCase)
+            || cmd.Equals("админ", StringComparison.OrdinalIgnoreCase))
+        {
+            HandleAdminCommand(reply, args, player);
             return true;
         }
 
@@ -313,9 +322,10 @@ public sealed partial class GameNetHost
           /ids                      кто в лобби и катке: id, ник, IP (только админ)
           /whoami                   что сервер знает про тебя: ник, id, IP, права
           /chattest                 диагностика чата катки: 4 варианта кадра (только админ)
-          /auth                     код админа (только из консоли сервера)
+          /auth                     где взять личный пароль и как его вводят
+          admin list|passwd|mega|perm   пароли, мега-IP и права (только консоль)
         Те же команды работают в чате катки: ответ придёт туда же и только тебе.
-        «Только админ» — это id в admin.ids плюс код этого запуска (/whoami).
+        «Только админ» — это id в admin.ids плюс введённый личный пароль (/whoami).
         В чате катки работает и запасной префикс: !ban вместо /ban, если клиент съел /.
         Запуска катки командой нет: комната с сайта стартует сама, когда обе команды ≥1.
         """.Trim();

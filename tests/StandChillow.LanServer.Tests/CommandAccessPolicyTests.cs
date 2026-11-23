@@ -199,17 +199,17 @@ public sealed class CommandAccessPolicyTests
     }
 
     /// <summary>
-    /// Id из <c>admin.ids</c> — ещё не права: адрес обязан предъявить код этого
-    /// запуска (<c>AdminAuth</c>). Гейт спрашивает <c>hasAdminRights</c>, а не список
-    /// напрямую, иначе любой клиент с админским id получил бы <c>/set</c> и <c>/ban</c>
-    /// — при том что <c>/whoami</c> отвечал бы «код не введён».
+    /// Id из <c>admin.ids</c> — ещё не права: адрес обязан предъявить личный пароль.
+    /// Гейт спрашивает <c>hasAdminRights</c>, а не список напрямую, иначе любой клиент
+    /// с админским id получил бы <c>/set</c> и <c>/ban</c> — при том что <c>/whoami</c>
+    /// отвечал бы «пароль не введён».
     /// </summary>
     [Theory]
     [InlineData("/set round 16")]
     [InlineData("/end")]
     [InlineData("/ban 12345678 1h тест")]
     [InlineData("/chattest")]
-    public void AdminId_WithoutTheRunCode_HasNoAdminRights(string message)
+    public void AdminId_WithoutPassword_HasNoAdminRights(string message)
     {
         var cfg = Default();
         cfg.Admin.Ids.Add(AdminId);
@@ -217,9 +217,9 @@ public sealed class CommandAccessPolicyTests
         var allowed = CommandAccessPolicy.IsAllowed(
             cfg, AdminId, message, out var reason, hasAdminRights: _ => false);
 
-        Assert.False(allowed, $"'{message}' не должен исполняться без кода запуска");
+        Assert.False(allowed, $"'{message}' не должен исполняться без личного пароля");
         // Отказ объясняет именно этот случай: id в списке есть, прав нет.
-        Assert.Contains("код", reason);
+        Assert.Contains("пароль", reason);
         Assert.Contains($"#{AdminId}", reason);
         Assert.Contains("/" + CommandAccessPolicy.Parse(message).Command, reason);
     }
@@ -228,16 +228,43 @@ public sealed class CommandAccessPolicyTests
     [InlineData("/set round 16")]
     [InlineData("/end")]
     [InlineData("/chattest")]
-    public void AdminId_WithTheRunCode_KeepsAdminRights(string message)
+    public void AdminId_WithPasswordAndPermission_KeepsAdminRights(string message)
     {
         var cfg = Default();
         cfg.Admin.Ids.Add(AdminId);
 
         var allowed = CommandAccessPolicy.IsAllowed(
-            cfg, AdminId, message, out var reason, hasAdminRights: id => cfg.IsAdmin(id));
+            cfg, AdminId, message, out var reason,
+            hasAdminRights: id => cfg.IsAdmin(id),
+            hasPermission: (_, _) => true);
 
         Assert.True(allowed, $"'{message}' обязан исполняться для авторизованного админа");
         Assert.Equal(string.Empty, reason);
+    }
+
+    /// <summary>
+    /// Личный пароль принят, но права на действие нет: сервер отказывает и называет
+    /// право, которого не хватает. Обычный админ не получает чужие команды «за компанию».
+    /// </summary>
+    [Theory]
+    [InlineData("/set round 16", "config")]
+    [InlineData("/end", "config")]
+    [InlineData("/chattest", "config")]
+    [InlineData("/ban 12345678 1h тест", "bans")]
+    public void AdminId_WithoutPermission_IsDenied(string message, string needed)
+    {
+        var cfg = Default();
+        cfg.Admin.Ids.Add(AdminId);
+
+        var allowed = CommandAccessPolicy.IsAllowed(
+            cfg, AdminId, message, out var reason,
+            hasAdminRights: _ => true,
+            hasPermission: (_, permission) => permission != needed);
+
+        Assert.False(allowed, $"'{message}' не должен исполняться без права «{needed}»");
+        Assert.Contains("нет права", reason);
+        Assert.Contains(needed, reason);
+        Assert.Contains($"#{AdminId}", reason);
     }
 
     /// <summary>

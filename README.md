@@ -192,26 +192,34 @@ with screenshots, `#/play` room creation and the public list, `#/profile` your o
 (kills, deaths, K/D, time in matches, unique matches — kept on the server in `stats.json`),
 and `#/admin` — the admin panel.
 
-`#/admin` is gated three ways on **every** request: site session → the **live** `admin.ids`
-from `config.json` (a hot reload of the config cuts access at once) → the per-run code from
-`auth.txt` (an in-memory `sc_admin` cookie, dead on restart). From there an admin can set a
-custom displayed ID (`customids.json`; the numeric id used by bans and `admin.ids` never
-changes) and run bans — the same path as `/ban` in chat, so who / what / why / for how long
-is announced to everyone the same way.
+`#/admin` asks for the numeric id and the **personal password** from
+`auth/<id>/password.txt` — the site session and the lobby code are not needed. Every admin
+request goes through one gate: the `sc_admin` cookie → the **live** `admin.ids` from
+`config.json` (a hot reload cuts access at once) → the permission for that action. Without
+the cookie not a single endpoint returns data, `GET /api/admin` included. From there an
+admin can set a custom displayed ID (`customids.json`; the numeric id used by bans and
+`admin.ids` never changes), run bans — the same path as `/ban` in chat, so who / what / why /
+for how long is announced to everyone the same way — and, if granted `reports`, moderate
+reports. Who may
+do what is decided by personal permissions in `auth/admins.json`; only a mega admin (matching
+`megaIps`) grants them, and the first mega admin is added from the owner's console with
+`admin mega add <id> <ip>`.
 
 `stats.json` and `customids.json` are local runtime state next to the executable and are
 git-ignored.
 
 The page can also be published on the internet behind a reverse proxy. Limits are then
 counted **per real visitor**, not per proxy: the panel takes the client address from
-`X-Forwarded-For`, and only for a request that came from loopback or a private network, so
-a stranger on the internet cannot name himself somebody else. Without the header (panel
-exposed directly, or a proxy that does not send it) every visitor shares one bucket, so the
-limits count the proxy instead of the person; such a shared bucket is deliberately **never**
-put on the long pause, only on the one-second rate limit, so no single flood can take the
-site down for everyone. The proxy should **overwrite** the header (`$remote_addr`); behind a
-CDN, configure real-IP on the proxy so `$remote_addr` is the person, not the edge. Details
-and numbers: [`docs/WEB_PANEL.md`](docs/WEB_PANEL.md).
+`X-Forwarded-For` only when the request came from a proxy listed in `web.trustedProxies`
+(loopback by default). Without an entry, a LAN client cannot name himself somebody else and
+steal a mega-admin IP; a proxy on another machine has to be listed explicitly
+(`"192.168.1.10"` or `"192.168.1.0/24"`). Without the header (panel exposed directly, or a
+proxy that does not send it) every visitor shares one bucket, so the limits count the proxy
+instead of the person; such a shared bucket is deliberately **never** put on the long pause,
+only on the one-second rate limit, so no single flood can take the site down for everyone.
+The proxy should **overwrite** the header (`$remote_addr`); behind a CDN, configure real-IP
+on the proxy so `$remote_addr` is the person, not the edge. Details and numbers:
+[`docs/WEB_PANEL.md`](docs/WEB_PANEL.md).
 
 ### Starting a match
 
@@ -311,17 +319,25 @@ The console command `config reload` forces a re-read.
 
 **Who is an admin.** Only by account number, never by nickname. The number is what the
 game shows in the player list, `/ids` and `/whoami` (`1000000`, `1000001`, …); `admin.ids`
-lists the admins, and the per-run code (`AdminAuth`) still has to be entered once per address —
-otherwise the id only gets a shadow lobby. Anyone else gets a private «только для админов»
-reply naming the reason, and the command does not run. `/help`, `/ready` and `/unready` are
-always open to everyone.
+lists who may be an admin, and a **personal password** from `auth/<id>/password.txt` has to be
+entered once per address — otherwise the id only gets a shadow lobby. Anyone else gets a
+private «только для админов» reply naming the reason, and the command does not run.
+`/help`, `/ready` and `/unready` are always open to everyone.
+
+Roles, permissions, mega IPs and password hashes live in `auth/admins.json`, never in
+`config.json`. A new admin gets `dashboard` and `journal` automatically; operational
+permissions (`bans`, `reports`, `customization`, `rooms`, `players`, `config`, `admins`,
+`rollback`) are granted by a mega admin from the panel or by the owner's console. A mega
+admin is an admin whose request IP matches one of his `megaIps`; the first mega admin is
+added only from the console: `admin mega add <id> <ip>`.
 
 `admin.ids` comes with the owner's old hash already in it — **25354325** («влал») — so a
 fresh `config.json` is not locked out of its own admin commands. On the owner's first login
 the server replaces that hash with the real account number (`1000000` for a clean install)
-in memory; the file is not rewritten, and the replacement repeats on every start. An explicit
-`"ids": []` is respected as «админов нет»; to drop the default, just write the list you
-actually want.
+in memory; the file is not rewritten, and the replacement repeats on every start. After the
+replacement the password lives in `auth/1000000/password.txt`; the old `auth/25354325/`
+entry stays for history but no longer opens anything. An explicit `"ids": []` is respected
+as «админов нет»; to drop the default, just write the list you actually want.
 
 **`admin.adminOnlyCommands`** defaults to `[ "set", "end" ]`: `/set` changes match parameters,
 `/end` stops the match. `/mode`, `/map`, `/start` and `/play` stay open — anyone can run the
@@ -353,41 +369,34 @@ start. `/unready` cancels a vote (disable with `ready.allowUnready`).
 Console helpers: `config` prints the active settings (admins, start mode, timings, tuning,
 debug), `config reload` re-reads the file and applies it without a restart.
 
-### Авторизация админа (код на запуск)
+### Авторизация админа (личный пароль)
 
 Ник присылает клиент — значит «влал» может набрать кто угодно. Поэтому в `admin.ids` только
-серверные id (числа), а код спрашивается отдельно: и id, и код нужны вместе.
+серверные id (числа), а вход подтверждается личным паролем: и id, и пароль нужны вместе.
 
-```text
-[auth] код админа на этот запуск: 7fKq2mNpR4tXvB8cWy3JhLdS
-[auth] код также в файле: C:\Users\влал\Desktop\New folder\auth.txt
-```
+При первом появлении id в `admin.ids` сервер создаёт `auth/<id>/password.txt` — строка вида
+`1000000-<hex64>`, права 600. В `auth/admins.json` хранится только SHA-256, так что подсмотреть
+пароль из конфига нельзя. Смена пароля — `admin passwd regen [id|all]` в консоли; версия
+пароля растёт, и старые веб-сессии и игровые авторизации умирают.
 
-Код лежит **в двух местах**: в консоли сервера и в `auth.txt` рядом с `config.json` — там же,
-где настройки, чтобы не искать окно консоли за игрой. Файл перезаписывается на каждом запуске
-и при `auth reset`, а при остановке сервера удаляется (мёртвый код только путает).
-
-- Код генерируется при **каждом** запуске сервера: 24 символа латиницы и цифр
-  (`RandomNumberGenerator`, без похожих 0/O/1/l/I). После перезапуска он новый, старый мёртв.
-- Пока адрес код не предъявил, игрок с админским id получает **теневой лобби**, как
+- Пока адрес пароль не предъявил, игрок с админским id получает **теневой лобби**, как
   забаненный: в росписи только `Server`, остальные его не видят, команды не работают, в матч
-  не пускают. В чат ему приходит:
-
-  ```text
-  Server: id #1000000 в admin.ids — нужна авторизация
-  Server: код на этот запуск: 24 символов — он в консоли сервера и в auth.txt рядом с config.json
-  Server: напиши код сюда, в чат (регистр не важен)
-  ```
-
-- Вводится обычным сообщением в чат (можно и `/auth <код>`). Приняли — **этот IP** авторизован до перезапуска
-  сервера, и надо зайти в лобби заново (сервер сам отключит сокет). 5 неверных попыток —
-  отключение.
-- Проверка стоит на всех входах: лобби (включая переподключение), `JoinRoom` в матче, и в
+  не пускают. В чат ему приходит подсказка с путём к файлу пароля.
+- Пароль вводится обычным сообщением в чат (можно `/auth <пароль>`). Приняли — **этот IP**
+  авторизован до перезапуска сервера или до смены пароля; в лобби надо зайти заново.
+  5 неверных попыток — отключение.
+- Проверка стоит на всех входах: лобби (включая переподключение), `JoinRoom` в матче и в
   каждой команде. Мимо лобби на 7777 с админским id не пройти.
-- `auth` в консоли — показать код и список авторизованных адресов; `auth reset` — новый код
-  и полный сброс (полезно, если код засветился).
-- `/whoami` в чате — что сервер реально знает о тебе: id (число для `admin.ids`), ник как он
-  его видит, IP, админ ли и введён ли код. Первое, что стоит набрать, если «я не админ».
+- `admin list` в консоли — кто есть, у кого есть пароль и кто его ещё ждёт;
+  `admin passwd regen [id|all]` — новый пароль; `admin mega add|remove <id> <ip>` —
+  мега-права по IP; `admin perm grant|revoke|set <id> <права…>` — операционные права.
+- `/whoami` в чате — что сервер реально знает о тебе: id, ник, IP, админ ли, введён ли пароль
+  и какие права выданы.
+
+Веб-панель входит так же: `#/admin` → id и пароль из `auth/<id>/password.txt`. Сессия сайта
+для этого не нужна. Без куки `sc_admin` любой админ-эндпоинт отвечает `401`, без права —
+`403`; вкладки в браузере скрываются, но полагаться только на это нельзя — сервер проверяет
+каждый запрос сам.
 
 **Роспись лобби приватная.** На проводе 7778 клиент видит ровно две строки: `Server` и
 себя (`selfMemberId = 1`). Состав остаётся в состоянии сервера — его показывают `/ids`,
@@ -475,13 +484,13 @@ ChatManager на 7777. Ответ идёт в оба, потому что кли
 `[chat] <ник>: команда из катки обработана хостом: …` — исполнение видно и с выключенным
 `debug-chat`.
 
-**Админские права — номер аккаунта плюс код этого запуска.** `admin.ids` — только числа:
+**Админские права — номер аккаунта плюс личный пароль.** `admin.ids` — только числа:
 номер берётся из реестра аккаунтов по нику сессии (пока аккаунта нет — запасной старый хеш),
-а не из пакета клиента, поэтому подставной ник прав не даёт. Список — лишь повод спросить код:
-права даёт адрес, который код предъявил
-(`AdminAuth`). Гейт один и тот же для лобби (7778) и для матч-чата (7777), а отказ объясняет
-причину и в чат, и в журнал (`ОТКЛОНЕНО: …`) — включая отдельный случай «id админский, но код
-не предъявлен».
+а не из пакета клиента, поэтому подставной ник прав не даёт. Список — лишь повод спросить
+пароль: права даёт адрес, который ввёл пароль из `auth/<id>/password.txt`, и только на те
+команды, на которые у записи есть право. Гейт один и тот же для лобби (7778) и для
+матч-чата (7777), а отказ объясняет причину и в чат, и в журнал (`ОТКЛОНЕНО: …`) — включая
+отдельные случаи «id админский, но пароль не предъявлен» и «нет права «…»».
 Что сервер знает о написавшем, показывает `/whoami`. Команда всегда исполняется от имени
 **отправителя** (актор из комнаты), а не от имени байта `rpc` из кадра: кадр ChatManager
 подписывается чужим актором, и на этом построена диагностика ниже.

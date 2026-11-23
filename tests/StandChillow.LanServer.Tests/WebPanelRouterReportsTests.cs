@@ -1,6 +1,7 @@
 using System.Net;
 using System.Text;
 using System.Text.Json;
+using StandChillow.LanServer.Auth;
 using StandChillow.LanServer.Net.Match.Kernel;
 using StandChillow.LanServer.Reports;
 using StandChillow.LanServer.Web;
@@ -11,15 +12,15 @@ namespace StandChillow.LanServer.Tests;
 
 /// <summary>
 /// Жалобы, публичные профили и администрация в веб-панели: кто что видит, какие
-/// лимиты стоят на отправке и как работает тройной затвор модерации.
+/// лимиты стоят на отправке и как работает вход в панель и право «reports».
 /// </summary>
 public sealed class WebPanelRouterReportsTests : IDisposable
 {
     private const string DeviceA = "LB143C7D41FAE30EB14F49B1678E3933C9";
-    private const string AdminCode = "код-этого-запуска";
 
     private readonly SiteSessions _sessions = new();
     private readonly AdminSessions _adminSessions = new();
+    private readonly AdminStore _adminStore;
     private readonly Dictionary<int, string> _siteTokens = new();
     private readonly Dictionary<int, string> _adminTokens = new();
     private readonly HashSet<int> _admins = new() { 1000 };
@@ -38,6 +39,10 @@ public sealed class WebPanelRouterReportsTests : IDisposable
         _dir = Path.Combine(Path.GetTempPath(), "stch-webreports-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(_dir);
         _reports = new ReportStore(Path.Combine(_dir, "reports.json"));
+        _adminStore = new AdminStore(Path.Combine(_dir, "auth"));
+        _adminStore.Initialize(_admins, DateTime.UtcNow);
+        _adminStore.SetPermissions(
+            actorId: null, 1000, AdminPermissions.All, DateTime.UtcNow, out _);
     }
 
     public void Dispose()
@@ -58,7 +63,7 @@ public sealed class WebPanelRouterReportsTests : IDisposable
                 IsAdminById = id => _admins.Contains(id),
                 IsAdminLive = id => _admins.Contains(id),
                 AdminSessionStore = _adminSessions,
-                AdminCodeMatches = code => code == AdminCode,
+                AdminStore = _adminStore,
                 CustomIdGet = id =>
                     People.TryGetValue(id, out var p) ? p.Custom : null,
                 Reports = _reports,
@@ -120,7 +125,9 @@ public sealed class WebPanelRouterReportsTests : IDisposable
         if (_adminTokens.TryGetValue(playerId, out var token))
             return token;
 
-        token = _adminSessions.Create(playerId, "игрок " + playerId, DateTime.UtcNow)!.Token;
+        token = _adminSessions.Create(
+            playerId, "игрок " + playerId,
+            _adminStore.Find(playerId)?.AuthVersion ?? 1, DateTime.UtcNow)!.Token;
         _adminTokens[playerId] = token;
         return token;
     }
@@ -290,20 +297,22 @@ public sealed class WebPanelRouterReportsTests : IDisposable
         Assert.Contains("\"items\":[]", Body(other));
     }
 
-    // ── модерация: сессия → живой admin.ids → админ-кука ─────────────────────
+    // ── модерация: вход в панель → живой admin.ids → право reports ─────────────
 
     [Fact]
-    public void ModerationRequiresAllThreeGates()
+    public void ModerationRequiresAdminLogin()
     {
         var router = NewRouter();
 
+        // Сессия сайта ничего не даёт: без админ-куки данные не отдаются.
         Assert.Equal(401, router.Route(Get("/api/admin/reports")).Status);
-        Assert.Equal(403, router.Route(Get("/api/admin/reports", asPlayer: 1001)).Status);
-        Assert.Contains("not_admin", Body(router.Route(Get("/api/admin/reports", asPlayer: 1001))));
+        Assert.Equal(401, router.Route(Get("/api/admin/reports", asPlayer: 1001)).Status);
+        Assert.Contains("no_admin_auth",
+            Body(router.Route(Get("/api/admin/reports", asPlayer: 1001))));
 
-        // Админ по конфигу, но без кода этого запуска.
+        // Админ по конфигу, но личный пароль не введён — тот же отказ.
         var noCookie = router.Route(Get("/api/admin/reports", asPlayer: 1000));
-        Assert.Equal(403, noCookie.Status);
+        Assert.Equal(401, noCookie.Status);
         Assert.Contains("no_admin_auth", Body(noCookie));
     }
 

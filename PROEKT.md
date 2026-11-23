@@ -17,8 +17,9 @@
   - `#/play` — страницы комнат (панель so-*, работает с сервером);
   - `#/profile` — личный кабинет: K/D-пончик, убийства/смерти/время/уникальные матчи
     (статистика живёт на сервере, `stats.json`);
-  - `#/admin` — админ панель (только для `admin.ids`: вход по коду из auth.txt,
-    кастомизация своего ID, баны с живым превью и объявлением в чат лобби);
+  - `#/admin` — админ панель (только для `admin.ids`: вход по id и личному паролю из
+    `auth/<id>/password.txt`, права по матрице, мега — по IP; кастомизация своего ID, баны
+    с живым превью и объявлением в чат лобби, репорты);
   - на каждой странице — кнопка «ПАНЕЛЬ» → правый выезжающий drawer (аккаунт/вход по коду,
     Профиль, Админ панель — видна только админам, Играть, Репорты, Выйти);
   - `#/how`, `#/reports` — якоря лендинга (остались для совместимости).
@@ -140,18 +141,22 @@
   `server/Web/WebPanelRouter*.cs` (роутер: страницы, API, /media),
   `server/Web/WebPanelHost.cs` (опции-лямбды, обе сессии), `server/Web/MediaAssets.cs` (медиа),
   `server/Web/WebPanelRouter.Auth.cs` (сессии сайта), `server/Web/WebPanelRouter.Admin.cs`
-  (админ эндпоинты + тройной шлюз AdminGate).
+  (админ эндпоинты + право-затвор AdminGate).
 - API панельки: статус/онлайн, каталог режимов, комнаты (создание, список, вход),
   вход по коду из лобби, `GET /api/stats/me` (401 без сессии), `api/me` отдаёт поле `admin`.
-  Админ: `GET /api/admin` (анонимно 200 `{ok,admin:false}` без данных), `POST /api/admin/login`
-  (код из auth.txt, кука sc_admin живёт до рестарта), `POST /api/admin/logout`,
-  `GET /api/admin/lookup?id=` (превью для бана), `POST /api/admin/customid`,
-  `POST /api/admin/ban` / `unban`, `GET /api/admin/bans`, `GET /api/admin/avatar`.
-  Не-админ получает 403 `not_admin` на всё, кроме анонимного GET. Публикуется на
+  Админ: `POST /api/admin/login` (id + личный пароль, кука sc_admin на 7 дней),
+  `GET /api/admin` (без куки 401, без права 403 — данных нет), `POST /api/admin/logout`,
+  `GET /api/admin/admins`, `POST /api/admin/permissions` и `/mega` (только мега),
+  `GET /api/admin/lookup?id=`, `POST /api/admin/customid`, `POST /api/admin/ban` / `unban`,
+  `GET /api/admin/bans`, `GET /api/admin/avatar`, репорты — `GET /api/admin/reports`.
+  Не-админ не получает ничего: 401 без куки, 403 без права. Публикуется на
   **http://192.168.1.65:8080/** (локально 127.0.0.1).
-- Админ-инфраструктура: `AdminSessions.cs`/`AdminCookie.cs` (кука `sc_admin`, память,
-  умирает с рестартом), `Net/GameNetHost.AdminAuth.cs` (`IsAdminLive` читает живой
-  `_config` — хот-релоад безопасен; `AdminCodeMatches` — константное сравнение кода),
+- Админ-инфраструктура: `Auth/AdminStore.cs` (записи, права, megaIps, журнал, пароли),
+  `Auth/AdminPassword.cs` (формат `<id>-<hex64>`, SHA-256, constant-time),
+  `Web/AdminSessions.cs`/`AdminCookie.cs` (кука `sc_admin`, 7 дней, в `auth/sessions.json`
+  только SHA-256 токена), `Web/SiteSessions.cs` (30 дней), `Net/GameNetHost.AdminAuth.cs`
+  (`IsAdminLive` читает живой `_config` — хот-релоад безопасен; `IsAdminAuthorized` —
+  личный пароль + `authVersion`),
   `Net/CustomIdStore.cs` + `GameNetHost.CustomIds.cs` (кастомные ID → `customids.json`,
   паттерн `^[A-Za-z0-9]{1,24}$`, уникальность без регистра; подмена — в
   `GameMatchHost.PublicIds.cs`, оригинальный числовой ID нигде не теряется),
@@ -161,14 +166,14 @@
   тот же `BroadcastServerChat`, что и у внутриигрового бана.
 - Галочка `verified` (проп `verified`, `MatchRoomPropKeys.Verified`) — только сервер:
   1) релей свойств (`GameMatchHost.Properties.cs`) переписывает на лету любое клиентское
-  значение: админ (id из `admin.ids` + код запуска, `IsAdminVerifiedFor` =
+  значение: админ (id из `admin.ids` + введённый личный пароль, `IsAdminVerifiedFor` =
   `IsAdminAuthorized`) → `true`, все остальные → `false`;
   2) при бутстрапе `EnsureServerVerifiedProp` (`GameMatchHost.PublicIds.cs`, вызов в конце
   `SendWorldBootstrap` — покрывает joiner-ready / soft-timeout / reconnect-trusted) сам
   досылает решение, даже если клиент проп не присылал вовсе; бродкаст только если
   сохранённое значение отсутствует/отличается, у актора-хоста (1/'Server') остаётся `false`.
-  E2E-подтверждено пробами: ProbeAdm (не-админ) → `verified … false`; «влал» (админ с кодом)
-  → `verified … true (админ)`, клиент получает соответствующее значение в снапшоте.
+  E2E-подтверждено пробами: ProbeAdm (не-админ) → `verified … false`; «влал» (админ с
+  паролем) → `verified … true (админ)`, клиент получает соответствующее значение в снапшоте.
 - Статистика: `server/Stats/PlayerStatsStore.cs` (диск `stats.json` рядом с exe, атомарная
   запись tmp+replace, дебаунс 10 с + Flush на Stop), хуки убийств/смертей в
   `GameMatchHost.DeathMatchCombat.cs` / `.DuelCombat.cs` / `.Ranked2v2Combat.cs` и
@@ -260,12 +265,14 @@
 
 ## 10. Роадмап (дальше по порядку)
 
-1. ~~Админ-панель~~ — **готово** (17.11.2026): `#/admin` — тройной шлюз (сессия сайта →
-   живой `admin.ids` → код запуска из auth.txt в куке `sc_admin`), вкладки «Кастомизация»
-   (свой отображаемый ID, `customids.json`) и «Баны» (3 шага: ввод ID с живым превью →
-   «всё верно?» → причина+срок; список активных с разбаном; объявление в чат лобби —
-   то же, что у игрового бана). E2E пройден: шлюзы 401/403/405, хот-релоад админа,
-   бан+кик+объявление, разбан, отказ админ/себя/ниже минимума/неизвестный id.
+1. ~~Админ-панель~~ — **готово** (24.11.2026): `#/admin` — один право-затвор (админ-кука
+   `sc_admin` → живой `admin.ids` → право), вход по id и личному паролю из
+   `auth/<id>/password.txt`, сессии 7 дней и переживают рестарт. Вкладки «Кастомизация»
+   (свой отображаемый ID, `customids.json`), «Баны» (3 шага: ввод ID с живым превью →
+   «всё верно?» → причина+срок; список активных с разбаном; объявление в чат лобби) и
+   «Репорты». Права выдаёт только мега-админ (по IP из `megaIps`); новый админ получает
+   `dashboard` и `journal`. E2E: 401/403/405, хот-релоад админа, бан+кик+объявление,
+   разбан, отказ админ/себя/ниже минимума/неизвестный id.
 2. **Страница репортов** (`#/reports` сейчас якорь на главной → потом отдельная вью).
 3. Контент главной страницы — владелец обещал прислать своё описание («я поясню»).
 4. Статистика уже живёт на сервере (kills/deaths/KD/часы/уникальные матчи, `stats.json`).

@@ -5,8 +5,8 @@ namespace StandChillow.LanServer.Web;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Кука — сессионная (без <c>Max-Age</c>/<c>Expires</c>): браузер забудет её при закрытии,
-/// а сервер и так держит сессии только в памяти и до перезапуска (#51).
+/// Кука живёт 30 дней и переживает закрытие браузера: срок и хеш токена лежат в
+/// <c>auth/site-sessions.json</c>, а не только в памяти.
 /// </para>
 /// <para>
 /// <c>HttpOnly</c> — чтобы скрипт на странице не вытащил токен; <c>SameSite=Lax</c> — чтобы
@@ -60,7 +60,8 @@ public static class SiteCookie
     public static (string Name, string Value) Build(string token, string path, bool secure)
     {
         var scope = NormalizePath(path);
-        var value = $"{Name}={token}; Path={scope}; HttpOnly; SameSite=Lax";
+        var value = $"{Name}={token}; Path={scope}; Max-Age={SiteSessions.TtlDays * 24 * 60 * 60}; " +
+                    "HttpOnly; SameSite=Lax";
         if (secure)
             value += "; Secure";
 

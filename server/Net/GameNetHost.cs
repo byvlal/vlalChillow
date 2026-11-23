@@ -1,6 +1,7 @@
 using System.Collections.Concurrent;
 using System.Net;
 using LiteNetLib;
+using StandChillow.LanServer.Auth;
 using StandChillow.LanServer.Bans;
 using StandChillow.LanServer.Config;
 using StandChillow.LanServer.Dashboard;
@@ -41,6 +42,9 @@ public sealed partial class GameNetHost : IDisposable
     /// <summary>Кэш аватаров: вход в лобби кладёт сюда байты, сайт читает и после выхода.</summary>
     private readonly AvatarCache _avatars;
 
+    /// <summary>Админы, личные пароли и права. Общий с веб-панелью объект.</summary>
+    private readonly AdminStore? _adminStore;
+
     /// <summary>Конфиг выделенного сервера. Меняется только через <see cref="ReloadConfig"/>.</summary>
     private ServerConfig _config;
 
@@ -64,10 +68,12 @@ public sealed partial class GameNetHost : IDisposable
         IPAddress? advertiseLanIp = null,
         Action? onMatchStarted = null,
         ServerConfig? config = null,
-        AvatarCache? avatars = null)
+        AvatarCache? avatars = null,
+        AdminStore? adminStore = null)
     {
         _config = config ?? new ServerConfig();
         ApplyRuntimeConfig(_config);
+        _adminStore = adminStore;
         _avatars = avatars
             ?? new AvatarCache(System.IO.Path.Combine(AppContext.BaseDirectory, "avatars"));
         _session = new LobbySession(lobbyName);
@@ -128,9 +134,9 @@ public sealed partial class GameNetHost : IDisposable
         // забаненный успел бы проскочить. Матч получает тот же реестр.
         InitBans();
 
-        // Админские id требуют код на этот запуск: id считается из ника, который присылает
+        // Админские id требуют личный пароль: id считается из ника, который присылает
         // клиент, поэтому одного совпадения мало. Матч спрашивает то же самое — иначе
-        // админ без кода зашёл бы прямо на 7777 мимо лобби.
+        // админ без пароля зашёл бы прямо на 7777 мимо лобби.
         LogAdminAuthStartup();
         _match.IsUnauthorizedAdmin = (room, ip) => IsUnauthorizedAdmin(IdOf(room), ip);
 
@@ -872,7 +878,7 @@ public sealed partial class GameNetHost : IDisposable
             $"[cmd] RESOLVED channel=match actor='{actorName}' resolvedBy={resolvedBy} " +
             $"→ id=#{player.PublicId} nick='{player.Name}' cmd='{message}'");
 
-        // Тот же диспетчер и тот же гейт прав (id + код запуска), что и в лобби.
+        // Тот же диспетчер и тот же гейт прав (id + личный пароль), что и в лобби.
         // Ответ уходит адресно в матч-чат; эхо самой команды вернул матч-хост.
         HandleChatCommand(player, message, channel: "match", sourceIp: matchPeerIp);
     }
@@ -1080,7 +1086,8 @@ public sealed partial class GameNetHost : IDisposable
         if (_config.Admin.Ids.Count == 0)
             feedback("    (пусто — админ-команд ни у кого нет; добавь \"ids\": [ 25354325 ] " +
                      $"в admin{{}} файла {ServerConfig.LastLoadedPath})");
-        feedback($"  код админа на этот запуск: {_adminAuth.Code} (auth reset — новый)");
+        feedback($"  личные пароли админов: {_adminStore?.Directory ?? "auth/"} (файлы <id>/password.txt)");
+        feedback($"  админов в auth: {_adminStore?.Count ?? 0}; ждут пароль: {PendingAdminCount}");
         feedback($"  только для админов: " +
                  (_config.Admin.AdminOnlyCommands.Count == 0
                      ? "(нет)"
@@ -1124,6 +1131,9 @@ public sealed partial class GameNetHost : IDisposable
     {
         _config = config;
         ApplyRuntimeConfig(_config);
+
+        // Новый id в admin.ids получает запись и пароль сразу, без перезапуска.
+        _adminStore?.Sync(_config.Admin.Ids, DateTime.UtcNow);
 
         if (_bans is not null)
         {
@@ -1269,7 +1279,6 @@ public sealed partial class GameNetHost : IDisposable
         // Disconnect peers + PollEvents so LiteNetLib sends close packets before Stop.
         LiteNetGracefulStop.DisconnectFlushAndStop(_manager);
         _match.Dispose();
-        RemoveAuthCodeFile();
         try { _cts.Dispose(); } catch { /* ignore */ }
     }
 }

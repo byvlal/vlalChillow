@@ -1,4 +1,5 @@
 using System.Net;
+using System.Net.Sockets;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -336,6 +337,19 @@ public sealed class WebConfig
     /// панелью есть https (nginx с сертификатом).
     /// </remarks>
     public bool SecureCookies { get; set; }
+
+    /// <summary>
+    /// IP/CIDR обратных прокси, которым доверяем <c>X-Forwarded-For</c>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Пусто — доверяем только loopback. Это важно для мега-админа: если верить
+    /// заголовку от любого LAN-клиента, он назовётся IP из <c>megaIps</c> и получит
+    /// полный доступ. Прокси на другой машине впиши сюда явно
+    /// (<c>"192.168.1.10"</c> или <c>"192.168.1.0/24"</c>).
+    /// </para>
+    /// </remarks>
+    public List<string> TrustedProxies { get; set; } = new();
 
     /// <summary>
     /// Сколько секунд живёт код входа из лобби (по умолчанию 30 минут).
@@ -995,6 +1009,87 @@ public sealed class ServerConfig
             Web.Limits.MaxConnectionsPerIp, 1, 64, 8, "web.limits.maxConnectionsPerIp");
         Web.Limits.MaxConnectionsTotal = Check(
             Web.Limits.MaxConnectionsTotal, 16, 4096, 256, "web.limits.maxConnectionsTotal");
+
+        NormalizeTrustedProxies();
+    }
+
+    /// <summary>
+    /// Список доверенных прокси: IP или CIDR. Невалидная запись не «молча живёт»:
+    /// она выкидывается с записью в <see cref="Issues"/> — иначе человек думает, что
+    /// заголовку <c>X-Forwarded-For</c> верят, хотя это не так (или наоборот).
+    /// </summary>
+    /// <remarks>
+    /// CIDR приводится к адресу сети: <c>192.168.1.5/24</c> → <c>192.168.1.0/24</c>.
+    /// Пустые строки просто отбрасываются: это не ошибка, а след ручной правки JSON.
+    /// </remarks>
+    private void NormalizeTrustedProxies()
+    {
+        var source = Web.TrustedProxies ?? new List<string>();
+        var normalized = new List<string>(source.Count);
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var raw in source)
+        {
+            var text = (raw ?? string.Empty).Trim();
+            if (text.Length == 0)
+                continue;
+
+            if (!TryNormalizeProxyEntry(text, out var entry))
+            {
+                Report("web.trustedProxies", text, "пропущен",
+                    "— не IP и не CIDR (пример: 192.168.1.10 или 192.168.1.0/24)");
+                continue;
+            }
+
+            if (seen.Add(entry))
+                normalized.Add(entry);
+        }
+
+        Web.TrustedProxies = normalized;
+    }
+
+    /// <summary>Одна запись списка прокси → канонический вид; <c>false</c> — мусор.</summary>
+    private static bool TryNormalizeProxyEntry(string text, out string entry)
+    {
+        entry = string.Empty;
+        var slash = text.IndexOf('/');
+        if (slash < 0)
+        {
+            if (!IPAddress.TryParse(text, out var address))
+                return false;
+            if (address.IsIPv4MappedToIPv6)
+                address = address.MapToIPv4();
+            entry = address.ToString();
+            return true;
+        }
+
+        if (!IPAddress.TryParse(text[..slash].Trim(), out var network)
+            || !int.TryParse(text[(slash + 1)..].Trim(), out var prefix))
+            return false;
+
+        if (network.IsIPv4MappedToIPv6)
+            network = network.MapToIPv4();
+
+        var maxBits = network.AddressFamily switch
+        {
+            AddressFamily.InterNetwork => 32,
+            AddressFamily.InterNetworkV6 => 128,
+            _ => 0,
+        };
+        if (maxBits == 0 || prefix < 0 || prefix > maxBits)
+            return false;
+
+        // Хвост сети обнуляем: 192.168.1.5/24 и 192.168.1.0/24 — одна и та же сеть.
+        var bytes = network.GetAddressBytes();
+        var fullBytes = prefix / 8;
+        var remainder = prefix % 8;
+        if (remainder != 0)
+            bytes[fullBytes] &= (byte)(0xFF << (8 - remainder));
+        for (var i = fullBytes + (remainder == 0 ? 0 : 1); i < bytes.Length; i++)
+            bytes[i] = 0;
+
+        entry = $"{new IPAddress(bytes)}/{prefix}";
+        return true;
     }
 
     private void MigrateLegacyAdminGate()
@@ -1347,6 +1442,8 @@ public sealed class ServerConfig
     "publicBaseUrl": "",         // адрес сайта для «создать можно здесь»; пусто — определить
     "basePath": "",              // подпуть за прокси (nginx: location /vlalchillow/)
     "secureCookies": false,      // true — только если перед панелью есть https
+    "trustedProxies": [],        // IP/CIDR прокси, которым верим X-Forwarded-For;
+                                 // пусто — только loopback (иначе LAN подделает мега-IP)
     "codeTtlSec": 1800,          // сколько живёт код входа из лобби (30 минут)
 
     "limits": {

@@ -68,6 +68,40 @@ public sealed class ServerConfigTests
     }
 
     [Fact]
+    public void TrustedProxies_AreNormalizedAndInvalidEntriesAreDropped()
+    {
+        var cfg = Parse(ServerConfig.Template);
+        cfg.Web.TrustedProxies = new List<string>
+        {
+            " 192.168.1.10 ",
+            "192.168.1.5/24",
+            "10.0.0.0/8",
+            "::ffff:192.168.1.20",
+            "garbage",
+            "",
+        };
+
+        cfg.Normalize();
+
+        Assert.Equal(
+            new[] { "192.168.1.10", "192.168.1.0/24", "10.0.0.0/8", "192.168.1.20" },
+            cfg.Web.TrustedProxies);
+        Assert.Contains(cfg.Issues, issue => issue.Key == "web.trustedProxies");
+    }
+
+    [Fact]
+    public void TrustedProxies_AreEmptyByDefault()
+    {
+        var cfg = Parse(ServerConfig.Template);
+
+        cfg.Normalize();
+
+        // По умолчанию верим только loopback: LAN-клиент не должен подделать
+        // X-Forwarded-For и получить мега-IP.
+        Assert.Empty(cfg.Web.TrustedProxies);
+    }
+
+    [Fact]
     public void EverySetSubcommand_IsAdminOnly_NotJustSetStart()
     {
         // «любая команда, что начинается на /set» — иначе /set round 99 или

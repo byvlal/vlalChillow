@@ -65,11 +65,15 @@ number comes from session state (the nickname a client sends is untrusted, so
 `admin.nicknames` is reported as an unknown key and ignored). Until a person has an account,
 `IdOf(nick)` falls back to `LegacyNickHash.ForNick`, and `MigrateAdminIds` replaces the old
 hash with the account number in memory on startup and after every new account; the config file
-is not rewritten. The id alone is still not enough (`AdminAuth`): an admin id gets a shadow
-lobby until the address enters the per-run code printed to the console. The code is 24 random
-alphanumerics, regenerated on every start, authorized IPs live in memory only; the match host
-and the command dispatcher both consult `IsUnauthorizedAdmin`, so a shadowed admin cannot drop
-or sneak into 7777 either.
+is not rewritten. Roles, permissions, mega IPs and password hashes live in `auth/admins.json`,
+never in the config. The id alone is still not enough: an admin id gets a shadow lobby until
+the address enters the **personal password** from `auth/<id>/password.txt` (only its SHA-256 is
+stored, the file is 600). Authorized `(id, IP)` pairs live in memory, and a password change
+bumps `authVersion`, killing them and every web session. The match host and the command
+dispatcher both consult `IsUnauthorizedAdmin`, so a shadowed admin cannot drop or sneak into
+7777 either. A new admin gets `dashboard` and `journal`; operational permissions are granted
+by a mega admin — an admin whose request IP is in his `megaIps` — and the first mega admin is
+added only from the owner's console.
 
 `PlayerDirectory` persists `account ↔ nick ↔ IP ↔ device` in `banlist.json` so `/ban` still
 resolves a player who already left. The device is the stable `LB<md5>` part of the 2.07
