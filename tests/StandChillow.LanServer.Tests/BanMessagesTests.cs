@@ -14,6 +14,7 @@ public sealed class BanMessagesTests
     private static BanRecord Sample() => new()
     {
         Nick = "Ktulxy",
+        BanId = "B-1A2B3C4D",
         Ips = new List<string> { "203.0.113.9" },
         Reason = "софт ебучий",
         BannedBy = "влал",
@@ -23,15 +24,17 @@ public sealed class BanMessagesTests
     };
 
     [Fact]
-    public void NoticeHasExactlyTheFourServerLinesInOrder()
+    public void NoticeHasReasonAdminIdBanNumberAndCountdownInOrder()
     {
         var lines = BanMessages.NoticeLines(Sample(), Now);
 
-        Assert.Equal(4, lines.Length);
+        Assert.Equal(6, lines.Length);
         Assert.Equal("Вы были забанены!", lines[0]);
         Assert.Equal("Причина: софт ебучий", lines[1]);
         Assert.Equal("Забанил: влал", lines[2]);
-        Assert.Equal("Разбан через: 0д 0ч 30м 00с", lines[3]);
+        Assert.Equal($"Айди: {LegacyNickHash.ForNick("Ktulxy")}", lines[3]);
+        Assert.Equal("Бан №B-1A2B3C4D", lines[4]);
+        Assert.Equal("Разбан через: 0д 0ч 30м 00с", lines[5]);
     }
 
     [Fact]
@@ -68,11 +71,12 @@ public sealed class BanMessagesTests
 
         var lines = BanMessages.PublicLines(record);
 
-        Assert.Equal(4, lines.Length);
+        Assert.Equal(5, lines.Length);
         Assert.Equal("Игрок влал забанил Ktulxy!", lines[0]);
         Assert.Equal("Айди: 1000001", lines[1]);
-        Assert.Equal("Длительность бана: 6д", lines[2]);
-        Assert.Equal("Причина: софт удали, тогда поговорим", lines[3]);
+        Assert.Equal("Бан №B-1A2B3C4D", lines[2]);
+        Assert.Equal("Длительность бана: 6д", lines[3]);
+        Assert.Equal("Причина: софт удали, тогда поговорим", lines[4]);
     }
 
     [Fact]
@@ -83,6 +87,7 @@ public sealed class BanMessagesTests
 
         Assert.Equal(LegacyNickHash.ForNick(record.Nick), BanMessages.IdOf(record));
         Assert.Contains($"Айди: {LegacyNickHash.ForNick(record.Nick)}", BanMessages.PublicLines(record));
+        Assert.Contains("Бан №B-1A2B3C4D", BanMessages.PublicLines(record));
     }
 
     [Fact]

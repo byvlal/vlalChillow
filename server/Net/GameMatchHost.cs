@@ -1062,6 +1062,9 @@ public sealed partial class GameMatchHost : IDisposable
                 TickWorldReadyGates();
                 // Issue #39: actors whose session disappeared must not linger as alive ghosts.
                 TickGhostActors();
+                // Баны: каждые admin.ban.matchSweepSec перепроверить, не забанен ли кто-то
+                // из уже сидящих в катке; совпало — уведомить и выкинуть.
+                TickBanSweep();
                 // Панель: состояние комнат в реестр, раз в секунду (не каждый тик —
                 // это HTTP-данные, а не игровой путь).
                 if (now >= _nextRoomSyncUtc)

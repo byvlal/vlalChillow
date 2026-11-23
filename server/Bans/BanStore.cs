@@ -27,6 +27,11 @@ namespace StandChillow.LanServer.Bans;
 /// получают ID аккаунта — миграция уже произошла, номер принадлежит тому же человеку.
 /// </para>
 /// <para>
+/// Схема v5 добавляет каждой записи стабильный номер <c>BanId</c> и приводит все IP
+/// к каноническому виду (<c>::ffff:1.2.3.4</c> → <c>1.2.3.4</c>): без этого один и
+/// тот же адрес в разных формах считался разными людьми.
+/// </para>
+/// <para>
 /// Запись атомарная: сначала <c>banlist.json.tmp</c>, потом замена. Битый файл не
 /// роняет сервер — логируется и стартует пустым, а не падает на первом входе.
 /// </para>
@@ -35,9 +40,10 @@ public sealed class BanStore
 {
     /// <summary>
     /// Текущая схема файла. v3 сбросила баны v1/v2 и почистила изученные IP/устройства;
-    /// v4 снимает старые ID аккаунтов с уже выданных банов, сохраняя IP/устройства/ники.
+    /// v4 снимает старые ID аккаунтов с уже выданных банов, сохраняя IP/устройства/ники;
+    /// v5 выдаёт стабильные номера банов и канонизирует адреса.
     /// </summary>
-    public const int CurrentVersion = 4;
+    public const int CurrentVersion = 5;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -65,7 +71,7 @@ public sealed class BanStore
     /// Читает файл; отсутствие/битый JSON — пустые списки и строка в лог.
     /// v1/v2 копируются в <c>banlist.json.vN.bak</c>, баны сбрасываются, справочник
     /// переписывается без IP/устройств. v3 → v4: копия и снятие старых ID с банов,
-    /// IP/устройства/ники остаются.
+    /// IP/устройства/ники остаются. v4 → v5: копия, выдача номеров банов и канон адресов.
     /// </summary>
     public (List<BanRecord> Bans, List<SeenPlayer> Players) Load()
     {
@@ -98,6 +104,19 @@ public sealed class BanStore
             {
                 Migrate(version, bans, players);
             }
+            else if (!IsReadOnly)
+            {
+                // Файл уже текущей схемы, но мог быть записан старой сборкой: без
+                // канона адресов и номеров банов. Доводим в памяти и переписываем.
+                var normalized = NormalizeRecords(bans);
+                if (normalized.IpsChanged > 0 || normalized.BanIds > 0)
+                {
+                    Save(bans, players);
+                    Console.WriteLine(
+                        $"[ban] v5: номеров выдано {normalized.BanIds}, " +
+                        $"адресов приведено к канону у {normalized.IpsChanged} записей");
+                }
+            }
 
             Console.WriteLine(
                 $"[ban] прочитано из {Path}: версия {version}, банов {bans.Count}, " +
@@ -113,7 +132,8 @@ public sealed class BanStore
 
     /// <summary>
     /// Довести файл до текущей схемы: v1/v2 → v3 (сброс старых банов и очистка
-    /// справочника), затем v3 → v4 (снять старые ID с банов, остальное сохранить).
+    /// справочника), v3 → v4 (снять старые ID с банов, остальное сохранить),
+    /// v4 → v5 (выдать номера банов и канонизировать адреса).
     /// </summary>
     /// <remarks>
     /// Бэкап — best-effort: если скопировать не удалось, активный файл всё равно
@@ -148,6 +168,14 @@ public sealed class BanStore
                 $"без IP/устройства осталось {withoutKeys} — это бан только по нику");
         }
 
+        if (fromVersion < 5)
+        {
+            var normalized = NormalizeRecords(bans);
+            Console.WriteLine(
+                $"[ban] миграция v4→v5: номеров банов выдано {normalized.BanIds}, " +
+                $"адресов приведено к канону у {normalized.IpsChanged} записей");
+        }
+
         if (Save(bans, players))
         {
             LastLoadedVersion = CurrentVersion;
@@ -173,6 +201,48 @@ public sealed class BanStore
             Console.WriteLine(
                 $"[ban] миграция v{version}: бэкап {backup} не удался ({ex.Message}) — продолжаю");
         }
+    }
+
+    /// <summary>
+    /// Довести записи до v5: выдать номера банов и канонизировать IP. Возвращает,
+    /// сколько номеров выдано и у скольких записей адреса реально изменились.
+    /// </summary>
+    private static (int Records, int IpsChanged, int BanIds) NormalizeRecords(List<BanRecord> bans)
+    {
+        var records = 0;
+        var ipsChanged = 0;
+        var banIds = 0;
+
+        foreach (var record in bans)
+        {
+            if (record is null)
+                continue;
+
+            records++;
+            record.Aliases ??= new List<string>();
+            record.Devices ??= new List<string>();
+            record.MatchIds ??= new List<int>();
+            record.Ips ??= new List<string>();
+
+            var normalizedIps = record.Ips
+                .Select(BanRecord.NormalizeIp)
+                .Where(ip => ip.Length > 0)
+                .Distinct(StringComparer.Ordinal)
+                .ToList();
+            if (!record.Ips.SequenceEqual(normalizedIps, StringComparer.Ordinal))
+            {
+                record.Ips = normalizedIps;
+                ipsChanged++;
+            }
+
+            if (string.IsNullOrWhiteSpace(record.BanId))
+            {
+                record.EnsureBanId();
+                banIds++;
+            }
+        }
+
+        return (records, ipsChanged, banIds);
     }
 
     /// <summary>

@@ -10,12 +10,17 @@ namespace StandChillow.LanServer.Bans;
 /// </remarks>
 public static class BanMessages
 {
-    /// <summary>Четыре строки, которые видит забаненный при попытке войти в лобби.</summary>
+    /// <summary>
+    /// Строки, которые видит забаненный: причина, кто забанил, его ID, номер бана
+    /// и сколько осталось. ID нужен и для разбана, и чтобы человек мог назвать себя.
+    /// </summary>
     public static string[] NoticeLines(BanRecord record, DateTime nowUtc) => new[]
     {
         "Вы были забанены!",
         $"Причина: {DescribeReason(record)}",
         $"Забанил: {DescribeAdmin(record)}",
+        $"Айди: {IdOf(record)}",
+        $"Бан №{BanIdOf(record)}",
         CountdownLine(record, nowUtc),
     };
 
@@ -44,9 +49,14 @@ public static class BanMessages
     {
         $"Игрок {DescribeAdmin(record)} забанил {record.DisplayNick}!",
         $"Айди: {IdOf(record)}",
+        $"Бан №{BanIdOf(record)}",
         $"Длительность бана: {BanDuration.FormatShort(record.Duration)}",
         $"Причина: {DescribeReason(record)}",
     };
+
+    /// <summary>Номер бана для сообщений и журнала; у старых записей — прочерк.</summary>
+    public static string BanIdOf(BanRecord record) =>
+        string.IsNullOrWhiteSpace(record.BanId) ? "—" : record.BanId.Trim();
 
     /// <summary>
     /// Id для объявления: номер аккаунта из записи (там тег того, кого банили). У совсем
