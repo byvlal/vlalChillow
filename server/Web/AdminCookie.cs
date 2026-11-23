@@ -1,13 +1,13 @@
 namespace StandChillow.LanServer.Web;
 
 /// <summary>
-/// Кука админ-сессии веб-панели: «код этого запуска предъявлен». Без ASP.NET.
+/// Кука админ-сессии веб-панели: «пароль предъявлен». Без ASP.NET.
 /// </summary>
 /// <remarks>
 /// <para>
 /// Отдельная от <see cref="SiteCookie"/>: админ-доступ — не то же самое, что вход на сайт.
-/// Кука сессионная и её токен живёт в памяти сервера, так что рестарт гасит и куку,
-/// и проверку — код из auth.txt вводится заново.
+/// Токен и его срок (7 дней) лежат в <c>auth/sessions.json</c>, поэтому кука и сессия
+/// переживают и рестарт сервера, и закрытие браузера.
 /// </para>
 /// <para>
 /// Флаги как у куки сайта: <c>HttpOnly</c>, <c>SameSite=Lax</c>, <c>Secure</c> по флагу
@@ -56,7 +56,8 @@ public static class AdminCookie
     public static (string Name, string Value) Build(string token, string path, bool secure)
     {
         var scope = SiteCookie.NormalizePath(path);
-        var value = $"{Name}={token}; Path={scope}; HttpOnly; SameSite=Lax";
+        var value = $"{Name}={token}; Path={scope}; Max-Age={AdminSessions.TtlDays * 24 * 60 * 60}; " +
+                    "HttpOnly; SameSite=Lax";
         if (secure)
             value += "; Secure";
 

@@ -1,6 +1,7 @@
 using System.Reflection;
 using System.Text;
 using System.Text.Json;
+using StandChillow.LanServer.Auth;
 using StandChillow.LanServer.Bans;
 using StandChillow.LanServer.Config;
 using StandChillow.LanServer.Lan;
@@ -42,15 +43,17 @@ public sealed class WebPanelHost : IDisposable
     private readonly StatusSnapshotCache _status = new();
 
     /// <summary>
-    /// Сессии сайта. Одни на запуск сервера: перезапуск гасит все сессии и коды (#51).
+    /// Сессии сайта. Живут 30 дней и переживают рестарт: на диске только SHA-256 токенов.
     /// </summary>
-    private readonly SiteSessions _sessions = new();
+    private readonly SiteSessions _sessions;
 
     /// <summary>
-    /// Админ-сессии панели: «код этого запуска предъявлен». Тоже в памяти — рестарт
-    /// гасит вместе с кодом из auth.txt.
+    /// Админ-сессии панели: «пароль предъявлен». Срок 7 дней, переживают рестарт.
     /// </summary>
-    private readonly AdminSessions _adminSessions = new();
+    private readonly AdminSessions _adminSessions;
+
+    /// <summary>Админы, пароли и права. Один на процесс: им пользуются сайт и игра.</summary>
+    private readonly AdminStore _adminStore;
     private readonly SiteAddressResolver _addresses;
     private readonly WebPanelServer _server_;
     private readonly WebPanelRouter _router;
@@ -85,7 +88,8 @@ public sealed class WebPanelHost : IDisposable
     /// <summary>Файл истории матчей — отдельно от агрегатов stats.json.</summary>
     private const string MatchHistoryFileName = "matches.json";
 
-    public WebPanelHost(ServerConfig server, AvatarCache? avatars = null)
+    public WebPanelHost(
+        ServerConfig server, AvatarCache? avatars = null, AdminStore? adminStore = null)
     {
         _server = server;
         _config = server.Web;
@@ -93,6 +97,15 @@ public sealed class WebPanelHost : IDisposable
         // Кэш аватаров общий с игровым хостом: лобби кладёт, сайт читает.
         _avatars = avatars
             ?? new AvatarCache(Path.Combine(AppContext.BaseDirectory, "avatars"));
+
+        // Админы: пароли и права лежат в auth/ рядом с config.json. Игра получает
+        // тот же объект, поэтому смена пароля сразу видна обеим сторонам.
+        var authDirectory = AdminStore.ResolveDirectory(ServerConfig.LastLoadedPath);
+        _adminStore = adminStore ?? new AdminStore(authDirectory, Console.WriteLine);
+        _adminStore.Initialize(server.Admin.Ids, DateTime.UtcNow);
+        _sessions = new SiteSessions(Path.Combine(authDirectory, "site-sessions.json"));
+        _adminSessions = new AdminSessions(
+            Path.Combine(authDirectory, "sessions.json"), _adminStore);
 
         // Статистика живёт на диске рядом с exe: рестарт ничего не теряет.
         _stats = new PlayerStatsStore(Path.Combine(AppContext.BaseDirectory, StatsFileName));
@@ -171,8 +184,8 @@ public sealed class WebPanelHost : IDisposable
                 Matches = _history,
 
                 // ── Админ панель ──
+                AdminStore = _adminStore,
                 AdminSessionStore = _adminSessions,
-                AdminCodeMatches = code => _host?.AdminCodeMatches(code) ?? false,
                 IsAdminLive = id => _host?.IsAdminLive(id) ?? _server.IsAdmin(id),
 
                 // Кастомизация: только свой ID, проверяет хранилище (цифры+англ., уникальность).
@@ -196,6 +209,7 @@ public sealed class WebPanelHost : IDisposable
                     : _config.BindAddress.Trim(),
                 Port = Math.Clamp(_config.Port, 1, 65535),
                 Limits = limits,
+                TrustedProxies = _config.TrustedProxies ?? new List<string>(),
             },
             _router.Route);
     }

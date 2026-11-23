@@ -1,5 +1,6 @@
 using System.Text;
 using System.Text.Json;
+using StandChillow.LanServer.Auth;
 using StandChillow.LanServer.Reports;
 using StandChillow.LanServer.Stats;
 
@@ -15,9 +16,9 @@ namespace StandChillow.LanServer.Web;
 /// личные данные. IP и устройства наружу не отдаются никогда.
 /// </para>
 /// <para>
-/// Модерация — в той же вкладке «Репорты», но только после тройного затвора
-/// (сессия → живой <c>admin.ids</c> → админ-кука этого запуска). Просто быть в
-/// <c>admin.ids</c> недостаточно: код из auth.txt обязателен.
+/// Модерация — в той же вкладке «Репорты», но только после входа в админ панель
+/// (личный пароль → живой <c>admin.ids</c> → право <c>reports</c>). Сессия сайта и
+/// код из лобби для этого не нужны.
 /// </para>
 /// </remarks>
 public sealed partial class WebPanelRouter
@@ -283,10 +284,10 @@ public sealed partial class WebPanelRouter
 
     // ── модерация (тройной затвор) ───────────────────────────────────────────
 
-    /// <summary>Страница жалоб для админа с подтверждённым кодом этого запуска.</summary>
+    /// <summary>Страница жалоб для админа с правом «reports».</summary>
     private WebResponse AdminReports(WebRequestContext request)
     {
-        if (AdminGate(request, out _, out _) is { } denied)
+        if (AdminGate(request, out _, AdminPermissions.Reports) is { } denied)
             return denied;
 
         if (_options.Reports is null)
@@ -329,7 +330,7 @@ public sealed partial class WebPanelRouter
     /// <summary>Принять или отклонить жалобу. Возвращает обновлённую запись и счётчики.</summary>
     private WebResponse AdminReportStatus(WebRequestContext request)
     {
-        if (AdminGate(request, out var session, out _) is { } denied)
+        if (AdminGate(request, out var admin, AdminPermissions.Reports) is { } denied)
             return denied;
 
         if (_options.Reports is null)
@@ -354,12 +355,12 @@ public sealed partial class WebPanelRouter
             return ApiError(400, "bad_status", "статус — accepted или rejected");
 
         var (error, record) = _options.Reports.SetStatus(
-            id, status, session.Nick, parsed?.Note, DateTime.UtcNow);
+            id, status, admin.Nick, parsed?.Note, DateTime.UtcNow);
         if (error is not null || record is null)
             return ApiError(400, "report_not_updated", error ?? "жалоба не обновлена");
 
         Console.WriteLine(
-            $"[report] '{session.Nick}' (ID {session.PlayerId}) " +
+            $"[report] #{admin.PlayerId} " +
             $"{(status == ReportStatuses.Accepted ? "принял" : "отклонил")} жалобу " +
             $"{record.Id} на '{record.TargetNick}' (ID {record.TargetId})");
 

@@ -1,6 +1,7 @@
 using System.Net;
 using System.Text;
 using System.Text.Json;
+using StandChillow.LanServer.Auth;
 using StandChillow.LanServer.Bans;
 using StandChillow.LanServer.Config;
 using StandChillow.LanServer.Net.Lobby;
@@ -137,6 +138,15 @@ public sealed partial class WebPanelRouter
         if (request.Method == "GET" && path == "/api/admin/avatar")
             return AdminAvatar(request);
 
+        if (request.Method == "GET" && path == "/api/admin/admins")
+            return AdminList(request);
+
+        if (request.Method == "POST" && path == "/api/admin/permissions")
+            return AdminSetPermissions(request);
+
+        if (request.Method == "POST" && path == "/api/admin/mega")
+            return AdminMegaIp(request);
+
         if (request.Method == "POST" && path == "/api/admin/customid")
             return AdminSetCustomId(request);
 
@@ -149,7 +159,7 @@ public sealed partial class WebPanelRouter
         if (request.Method == "POST" && path == "/api/admin/unban")
             return AdminUnban(request);
 
-        // Модерация жалоб — тот же тройной затвор, что у банов.
+        // Модерация жалоб — тот же право-затвор, что у банов.
         if (request.Method == "GET" && path == "/api/admin/reports")
             return AdminReports(request);
 
@@ -179,6 +189,7 @@ public sealed partial class WebPanelRouter
         if (path is "/" or "/index.html" or "/api/status" or "/api/modes"
             or "/api/me" or "/api/avatar" or "/api/stats/me" or "/api/admin"
             or "/api/admin/lookup" or "/api/admin/avatar" or "/api/admin/bans"
+            or "/api/admin/admins"
             or "/api/player" or "/api/player/avatar" or "/api/matches"
             or "/api/administration" or "/api/reports/mine"
             or "/api/admin/reports" or "/healthz")
@@ -194,6 +205,7 @@ public sealed partial class WebPanelRouter
         if (path is "/api/auth" or "/api/logout" or "/api/reports"
             or "/api/admin/login" or "/api/admin/logout"
             or "/api/admin/customid" or "/api/admin/ban" or "/api/admin/unban"
+            or "/api/admin/permissions" or "/api/admin/mega"
             or "/api/admin/reports/status")
             return WithAllow("POST", WebResponse.Text("405", 405));
 
@@ -680,13 +692,15 @@ public sealed class WebPanelRouterOptions
     // ── Админ панель ─────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Хранилище админ-сессий панели: «код этого запуска предъявлен». Живёт в памяти,
-    /// рестарт гасит вместе с кодом. <c>null</c> — вход в админку закрыт (503).
+    /// Хранилище админов: пароли, права и megaIps. <c>null</c> — вход в админку закрыт.
+    /// </summary>
+    public AdminStore? AdminStore { get; init; }
+
+    /// <summary>
+    /// Хранилище админ-сессий: кука с паролем, срок 7 дней, переживает рестарт.
+    /// <c>null</c> — вход в админку закрыт (503).
     /// </summary>
     public AdminSessions? AdminSessionStore { get; init; }
-
-    /// <summary>Сверить код этого запуска (тот же, что auth.txt). <c>null</c> — вход закрыт.</summary>
-    public Func<string?, bool>? AdminCodeMatches { get; init; }
 
     /// <summary>
     /// Живая проверка админства: читает <b>текущий</b> конфиг, а не снимок со старта —

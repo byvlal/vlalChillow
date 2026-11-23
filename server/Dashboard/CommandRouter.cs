@@ -61,7 +61,8 @@ public sealed class CommandRouter
             or "end" or "stopmatch" or "стопматч" or "help" or "?" or "команды"
             or "режим" or "карта" or "ban" or "бан" or "unban" or "разбан"
             or "bans" or "баны" or "ids" or "айди"
-            or "auth" or "код" or "whoami" or "ктоя")
+            or "auth" or "код" or "whoami" or "ктоя"
+            or "admin" or "админ")
         {
             if (!_game.TryDispatchHostCommand(trimmed, _feedback, who: "console"))
                 _feedback($"unknown command '{trimmed}' — help");

@@ -16,11 +16,11 @@ namespace StandChillow.LanServer.Web;
 /// </para>
 /// <para>
 /// Верить заголовку всегда нельзя: его пишет отправитель, а запрос может прийти напрямую,
-/// мимо прокси. Доверяем только когда прямой отправитель и так свой — loopback или
-/// приватная сеть (панель слушает LAN/loopback; прокси из deploy-примера живёт там же).
-/// Соединение из интернета напрямую права назвать себя чужим адресом не получает: для
-/// него адресом остаётся адрес сокета. Это защита лимитов от случайной толпы, а не от
-/// недоброжелателя в своей сети — панель и так без паролей.
+/// мимо прокси. Доверяем только когда прямой отправитель в списке <c>web.trustedProxies</c>;
+/// пусто — только loopback. Приватная сеть сама по себе не доверенная: иначе любой
+/// LAN-клиент назвался бы чужим адресом и получил мега-IP. Соединение из интернета
+/// напрямую права назвать себя чужим адресом не получает: для него адресом остаётся
+/// адрес сокета.
 /// </para>
 /// </remarks>
 public static class WebClientAddress
@@ -32,8 +32,19 @@ public static class WebClientAddress
     public static IPAddress? Resolve(
         IPAddress? directPeer,
         IReadOnlyDictionary<string, string>? headers)
+        => Resolve(directPeer, headers, trustedProxies: null);
+
+    /// <summary>
+    /// Адрес клиента с явным списком доверенных прокси. Пустой список — только loopback:
+    /// доверять заголовку от любого LAN-клиента нельзя, иначе он назовётся мега-IP.
+    /// </summary>
+    public static IPAddress? Resolve(
+        IPAddress? directPeer,
+        IReadOnlyDictionary<string, string>? headers,
+        IReadOnlyList<string>? trustedProxies)
     {
-        if (directPeer is null || headers is null || !IsTrustedProxyPeer(directPeer))
+        if (directPeer is null || headers is null
+            || !IsTrustedProxyPeer(directPeer, trustedProxies))
             return Normalize(directPeer);
 
         if (headers.TryGetValue("X-Forwarded-For", out var forwarded)
@@ -60,8 +71,16 @@ public static class WebClientAddress
     public static bool IdentifiesVisitor(
         IPAddress? directPeer,
         IReadOnlyDictionary<string, string>? headers)
+        => IdentifiesVisitor(directPeer, headers, trustedProxies: null);
+
+    /// <summary>То же с явным списком доверенных прокси (пусто — только loopback).</summary>
+    public static bool IdentifiesVisitor(
+        IPAddress? directPeer,
+        IReadOnlyDictionary<string, string>? headers,
+        IReadOnlyList<string>? trustedProxies)
     {
-        if (directPeer is null || headers is null || !IsTrustedProxyPeer(directPeer))
+        if (directPeer is null || headers is null
+            || !IsTrustedProxyPeer(directPeer, trustedProxies))
             return false;
 
         if (headers.TryGetValue("X-Forwarded-For", out var forwarded)
@@ -99,31 +118,79 @@ public static class WebClientAddress
     }
 
     /// <summary>
-    /// Прямой отправитель — свой: loopback или приватная сеть
-    /// (RFC 1918, ULA, link-local). Из интернета напрямую XFF не доверяем.
+    /// Прямой отправитель — доверенный прокси: запись из списка (IP/CIDR), а без списка —
+    /// только loopback.
     /// </summary>
     internal static bool IsTrustedProxyPeer(IPAddress? address)
+        => IsTrustedProxyPeer(address, trustedProxies: null);
+
+    /// <summary>
+    /// Доверенный прокси по явному списку IP/CIDR. Пустой список — только loopback:
+    /// так LAN-клиент не может подделать заголовок и получить чужой мега-IP.
+    /// </summary>
+    internal static bool IsTrustedProxyPeer(
+        IPAddress? address, IReadOnlyList<string>? trustedProxies)
     {
         if (address is null)
             return false;
         if (address.IsIPv4MappedToIPv6)
             address = address.MapToIPv4();
-        if (IPAddress.IsLoopback(address))
+
+        if (trustedProxies is { Count: > 0 })
+        {
+            foreach (var entry in trustedProxies)
+            {
+                if (MatchesProxyEntry(address, entry))
+                    return true;
+            }
+            return false;
+        }
+
+        return IPAddress.IsLoopback(address);
+    }
+
+    /// <summary>Адрес входит в запись списка: точный IP или CIDR (<c>192.168.1.0/24</c>).</summary>
+    internal static bool MatchesProxyEntry(IPAddress address, string? entry)
+    {
+        var text = (entry ?? "").Trim();
+        if (text.Length == 0)
+            return false;
+
+        var slash = text.IndexOf('/');
+        if (slash < 0)
+        {
+            return IPAddress.TryParse(text, out var exact)
+                   && Normalize(exact)?.Equals(address) == true;
+        }
+
+        if (!IPAddress.TryParse(text[..slash].Trim(), out var network)
+            || !int.TryParse(text[(slash + 1)..].Trim(), out var prefix))
+            return false;
+
+        if (network.IsIPv4MappedToIPv6)
+            network = network.MapToIPv4();
+        if (network.AddressFamily != address.AddressFamily)
+            return false;
+
+        var maxBits = address.AddressFamily == AddressFamily.InterNetwork ? 32 : 128;
+        if (prefix < 0 || prefix > maxBits)
+            return false;
+
+        var networkBytes = network.GetAddressBytes();
+        var addressBytes = address.GetAddressBytes();
+        var fullBytes = prefix / 8;
+        var remainder = prefix % 8;
+
+        for (var i = 0; i < fullBytes; i++)
+        {
+            if (networkBytes[i] != addressBytes[i])
+                return false;
+        }
+
+        if (remainder == 0)
             return true;
 
-        var bytes = address.GetAddressBytes();
-        if (address.AddressFamily == AddressFamily.InterNetwork)
-        {
-            return bytes[0] == 10
-                || (bytes[0] == 172 && bytes[1] is >= 16 and <= 31)
-                || (bytes[0] == 192 && bytes[1] == 168)
-                || (bytes[0] == 169 && bytes[1] == 254);
-        }
-        if (address.AddressFamily == AddressFamily.InterNetworkV6)
-        {
-            // fc00::/7 (ULA) и fe80::/10 (link-local).
-            return (bytes[0] & 0xFE) == 0xFC || (bytes[0] & 0xC0) == 0x80;
-        }
-        return false;
+        var mask = (byte)(0xFF << (8 - remainder));
+        return (networkBytes[fullBytes] & mask) == (addressBytes[fullBytes] & mask);
     }
 }

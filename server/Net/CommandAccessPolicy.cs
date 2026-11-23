@@ -1,3 +1,4 @@
+using StandChillow.LanServer.Auth;
 using StandChillow.LanServer.Config;
 
 namespace StandChillow.LanServer.Net;
@@ -14,9 +15,10 @@ namespace StandChillow.LanServer.Net;
 /// показать игроку и записать в лог.
 /// </para>
 /// <para>
-/// «Админ» здесь — серверный id из <c>admin.ids</c> плюс код этого запуска,
-/// предъявленный адресом (делегат <c>hasAdminRights</c> у <see cref="IsAllowed"/>, см.
-/// <c>AdminAuth</c>). Ники в правах не участвуют: id считает сервер из состояния сессии.
+/// «Админ» здесь — серверный id из <c>admin.ids</c> плюс личный пароль, введённый
+/// с адреса (делегат <c>hasAdminRights</c> у <see cref="IsAllowed"/>, см.
+/// <c>GameNetHost.AdminAuth</c>). Ники в правах не участвуют: id считает сервер из
+/// состояния сессии.
 /// Один и тот же гейт применяется и к лобби-чату (7778), и к командам из матч-чата
 /// (ChatManager, 7777) — канал у игрока меняется, а права нет.
 /// </para>
@@ -108,9 +110,9 @@ public static class CommandAccessPolicy
     /// <param name="hasAdminRights">
     /// Настоящие админ-права написавшего. По умолчанию это проверка id по <c>admin.ids</c>,
     /// но живые каналы (лобби 7778 и ChatManager 7777) обязаны передавать сюда
-    /// <c>GameNetHost.IsAdminAuthorized</c> — id плюс код этого запуска, предъявленный
+    /// <c>GameNetHost.IsAdminAuthorized</c> — id плюс личный пароль, предъявленный
     /// адресом. Без делегата клиент, назвавшийся админским ником, получил бы тот же id
-    /// и <c>/ban</c>, хотя <c>/whoami</c> честно отвечал бы «код не введён».
+    /// и <c>/ban</c>, хотя <c>/whoami</c> честно отвечал бы «пароль не введён».
     /// Гейт принимает только <c>int</c> — админских ников в конфиге больше нет.
     /// </param>
     public static bool IsAllowed(
@@ -118,7 +120,8 @@ public static class CommandAccessPolicy
         int playerId,
         string message,
         out string denyReason,
-        Func<int, bool>? hasAdminRights = null)
+        Func<int, bool>? hasAdminRights = null,
+        Func<int, string, bool>? hasPermission = null)
     {
         denyReason = string.Empty;
 
@@ -133,39 +136,45 @@ public static class CommandAccessPolicy
         if (parsed.StartsMatch && config.Admin.AnyoneCanStart)
             return true;
 
-        // Id в списке и права — разные вещи: права даёт адрес, предъявивший код запуска.
+        // Id в списке и права — разные вещи: права даёт личный пароль, введённый с адреса.
         var adminId = config.IsAdmin(playerId);
         var admin = hasAdminRights is null ? adminId : hasAdminRights(playerId);
+        bool Allowed(string permission) =>
+            hasPermission is null ? admin : admin && hasPermission(playerId, permission);
 
-        // Баны — отдельный гейт: по умолчанию только админ, независимо от
-        // admin.adminOnlyCommands. Разбан randomplayer'ом — это не «мелкая опция».
+        // Баны — отдельный гейт: право «bans», независимо от admin.adminOnlyCommands.
+        // Разбан randomplayer'ом — это не «мелкая опция».
         if (config.Admin.Ban.AdminOnly && IsBanCommand(parsed.Command))
         {
-            if (admin)
+            if (Allowed(AdminPermissions.Bans))
                 return true;
 
-            denyReason = AdminDenied(config, parsed.Command, playerId, adminId);
+            denyReason = AdminDenied(config, parsed.Command, playerId,
+                adminId && !admin, AdminPermissions.Bans);
             return false;
         }
 
-        // Диагностика матч-чата шлёт кадры от имени чужого актора — тоже только админ,
-        // и тоже независимо от admin.adminOnlyCommands (иначе гейт снимается правкой конфига).
+        // Диагностика матч-чата шлёт кадры от имени чужого актора — только с правом
+        // «config» и тоже независимо от admin.adminOnlyCommands.
         if (IsChatTestCommand(parsed.Command))
         {
-            if (admin)
+            if (Allowed(AdminPermissions.Config))
                 return true;
 
-            denyReason = AdminDenied(config, parsed.Command, playerId, adminId);
+            denyReason = AdminDenied(config, parsed.Command, playerId,
+                adminId && !admin, AdminPermissions.Config);
             return false;
         }
 
         if (!config.IsAdminOnly(parsed.Command) && !IsAdminOnlyAlias(config, parsed.Command))
             return true;
 
-        if (admin)
+        // /set и /end меняют катку и конфиг — это право «config», а не «админ вообще».
+        if (Allowed(AdminPermissions.Config))
             return true;
 
-        denyReason = AdminDenied(config, parsed.Command, playerId, adminId);
+        denyReason = AdminDenied(config, parsed.Command, playerId,
+            adminId && !admin, AdminPermissions.Config);
         return false;
     }
 
@@ -174,20 +183,26 @@ public static class CommandAccessPolicy
     /// сам посчитал для написавшего, и список админов из конфига (частый случай — пуст).
     /// </summary>
     /// <remarks>
-    /// Id в <c>admin.ids</c>, а кода нет — отдельный случай, и молчать о нём нельзя:
-    /// игрок видит себя в списке и решает, что команда «сломалась». Подсказка — та же,
-    /// что даёт <c>/whoami</c>.
+    /// Два разных случая, и молчать о них нельзя: id в <c>admin.ids</c>, но пароль не
+    /// введён — и пароль принят, но права на действие не выдано. Игрок видит себя в
+    /// списке и иначе решает, что команда «сломалась». Подсказка — та же, что в
+    /// <c>/whoami</c>.
     /// </remarks>
     private static string AdminDenied(
         ServerConfig config,
         string command,
         int playerId,
-        bool adminIdWithoutCode)
+        bool adminIdWithoutPassword,
+        string? missingPermission)
     {
-        if (adminIdWithoutCode)
+        if (adminIdWithoutPassword)
             return $"команда /{command} только для админов: id #{playerId} в " +
-                   "admin.ids есть, но этот адрес не предъявил код запуска — " +
-                   "прав пока нет (/whoami; код спрашивают при входе в лобби)";
+                   "admin.ids есть, но этот адрес не ввёл личный пароль — " +
+                   "прав пока нет (/whoami; пароль спрашивают при входе в лобби)";
+
+        if (missingPermission is not null && config.IsAdmin(playerId))
+            return $"команда /{command} только для админов: id #{playerId} авторизован, " +
+                   $"но нет права «{missingPermission}» — его выдаёт мега-админ";
 
         var admins = config.Admin.Ids.Count == 0
             ? "в config.json admin.ids пусто — админ-команд ни у кого нет"

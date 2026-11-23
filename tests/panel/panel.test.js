@@ -483,20 +483,28 @@ function toPage(list) {
   await tick(2300);
   check('порт восстановлен — баннер убран', $('s-warn').hidden === true);
 
-  /* ── админка: аноним не видит ничего, админ видит панель ── */
+  /* ── админка: вход по личному паролю не зависит от сессии сайта ── */
   meState = null;
   await P.loadMe();
   adminState = { ok: true, admin: false, authed: false };
   await P.loadAdminState();
-  check('аноним: админка закрыта', $('adm-notadmin').hidden === false);
+  check('аноним: форма входа показана', $('adm-auth').hidden === false);
   check('аноним: панель скрыта', $('adm-panel').hidden === true);
   check('аноним: ника админа в странице нет',
     $('adm-nick').textContent === '' || $('adm-nick').textContent === '—',
     $('adm-nick').textContent);
 
-  meState = { id: 999, nick: 'влал', admin: true };
-  await P.loadMe();
+  $('adm-login-id').value = '999';
+  $('adm-password').value = '999-abcdef';
+  await P.adminLogin();
+  check('вход без сессии сайта: панель открыта', $('adm-panel').hidden === false);
+  check('вход: пароль стёрт из поля', $('adm-password').value === '');
+  check('вход: панель без прав не показывает чужие вкладки',
+    $('adm-tab-custom').hidden === true && $('adm-tab-bans').hidden === true &&
+    $('adm-noperms').hidden === false);
+
   adminState = { ok: true, admin: true, authed: true, id: 999, nick: 'влал', customId: null,
+                 mega: false, permissions: ['dashboard', 'journal', 'bans'],
                  bans: { enabled: true, minMinutes: 10, maxDays: 14 } };
   await P.loadAdminState();
   check('админ: панель открыта', $('adm-panel').hidden === false);
@@ -505,6 +513,15 @@ function toPage(list) {
     $('adm-nick').textContent);
   check('админ: диапазон сроков из сервера',
     $('adm-brange').textContent.indexOf('10') >= 0, $('adm-brange').textContent);
+  check('админ без customization: вкладка скрыта', $('adm-tab-custom').hidden === true);
+  check('админ с bans: вкладка видна', $('adm-tab-bans').hidden === false);
+  check('обычный админ не видит вкладку прав', $('adm-tab-admins').hidden === true);
+
+  adminState = { ok: true, admin: true, authed: true, id: 999, nick: 'влал', customId: null,
+                 mega: true, permissions: ['dashboard', 'journal', 'bans', 'customization'],
+                 bans: { enabled: true, minMinutes: 10, maxDays: 14 } };
+  await P.loadAdminState();
+  check('мега: вкладка прав видна', $('adm-tab-admins').hidden === false);
 
   report();
 
