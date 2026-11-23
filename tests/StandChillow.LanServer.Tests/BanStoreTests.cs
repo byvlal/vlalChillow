@@ -5,8 +5,8 @@ namespace StandChillow.LanServer.Tests;
 
 /// <summary>
 /// <c>banlist.json</c>: сброс старых банов при переходе на v3, снятие старых ID
-/// аккаунтов при v3 → v4 с сохранением IP/устройств/ников, бэкап, roundtrip и защита
-/// от файла будущей версии.
+/// аккаунтов при v3 → v4, номера банов и канонические адреса при v4 → v5, бэкап,
+/// roundtrip и защита от файла будущей версии.
 /// </summary>
 public sealed class BanStoreTests : IDisposable
 {
@@ -29,7 +29,7 @@ public sealed class BanStoreTests : IDisposable
     }
 
     [Fact]
-    public void V1IsBackedUpAndResetToV3()
+    public void V1IsBackedUpAndResetToCurrent()
     {
         var expires = BanRecord.ToUnixMs(DateTime.UtcNow.AddDays(1));
         var v1 = $$"""
@@ -182,7 +182,7 @@ public sealed class BanStoreTests : IDisposable
     }
 
     [Fact]
-    public void FailedBackupStillResetsBansAndWritesV3()
+    public void FailedBackupStillResetsBansAndWritesCurrent()
     {
         var expires = BanRecord.ToUnixMs(DateTime.UtcNow.AddDays(1));
         var v1 = $$"""
@@ -228,6 +228,7 @@ public sealed class BanStoreTests : IDisposable
                 new BanRecord
                 {
                     Nick = "A",
+                    BanId = "B-ABCDEF01",
                     Aliases = new List<string> { "B" },
                     Ips = new List<string> { "203.0.113.9" },
                     Devices = new List<string> { Device },
@@ -261,6 +262,7 @@ public sealed class BanStoreTests : IDisposable
 
         var ban = Assert.Single(bans);
         Assert.Equal("A", ban.Nick);
+        Assert.Equal("B-ABCDEF01", ban.BanId);
         Assert.Contains("B", ban.Aliases);
         Assert.Contains("203.0.113.9", ban.Ips);
         Assert.Contains(Device, ban.Devices);
@@ -314,6 +316,7 @@ public sealed class BanStoreTests : IDisposable
 
         var ban = Assert.Single(bans);
         Assert.Equal("Ktulxy", ban.Nick);
+        Assert.StartsWith("B-", ban.BanId);
         Assert.Contains("Ktulxy2", ban.Aliases);
         Assert.Contains("203.0.113.9", ban.Ips);
         Assert.Contains(Device, ban.Devices);
@@ -323,6 +326,7 @@ public sealed class BanStoreTests : IDisposable
         // В файле старых номеров тоже больше нет — только IP/устройство/ник.
         var saved = File.ReadAllText(_path);
         Assert.Contains($"\"version\": {BanStore.CurrentVersion}", saved);
+        Assert.Contains(ban.BanId, saved);
         Assert.DoesNotContain("matchIds", saved);
         Assert.DoesNotContain("1000005", saved);
         Assert.DoesNotContain("1000042", saved);
@@ -330,7 +334,7 @@ public sealed class BanStoreTests : IDisposable
     }
 
     [Fact]
-    public void V4BanKeepsItsAccountId()
+    public void V4MigrationKeepsAccountIdAddsBanIdAndCanonicalIp()
     {
         var expires = BanRecord.ToUnixMs(DateTime.UtcNow.AddDays(1));
         var v4 = $$"""
@@ -339,7 +343,7 @@ public sealed class BanStoreTests : IDisposable
           "bans": [
             {
               "nick": "Ktulxy",
-              "ips": [ "203.0.113.9" ],
+              "ips": [ "::ffff:203.0.113.9" ],
               "matchIds": [ 1000005 ],
               "expiresUtcMs": {{expires}}
             }
@@ -352,25 +356,77 @@ public sealed class BanStoreTests : IDisposable
         var store = new BanStore(_path);
         var (bans, _) = store.Load();
 
-        // Баны после миграции снова несут номер аккаунта: его не снимаем.
+        // v4 → v5: номер аккаунта не снимаем (это уже новая нумерация), выдаём
+        // номер бана и приводим адрес к канону, чтобы IPv4 и IPv4-mapped IPv6
+        // не считались разными людьми.
         Assert.Equal(BanStore.CurrentVersion, store.LastLoadedVersion);
+        Assert.True(File.Exists(_path + ".v4.bak"));
+        Assert.Equal(v4, File.ReadAllText(_path + ".v4.bak"));
+
         var ban = Assert.Single(bans);
         Assert.Contains(1000005, ban.MatchIds);
-        Assert.False(File.Exists(_path + ".v4.bak"));
+        Assert.StartsWith("B-", ban.BanId);
+        Assert.Equal(new[] { "203.0.113.9" }, ban.Ips);
+
+        var saved = File.ReadAllText(_path);
+        Assert.Contains($"\"version\": {BanStore.CurrentVersion}", saved);
+        Assert.Contains(ban.BanId, saved);
+        Assert.Contains("203.0.113.9", saved);
+        Assert.DoesNotContain("::ffff:", saved);
+
+        // Второй запуск не перевыдаёт номер: он уже лежит в файле.
+        var reloaded = new BanStore(_path);
+        var (again, _) = reloaded.Load();
+        Assert.Equal(ban.BanId, Assert.Single(again).BanId);
+    }
+
+    [Fact]
+    public void CurrentVersionRecordWithoutBanIdIsRepairedWithoutBackup()
+    {
+        var expires = BanRecord.ToUnixMs(DateTime.UtcNow.AddDays(1));
+        var v5 = $$"""
+        {
+          "version": 5,
+          "bans": [
+            {
+              "nick": "Ktulxy",
+              "ips": [ "::ffff:203.0.113.9" ],
+              "expiresUtcMs": {{expires}}
+            }
+          ],
+          "players": []
+        }
+        """;
+        File.WriteAllText(_path, v5);
+
+        var store = new BanStore(_path);
+        var (bans, _) = store.Load();
+
+        // Файл уже текущей схемы, но записан старой сборкой: номер бана и канон
+        // адреса доводим в памяти и сразу переписываем. Бэкап не нужен — схема
+        // не менялась.
+        var ban = Assert.Single(bans);
+        Assert.StartsWith("B-", ban.BanId);
+        Assert.Equal(new[] { "203.0.113.9" }, ban.Ips);
+        Assert.False(File.Exists(_path + ".v5.bak"));
+
+        var saved = File.ReadAllText(_path);
+        Assert.Contains(ban.BanId, saved);
+        Assert.DoesNotContain("::ffff:", saved);
     }
 
     [Fact]
     public void NewerVersionIsReadOnlyAndIsNotOverwritten()
     {
-        const string v5 = "{\"version\":5,\"bans\":[],\"players\":[]}";
-        File.WriteAllText(_path, v5);
+        const string v6 = "{\"version\":6,\"bans\":[],\"players\":[]}";
+        File.WriteAllText(_path, v6);
 
         var store = new BanStore(_path);
         store.Load();
 
         Assert.True(store.IsReadOnly);
         Assert.False(store.Save(Array.Empty<BanRecord>(), Array.Empty<SeenPlayer>()));
-        Assert.Equal(v5, File.ReadAllText(_path));
-        Assert.False(File.Exists(_path + ".v4.bak"));
+        Assert.Equal(v6, File.ReadAllText(_path));
+        Assert.False(File.Exists(_path + ".v5.bak"));
     }
 }

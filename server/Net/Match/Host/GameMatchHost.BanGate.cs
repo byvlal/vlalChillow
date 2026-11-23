@@ -12,10 +12,11 @@ namespace StandChillow.LanServer.Net;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Проверок ровно две и обе на входе: <c>ConnectionRequest</c> (знаем только адрес) и
-/// <c>JoinRoom</c> (знаем ник и стабильный ключ 2.07-установки из handshake). На пакеты
-/// состояния ничего не навешивается — <c>WorldObjectState</c>/<c>Rpc</c> идут тем же
-/// путём, что и раньше.
+/// Проверок три: <c>ConnectionRequest</c> (знаем только адрес), <c>JoinRoom</c> (знаем
+/// ник и стабильный ключ 2.07-установки из handshake) и периодический свип уже
+/// сидящих в катке (<c>admin.ban.matchSweepSec</c>): бан, выданный во время игры,
+/// должен выкинуть нарушителя, а не ждать его выхода. На пакеты состояния ничего не
+/// навешивается — <c>WorldObjectState</c>/<c>Rpc</c> идут тем же путём, что и раньше.
 /// </para>
 /// <para>
 /// Гейт в <c>JoinRoom</c> стоит <b>до</b> <c>EnsureRoom</c> и <c>TryFindRejoinActor</c>
@@ -32,6 +33,19 @@ public sealed partial class GameMatchHost
 {
     /// <summary>Реестр банов (ставит <c>GameNetHost</c>; в пробе/тестах — null).</summary>
     public BanRegistry? Bans { get; set; }
+
+    /// <summary>
+    /// Живой выключатель <c>admin.ban.enabled</c>. Без него реестр продолжал бы банить
+    /// даже после того, как баны выключили в конфиге.
+    /// </summary>
+    public Func<bool>? IsBanEnabled { get; set; }
+
+    /// <summary>Период перепроверки акторов, секунд (<c>admin.ban.matchSweepSec</c>).</summary>
+    public Func<int>? BanSweepSeconds { get; set; }
+
+    private long _nextBanSweepUtc;
+
+    private bool BansActive => Bans is not null && (IsBanEnabled?.Invoke() ?? true);
 
     /// <summary>
     /// Реестр аккаунтов (ставит <c>GameNetHost</c>; в тестах может быть null). Нужен,
@@ -63,30 +77,51 @@ public sealed partial class GameMatchHost
     /// <summary>IP-гейт самого раннего входа: до handshake, до комнаты, до актора.</summary>
     internal bool IsBannedAddress(IPAddress? address)
     {
-        if (Bans is null || address is null)
+        if (!BansActive || address is null)
             return false;
 
-        return Bans.IsIpBanned(address.ToString(), DateTime.UtcNow);
+        return Bans!.IsIpBanned(address.ToString(), DateTime.UtcNow);
     }
 
-    /// <summary>Полный гейт входа в матч и реконнекта (ник + IP + устройство).</summary>
-    internal BanDecision InspectBanJoin(string? nick, IPAddress? address, string? device = null)
+    /// <summary>
+    /// Полный гейт входа в матч и реконнекта (ник + IP + устройство + аккаунт).
+    /// </summary>
+    internal BanDecision InspectBanJoin(string? nick, IPAddress? address, string? device = null) =>
+        InspectBanActor(nick, address, device, 0);
+
+    /// <summary>
+    /// Та же проверка, но с уже известным номером аккаунта актёра: бан по id должен
+    /// срабатывать даже тогда, когда handshake не принёс устройство.
+    /// </summary>
+    internal BanDecision InspectBanActor(
+        string? nick,
+        IPAddress? address,
+        string? device,
+        int accountId)
     {
-        if (Bans is null)
+        if (!BansActive)
             return BanDecision.Allowed;
 
-        // Публичный id участвует, только если устройство уже привязано к аккаунту:
-        // чужой новый вход под тем же ником не должен получить чужой бан. У одной
-        // установки может быть несколько аккаунтов (разные ники), поэтому проверяем
-        // каждый её номер: бан любого из них закрывает вход.
-        var publicIds = Accounts?.ProbeIds(device) ?? Array.Empty<int>();
+        // Номер аккаунта от актора — уже подтверждённый ключ. На входе в матч его
+        // ещё нет, поэтому второй путь — ProbeIds(device): устройство, привязанное
+        // к аккаунту, не даёт чужому новому входу под тем же ником получить чужой
+        // бан. У одной установки бывает несколько аккаунтов (разные ники), поэтому
+        // проверяем каждый её номер: бан любого из них закрывает вход.
+        var publicIds = new List<int>(4);
+        if (accountId > 0)
+            publicIds.Add(accountId);
+        foreach (var id in Accounts?.ProbeIds(device) ?? Array.Empty<int>())
+        {
+            if (!publicIds.Contains(id))
+                publicIds.Add(id);
+        }
         if (publicIds.Count == 0)
-            publicIds = new[] { 0 };
+            publicIds.Add(0);
 
         BanDecision? learned = null;
         foreach (var publicId in publicIds)
         {
-            var decision = Bans.Inspect(
+            var decision = Bans!.Inspect(
                 new BanProbe(nick, address?.ToString(), device, publicId),
                 DateTime.UtcNow,
                 IsBanExempt);
@@ -142,14 +177,86 @@ public sealed partial class GameMatchHost
     }
 
     /// <summary>
+    /// Каждые <c>admin.ban.matchSweepSec</c> перепроверяет всех, кто уже в катке.
+    /// Забаненный после входа игрок должен вылететь, даже если на handshake его
+    /// устройство/IP ещё не были известны (например, бан выдали по аккаунту).
+    /// </summary>
+    private void TickBanSweep()
+    {
+        if (!BansActive)
+            return;
+
+        var now = Environment.TickCount64;
+        var everySeconds = Math.Clamp(BanSweepSeconds?.Invoke() ?? 2, 1, 30);
+        if (now < _nextBanSweepUtc)
+            return;
+        _nextBanSweepUtc = now + everySeconds * 1000L;
+
+        foreach (var (peer, st) in _peers)
+        {
+            if (st.BannedForMatch)
+                continue;
+
+            var decision = InspectBanActor(st.RosterName, peer.Address, st.DeviceKey, st.AccountId);
+            if (!decision.Banned || decision.Record is null)
+                continue;
+
+            st.BannedForMatch = true;
+            Console.WriteLine(
+                $"[ban] матч: актор {st.ActorNr} '{st.RosterName ?? "?"}' {peer.Address} — " +
+                $"совпало {decision.MatchedBy}, бан №{BanMessages.BanIdOf(decision.Record)}; отключаю");
+
+            NotifyBannedPeer(peer, st, decision.Record);
+
+            if (st.Room is not null && st.ActorNr > 0)
+                RemoveActorFromMatch(st.Room, st.ActorNr, st.UserId, st.IdentityKey, "banned");
+
+            DisconnectPeerSoon(peer);
+        }
+    }
+
+    /// <summary>Серверный чат забаненному в катке: те же строки, что и на входе.</summary>
+    private void NotifyBannedPeer(NetPeer peer, MatchPeerState st, BanRecord record)
+    {
+        if (st.Room is null)
+            return;
+
+        try
+        {
+            var live = LiveChatActors(st.Room);
+            foreach (var line in BanMessages.NoticeLines(record, DateTime.UtcNow))
+                SendCritical(peer, BuildServerChatPayload(line, st.ActorNr, live));
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[ban] match notice {peer.Address}: {ex.Message}");
+        }
+    }
+
+    /// <summary>Разорвать сокет чуть позже: надёжный чат должен успеть уйти.</summary>
+    private static void DisconnectPeerSoon(NetPeer peer, int delayMs = 250)
+    {
+        _ = Task.Delay(Math.Max(0, delayMs)).ContinueWith(_ =>
+        {
+            try { peer.Disconnect(); }
+            catch { /* уже мёртв */ }
+        });
+    }
+
+    /// <summary>
     /// Отключить забаненного от канала матча (7777). Ищем по аккаунту, адресу и
     /// устройствам сразу: к моменту бана сокет мог ещё не прислать JoinRoom, а ник —
     /// уже смениться. Ник ключом не является: тёзка не должен пострадать.
     /// </summary>
+    /// <param name="notice">
+    /// Запись бана: если передана, перед разрывом игрок получает полное уведомление
+    /// (причина, кто забанил, ID, номер бана, срок) прямо в матч-чат.
+    /// </param>
     public int DisconnectBanned(
         int accountId,
         IPAddress? address,
-        IReadOnlyCollection<string>? devices = null)
+        IReadOnlyCollection<string>? devices = null,
+        BanRecord? notice = null)
     {
         var kicked = 0;
 
@@ -158,17 +265,27 @@ public sealed partial class GameMatchHost
             var deviceMatch = devices is not null
                               && state.DeviceKey is { Length: > 0 }
                               && devices.Any(d => MatchIdentity.SamePlayer(d, state.DeviceKey));
+            var addressMatch = address is not null
+                               && peer.Address is not null
+                               && SameAddress(peer.Address, address);
             var matched =
                 (accountId > 0 && state.AccountId == accountId)
                 || deviceMatch
-                || (address is not null && peer.Address is not null && peer.Address.Equals(address));
+                || addressMatch;
 
             if (!matched)
                 continue;
 
+            state.BannedForMatch = true;
+            if (notice is not null)
+                NotifyBannedPeer(peer, state, notice);
+
             try
             {
-                peer.Disconnect();
+                if (notice is not null)
+                    DisconnectPeerSoon(peer);
+                else
+                    peer.Disconnect();
                 kicked++;
             }
             catch (Exception ex)

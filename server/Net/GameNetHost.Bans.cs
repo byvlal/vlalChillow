@@ -12,15 +12,17 @@ namespace StandChillow.LanServer.Net;
 /// Баны на стороне лобби: команды, теневой вход, кик, разбан по сроку.
 /// </summary>
 /// <remarks>
-/// Проверка выполняется только на входе (первый пакет лобби), не на каждом пакете:
-/// это один словарный lookup, без диска и без блокировок в hot path. Запись на диск
-/// случается лишь когда админ банит/разбанит или когда жёсткий ключ (userId/IP)
-/// выучил новый ник или второй ключ.
+/// Вход в лобби проверяется один раз (первый пакет): это один словарный lookup, без
+/// диска и без блокировок в hot path. Команды проверяются отдельно — забаненный,
+/// который успел войти до бана, не должен выполнять команды; ему повторяют полное
+/// уведомление. Запись на диск случается лишь когда админ банит/разбанит или когда
+/// жёсткий ключ (userId/IP) выучил новый ник или второй ключ.
 /// </remarks>
 public sealed partial class GameNetHost
 {
     private readonly object _shadowGate = new();
     private readonly Dictionary<NetPeer, string> _shadowPeers = new();
+    private readonly Dictionary<NetPeer, long> _shadowNoticeTicks = new();
 
     private BanRegistry? _bans;
     private readonly PlayerDirectory _directory = new();
@@ -134,11 +136,14 @@ public sealed partial class GameNetHost
         _match.Bans = _bans;
         _match.Accounts = _accounts;
         _match.IsBanExempt = IsBanExemptNick;
+        _match.IsBanEnabled = () => _config.Admin.Ban.Enabled;
+        _match.BanSweepSeconds = () => _config.Admin.Ban.MatchSweepSec;
         _match.ExposeServerUid = settings.ExposeIds;
 
         Console.WriteLine(
             $"[ban] реестр: {_bans.Count} банов, {_directory.Count} личностей в справочнике, файл {path}, срок " +
             $"{settings.MinMinutes}м..{settings.MaxDays}д, проверка каждые {settings.SweepSec}с, " +
+            $"матч — каждые {settings.MatchSweepSec}с, " +
             $"device-бан {(settings.ByDevice ? "вкл" : "выкл")}, админов банить нельзя");
     }
 
@@ -404,13 +409,21 @@ public sealed partial class GameNetHost
     /// Учить новые ключи. Для теневых проверок — false: забаненный не должен
     /// «легализовать» свой новый ник/IP повторными запросами.
     /// </param>
-    private BanDecision InspectBan(string? nick, IPAddress? address, bool learn = true)
+    private BanDecision InspectBan(string? nick, IPAddress? address, bool learn = true) =>
+        InspectBan(nick, address, 0, learn);
+
+    /// <summary>Та же проверка, но с номером аккаунта: бан по id ловится и без устройства.</summary>
+    private BanDecision InspectBan(
+        string? nick,
+        IPAddress? address,
+        int publicId,
+        bool learn = true)
     {
         if (_bans is null || !_config.Admin.Ban.Enabled)
             return BanDecision.Allowed;
 
         return _bans.Inspect(
-            new BanProbe(nick, address?.ToString()),
+            new BanProbe(nick, address?.ToString(), PublicId: publicId),
             DateTime.UtcNow,
             IsBanExemptNick,
             learn);
@@ -465,7 +478,7 @@ public sealed partial class GameNetHost
 
     /// <summary>
     /// Забаненный заходит в лобби: успешный JoinResponse с росписью из одного Server,
-    /// затем четыре строки от Server — только ему.
+    /// затем строки уведомления от Server — только ему.
     /// </summary>
     private void HandleShadowJoin(NetPeer peer, JoinLobbyRequest req, BanDecision decision)
     {
@@ -500,7 +513,7 @@ public sealed partial class GameNetHost
             $"[бан] {req.Profile.Name} ({peer.Address}) — вход закрыт: {decision.MatchedBy}",
             fromServer: true);
 
-        // Четыре строки по порядку: ReliableOrdered доставит их так же, как приветствие.
+        // Строки по порядку: ReliableOrdered доставит их так же, как приветствие.
         foreach (var line in BanMessages.NoticeLines(record, DateTime.UtcNow))
             SendServerChatTo(peer, line);
     }
@@ -763,14 +776,19 @@ public sealed partial class GameNetHost
             knownIps,
             devices);
 
+        // Сначала уведомление (в лобби и в катку), потом разрыв: иначе игрок видит
+        // только «соединение закрыто» и не понимает, что его забанили.
+        foreach (var target in targets)
+            SendBanNoticeToLobbyPeer(target.Peer, record);
+
         // Кик из матча (7777) и из лобби (7778) — разные сокеты, нужны оба.
-        var matchKicked = _match.DisconnectBanned(accountId, ip, devices);
+        var matchKicked = _match.DisconnectBanned(accountId, ip, devices, record);
         var lobbyKicked = 0;
         foreach (var target in targets)
         {
             try
             {
-                target.Peer.Disconnect();
+                DisconnectSoon(target.Peer);
                 lobbyKicked++;
             }
             catch (Exception ex)
@@ -794,15 +812,16 @@ public sealed partial class GameNetHost
             ? "IP неизвестен (банить будем по нику)"
             : string.Join(", ", record.Ips);
         reply($"забанен {record.DisplayNick} на {BanDuration.FormatShort(duration)}: {DescribeReason(record)}");
-        reply($"IP: {ips} · до {record.ExpiresUtc.ToLocalTime():dd.MM.yyyy HH:mm:ss}" +
-              (record.MatchIds.Count == 0 ? "" : $" · id {string.Join(", ", record.MatchIds)}"));
+        reply($"бан №{record.BanId} · айди: {accountId}");
+        reply($"IP: {ips} · до {record.ExpiresUtc.ToLocalTime():dd.MM.yyyy HH:mm:ss}");
         reply(record.Devices.Count == 0
             ? "устройство: пока неизвестно (игрок ещё не заходил в матч по 2.07)"
             : $"устройство: {string.Join(", ", record.Devices)}");
 
         Console.WriteLine(
             $"[ban] {record.DisplayNick} на {BanDuration.FormatShort(duration)} причиной " +
-            $"'{DescribeReason(record)}' (кто: {record.BannedBy}); IP=[{string.Join(", ", record.Ips)}] " +
+            $"'{DescribeReason(record)}' (кто: {record.BannedBy}); бан №{record.BanId}; " +
+            $"IP=[{string.Join(", ", record.Ips)}] " +
             $"devices=[{string.Join(", ", record.Devices)}] " +
             $"ids=[{string.Join(", ", record.MatchIds)}]; кик матч={matchKicked}, лобби={lobbyKicked}; " +
             $"выдан {record.CreatedLocalIso} (UTC{BanRecord.CurrentUtcOffsetMinutes() / 60.0:+0.#;-0.#})");
@@ -848,9 +867,9 @@ public sealed partial class GameNetHost
             return;
         }
 
-        reply($"разбанен {removed.DisplayNick} (IP: " +
+        reply($"разбанен {removed.DisplayNick} (бан №{BanMessages.BanIdOf(removed)}, IP: " +
               $"{(removed.Ips.Count == 0 ? "—" : string.Join(", ", removed.Ips))})");
-        Console.WriteLine($"[ban] разбан {removed.DisplayNick} по '{token}'");
+        Console.WriteLine($"[ban] разбан {removed.DisplayNick} по '{token}' (бан №{BanMessages.BanIdOf(removed)})");
         BroadcastServerChat($"разбанен {removed.DisplayNick}");
     }
 
@@ -872,7 +891,7 @@ public sealed partial class GameNetHost
 
         foreach (var record in removed)
         {
-            reply($"разбанен {record.DisplayNick} (id {id}, IP: " +
+            reply($"разбанен {record.DisplayNick} (бан №{BanMessages.BanIdOf(record)}, id {id}, IP: " +
                   $"{(record.Ips.Count == 0 ? "—" : string.Join(", ", record.Ips))})");
             BroadcastServerChat($"разбанен {record.DisplayNick}");
         }
@@ -903,7 +922,8 @@ public sealed partial class GameNetHost
             var ips = record.Ips.Count == 0 ? "—" : string.Join("/", record.Ips);
             var ids = record.MatchIds.Count == 0 ? "" : $" · id {string.Join(",", record.MatchIds)}";
             reply(
-                $"{record.DisplayNick} · {BanDuration.FormatRemaining(record.Remaining(now))} · " +
+                $"{record.DisplayNick} · бан №{BanMessages.BanIdOf(record)} · " +
+                $"{BanDuration.FormatRemaining(record.Remaining(now))} · " +
                 $"IP {ips}{ids} · {DescribeReason(record)} · забанил {record.BannedBy}");
         }
     }

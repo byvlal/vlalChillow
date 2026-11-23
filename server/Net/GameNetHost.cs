@@ -174,7 +174,10 @@ public sealed partial class GameNetHost : IDisposable
         {
             Console.WriteLine($"[net] peer DISCONNECTED {peer.Address}:{peer.Port}: {info.Reason}");
             lock (_shadowGate)
+            {
                 _shadowPeers.Remove(peer);
+                _shadowNoticeTicks.Remove(peer);
+            }
             ForgetNickReject(peer);
             ForgetPendingAdmin(peer);
             var left = _session.OnPeerDisconnected(peer, out var name);
@@ -814,9 +817,14 @@ public sealed partial class GameNetHost : IDisposable
         var player = _session.TryGet(peer);
         if (player is not { Joined: true })
         {
-            // Забаненный в теневом лобби: не отвечаем и не спамим консоль на каждое сообщение.
+            // Забаненный в теневом лобби: команду не выполняем, но и молча не глотаем —
+            // повторяем то же уведомление, что он видел при входе (с ID и номером бана).
             if (IsHiddenPeer(peer))
+            {
+                if (CommandAccessPolicy.IsCommandText(message))
+                    TrySendBanNotice(peer);
                 return;
+            }
             Console.WriteLine($"[lobby] chat from non-joined peer {peer.Address}");
             return;
         }
@@ -866,7 +874,7 @@ public sealed partial class GameNetHost : IDisposable
 
         // Тот же диспетчер и тот же гейт прав (id + код запуска), что и в лобби.
         // Ответ уходит адресно в матч-чат; эхо самой команды вернул матч-хост.
-        HandleChatCommand(player, message, channel: "match");
+        HandleChatCommand(player, message, channel: "match", sourceIp: matchPeerIp);
     }
 
     /// <summary>

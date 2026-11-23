@@ -9,6 +9,12 @@ namespace StandChillow.LanServer.Net.Match.Host;
 internal sealed class MatchPeerState
 {
     public bool Handshaken { get; set; }
+
+    /// <summary>
+    /// Матчевый свип уже нашёл активный бан и выкинул этого пира. Флаг не даёт
+    /// повторять уведомление и кик каждый тик, пока сокет закрывается.
+    /// </summary>
+    public bool BannedForMatch { get; set; }
     /// <summary>Wire uid: 2.07 auth-токен без ведущей <c>C</c> (для legacy — userId).</summary>
     public string? UserId { get; set; }
     /// <summary>

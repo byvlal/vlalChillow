@@ -72,6 +72,99 @@ public sealed class BanRegistryTests
     }
 
     [Fact]
+    public void Ipv4MappedIpv6AndPlainIpv4AreTheSamePerson()
+    {
+        var registry = NewRegistry();
+        var record = Ban(registry, "Ktulxy", "::ffff:192.168.1.37");
+
+        // В файл и в индексы адрес попадает только в каноне: `::ffff:1.2.3.4`
+        // и `1.2.3.4` — один и тот же телефон, а не два разных человека.
+        Assert.Equal(new[] { "192.168.1.37" }, record.Ips);
+        Assert.True(record.HasIp("192.168.1.37"));
+        Assert.True(registry.IsIpBanned("192.168.1.37", Now));
+        Assert.True(registry.Inspect(new BanProbe("Другой", "192.168.1.37"), Now).Banned);
+
+        // И наоборот: запись с обычного IPv4 ловит mapped-форму.
+        var other = Ban(registry, "Второй", "10.8.0.2");
+        Assert.True(other.HasIp("::ffff:10.8.0.2"));
+        Assert.True(registry.IsIpBanned("::ffff:10.8.0.2", Now));
+    }
+
+    [Fact]
+    public void ZoneIdIsStrippedAndDoesNotSplitTheBan()
+    {
+        var registry = NewRegistry();
+        var record = Ban(registry, "LinkLocal", "fe80::1%wlan0");
+
+        // Zone id — свойство интерфейса, а не адреса: `%wlan0` и `%eth0` — тот же хост.
+        Assert.Equal(new[] { "fe80::1" }, record.Ips);
+        Assert.True(registry.IsIpBanned("fe80::1%eth0", Now));
+        Assert.True(registry.Inspect(new BanProbe("Другой", "fe80::1"), Now).Banned);
+        Assert.True(registry.Remove("fe80::1%wlan0", out var removed));
+        Assert.Same(record, removed);
+    }
+
+    [Fact]
+    public void KnownIpsAreStoredCanonically()
+    {
+        var registry = NewRegistry();
+        var record = registry.Add(
+            new BanProbe("Ktulxy", null),
+            TimeSpan.FromMinutes(30),
+            "софт",
+            "влал",
+            Now,
+            matchId: 1,
+            knownIps: new[] { "::ffff:203.0.113.9", "203.0.113.9", "fe80::1%wlan0" });
+
+        // Дубль в другой форме не плодит второй адрес: в записи только канон.
+        Assert.Equal(new[] { "203.0.113.9", "fe80::1" }, record.Ips);
+        Assert.True(registry.IsIpBanned("203.0.113.9", Now));
+        Assert.True(registry.IsIpBanned("::ffff:203.0.113.9", Now));
+    }
+
+    [Fact]
+    public void LoadCanonicalizesLegacyIpsAndIndexesThem()
+    {
+        // Load выкидывает истёкшие записи по реальному времени, поэтому срок — от сейчас.
+        var now = DateTime.UtcNow;
+        var expires = BanRecord.ToUnixMs(now.AddHours(1));
+        var registry = NewRegistry();
+        var record = new BanRecord
+        {
+            Nick = "Ktulxy",
+            Ips = new List<string> { "::ffff:203.0.113.9", "fe80::1%wlan0" },
+            ExpiresUtcMs = expires,
+        };
+        registry.Load(new[] { record });
+
+        // Старый файл мог хранить mapped-форму и zone id: после Load они уже канон,
+        // и индекс по IP отвечает на обычный адрес.
+        Assert.Equal(new[] { "203.0.113.9", "fe80::1" }, record.Ips);
+        Assert.True(registry.IsIpBanned("203.0.113.9", now));
+        Assert.True(registry.IsIpBanned("fe80::1", now));
+        Assert.True(registry.Remove("::ffff:203.0.113.9", out var removed));
+        Assert.Same(record, removed);
+    }
+
+    [Fact]
+    public void EveryNewBanGetsAStableBanId()
+    {
+        var registry = NewRegistry();
+        var first = Ban(registry, "Ktulxy", "203.0.113.9");
+        var second = Ban(registry, "Другой", "198.51.100.7");
+
+        Assert.Matches("^B-[0-9A-F]{8}$", first.BanId);
+        Assert.Matches("^B-[0-9A-F]{8}$", second.BanId);
+        Assert.NotEqual(first.BanId, second.BanId);
+
+        // Продление того же бана — тот же номер: иначе журнал и игрок разойдутся.
+        var extended = Ban(registry, "Ktulxy", "203.0.113.9", minutes: 60);
+        Assert.Same(first, extended);
+        Assert.Equal(first.BanId, extended.BanId);
+    }
+
+    [Fact]
     public void NickOnlyMatchBlocksTheAttemptAndLearnsNothing()
     {
         var registry = NewRegistry();

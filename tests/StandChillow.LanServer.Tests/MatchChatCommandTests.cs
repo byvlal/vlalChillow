@@ -79,7 +79,11 @@ public sealed class MatchChatCommandTests
             StringComparison.Ordinal);
 
         // Тот же вход, что и у лобби-чата: команды катки не живут отдельным списком.
-        Assert.Contains("HandleChatCommand(player, message, channel: \"match\")", host,
+        // IP матч-сокета передаётся отдельно: лобби-пир и матч-пир — разные сокеты,
+        // и бан-гейт команды должен видеть адрес того канала, откуда она пришла.
+        Assert.Contains(
+            "HandleChatCommand(player, message, channel: \"match\", sourceIp: matchPeerIp)",
+            host,
             StringComparison.Ordinal);
 
         // Резолв автора и сам факт команды видны в журнале даже без debug-chat.

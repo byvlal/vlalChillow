@@ -111,20 +111,28 @@ public sealed class BanRegistry
         Func<string?, bool>? isAdmin = null,
         bool learn = true)
     {
+        // Канон адреса — до замка и до всех словарей: иначе один и тот же телефон
+        // с IPv4 и IPv4-mapped IPv6 выглядит как два разных человека.
+        var normalized = new BanProbe(
+            probe.Nick,
+            BanRecord.NormalizeIp(probe.Ip),
+            probe.Device,
+            probe.PublicId);
+
         lock (_gate)
         {
             var pruned = PruneLocked(nowUtc);
             if (pruned > 0)
                 NotifyChanged();
 
-            if (isAdmin is not null && isAdmin(probe.Nick))
+            if (isAdmin is not null && isAdmin(normalized.Nick))
                 return new BanDecision { AdminExempt = true, MatchedBy = "админ" };
 
-            var record = FindLocked(probe, out var matchKind);
+            var record = FindLocked(normalized, out var matchKind);
             if (record is null)
                 return BanDecision.Allowed;
 
-            var learned = learn && LearnAliases && LearnLocked(record, probe, matchKind);
+            var learned = learn && LearnAliases && LearnLocked(record, normalized, matchKind);
             if (learned)
                 NotifyChanged();
 
@@ -142,11 +150,12 @@ public sealed class BanRegistry
     /// <summary>Быстрая проверка только по IP — для гейта на коннекте, где ника ещё нет.</summary>
     public bool IsIpBanned(string? ip, DateTime nowUtc)
     {
-        if (string.IsNullOrWhiteSpace(ip))
+        var normalized = BanRecord.NormalizeIp(ip);
+        if (normalized.Length == 0)
             return false;
 
         lock (_gate)
-            return _byIp.TryGetValue(ip, out var record) && record.IsActive(nowUtc);
+            return _byIp.TryGetValue(normalized, out var record) && record.IsActive(nowUtc);
     }
 
     /// <summary>Найти активную запись по нику.</summary>
@@ -180,8 +189,9 @@ public sealed class BanRegistry
     {
         var nick = ServerConfig.NormalizeNick(probe.Nick);
         var device = BanRecord.NormalizeDevice(probe.Device);
+        var ip = BanRecord.NormalizeIp(probe.Ip);
         if (nick.Length == 0
-            && string.IsNullOrWhiteSpace(probe.Ip)
+            && ip.Length == 0
             && (!ByDevice || device.Length == 0))
             throw new ArgumentException("нужен ник, IP или устройство", nameof(probe));
 
@@ -192,7 +202,7 @@ public sealed class BanRegistry
             BanRecord? record = null;
             if (ByDevice && device.Length > 0 && _byDevice.TryGetValue(device, out var byDevice))
                 record = byDevice;
-            else if (!string.IsNullOrWhiteSpace(probe.Ip) && _byIp.TryGetValue(probe.Ip, out var byIp))
+            else if (ip.Length > 0 && _byIp.TryGetValue(ip, out var byIp))
                 record = byIp;
             else if (probe.PublicId != 0 && _byPublicId.TryGetValue(probe.PublicId, out var byId))
                 record = byId;
@@ -211,6 +221,10 @@ public sealed class BanRegistry
                 _records.Add(record);
             }
 
+            // Номер бана нужен сразу: его видят игрок в уведомлении, админ в ответе
+            // и журнал при откате. У записей из старого файла он появляется при Load.
+            record.EnsureBanId();
+
             if (nick.Length > 0)
             {
                 if (string.IsNullOrEmpty(record.Nick))
@@ -220,11 +234,11 @@ public sealed class BanRegistry
                 _byNick[nick] = record;
             }
 
-            if (!string.IsNullOrWhiteSpace(probe.Ip))
+            if (ip.Length > 0)
             {
-                if (!record.HasIp(probe.Ip))
-                    record.Ips.Add(probe.Ip);
-                _byIp[probe.Ip] = record;
+                if (!record.HasIp(ip))
+                    record.Ips.Add(ip);
+                _byIp[ip] = record;
             }
 
             if (ByDevice && device.Length > 0)
@@ -240,10 +254,11 @@ public sealed class BanRegistry
             {
                 foreach (var known in knownIps)
                 {
-                    if (string.IsNullOrWhiteSpace(known) || record.HasIp(known))
+                    var normalizedIp = BanRecord.NormalizeIp(known);
+                    if (normalizedIp.Length == 0 || record.HasIp(normalizedIp))
                         continue;
-                    record.Ips.Add(known);
-                    _byIp[known] = record;
+                    record.Ips.Add(normalizedIp);
+                    _byIp[normalizedIp] = record;
                 }
             }
 
@@ -336,10 +351,11 @@ public sealed class BanRegistry
         {
             var nick = ServerConfig.NormalizeNick(token);
             var device = BanRecord.NormalizeDevice(token);
+            var ip = BanRecord.NormalizeIp(token);
             var found = nick.Length > 0 && _byNick.TryGetValue(nick, out removed);
             if (!found && device.Length > 0)
                 found = _byDevice.TryGetValue(device, out removed);
-            if (!found && !_byIp.TryGetValue(token, out removed))
+            if (!found && (ip.Length == 0 || !_byIp.TryGetValue(ip, out removed)))
                 return false;
 
             if (removed is null)
@@ -432,6 +448,16 @@ public sealed class BanRegistry
                     .Distinct(StringComparer.OrdinalIgnoreCase)
                     .ToList();
 
+                record.Ips = record.Ips
+                    .Select(BanRecord.NormalizeIp)
+                    .Where(ip => ip.Length > 0)
+                    .Distinct(StringComparer.Ordinal)
+                    .ToList();
+
+                // Номер бана появляется у записей, созданных до v5. Он должен пережить
+                // перезапуск: иначе журнал и сообщения будут ссылаться на разные номера.
+                record.EnsureBanId();
+
                 record.MatchIds = record.MatchIds
                     .Where(id => id != 0)
                     .Distinct()
@@ -481,7 +507,8 @@ public sealed class BanRegistry
 
         // IP — второй жёсткий ключ. Раньше ника: новый ник на старом адресе должен
         // учиться, а не проходить как «мягкое» совпадение по нику.
-        if (!string.IsNullOrWhiteSpace(probe.Ip) && _byIp.TryGetValue(probe.Ip, out var byIp))
+        var ip = BanRecord.NormalizeIp(probe.Ip);
+        if (ip.Length > 0 && _byIp.TryGetValue(ip, out var byIp))
         {
             matchKind = BanMatchKind.Ip;
             return byIp;
@@ -526,9 +553,13 @@ public sealed class BanRegistry
 
         if (!string.IsNullOrWhiteSpace(probe.Ip) && !record.HasIp(probe.Ip))
         {
-            record.Ips.Add(probe.Ip);
-            _byIp[probe.Ip] = record;
-            learned = true;
+            var ip = BanRecord.NormalizeIp(probe.Ip);
+            if (ip.Length > 0)
+            {
+                record.Ips.Add(ip);
+                _byIp[ip] = record;
+                learned = true;
+            }
         }
 
         // Устройство учим при совпадении по IP или публичному id: при userId оно уже

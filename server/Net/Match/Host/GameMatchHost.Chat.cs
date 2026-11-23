@@ -411,6 +411,18 @@ public sealed partial class GameMatchHost
         return 0;
     }
 
-    private static bool SameAddress(System.Net.IPAddress a, System.Net.IPAddress b) =>
-        a.Equals(b) || a.MapToIPv4().Equals(b.MapToIPv4());
+    /// <summary>
+    /// Один и тот же адрес на проводе. Сравниваем байты, а IPv4-mapped IPv6
+    /// (<c>::ffff:1.2.3.4</c>) — с обычным IPv4. Произвольный IPv6 не мапим:
+    /// <c>MapToIPv4()</c> у него берёт только последние 32 бита, и два разных
+    /// адреса с одинаковым хвостом выглядели бы одним человеком.
+    /// </summary>
+    internal static bool SameAddress(System.Net.IPAddress a, System.Net.IPAddress b)
+    {
+        if (a.Equals(b))
+            return true;
+        if (a.IsIPv4MappedToIPv6 && a.MapToIPv4().Equals(b))
+            return true;
+        return b.IsIPv4MappedToIPv6 && b.MapToIPv4().Equals(a);
+    }
 }

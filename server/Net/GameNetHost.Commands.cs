@@ -14,12 +14,25 @@ public sealed partial class GameNetHost
     /// на каждом этапе. Раньше команда «проглатывалась»: кадр дропался, а ответ не долетал.
     /// </summary>
     /// <param name="channel">"lobby" или "match" — откуда пришла команда.</param>
-    internal bool HandleChatCommand(ConnectedPlayer player, string message, string channel)
+    /// <param name="sourceIp">
+    /// Адрес, с которого реально пришла команда (для матча — 7777, а не лобби-сокет).
+    /// Нужен бан-гейту: IP в этих каналах может отличаться.
+    /// </param>
+    internal bool HandleChatCommand(
+        ConnectedPlayer player,
+        string message,
+        string channel,
+        IPAddress? sourceIp = null)
     {
         var text = message.Trim();
         var id = player.PublicId;
         Console.WriteLine(
             $"[cmd] RX channel={channel} id=#{id} nick='{player.Name}' cmd='{text}'");
+
+        // Забаненный не выполняет команды, даже если бан прилетел после входа.
+        // Вместо выполнения — полное уведомление (ID, номер бана, причина, срок).
+        if (RefuseBannedCommand(player, channel, sourceIp))
+            return true;
 
         // Эхо в лобби: клиент не рисует свой текст сам, пока сервер не вернёт кадр.
         // В катке эхо уже вернул матч-хост тем же кадром ChatManager (только автору).

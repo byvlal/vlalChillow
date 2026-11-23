@@ -118,6 +118,19 @@ public sealed class BanConfig
     public int SweepSec { get; set; } = 5;
 
     /// <summary>
+    /// Как часто матч (7777) перепроверяет сидящих акторов на бан, секунд. Два
+    /// секунды — требование владельца: забанили во время игры — выкинуть, а не ждать
+    /// выхода. Проверка дешёвая (несколько словарных lookup на пира).
+    /// </summary>
+    public int MatchSweepSec { get; set; } = 2;
+
+    /// <summary>
+    /// Пауза между повторными полными уведомлениями забаненному (на каждую его
+    /// команду), секунд. Чтобы спам командами не превратился в спам сообщениями.
+    /// </summary>
+    public int NoticeCooldownSec { get; set; } = 2;
+
+    /// <summary>
     /// Отдавать в матч серверный id вместо клиентского <c>uid</c> («Offline»): тогда в игре
     /// в списке игроков видно число, которое принимает <c>/ban</c>. Выключить — клиент
     /// снова покажет свою заглушку.
@@ -728,6 +741,10 @@ public sealed class ServerConfig
             Admin.Ban.ShadowRefreshSec, 10, 600, 60, "admin.ban.shadowRefreshSec");
         Admin.Ban.SweepSec = Check(
             Admin.Ban.SweepSec, 1, 300, 5, "admin.ban.sweepSec");
+        Admin.Ban.MatchSweepSec = Check(
+            Admin.Ban.MatchSweepSec, 1, 30, 2, "admin.ban.matchSweepSec");
+        Admin.Ban.NoticeCooldownSec = Check(
+            Admin.Ban.NoticeCooldownSec, 1, 60, 2, "admin.ban.noticeCooldownSec");
         Admin.Ban.File = string.IsNullOrWhiteSpace(Admin.Ban.File)
             ? "banlist.json"
             : Admin.Ban.File.Trim();

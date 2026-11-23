@@ -1,4 +1,6 @@
 using System.Globalization;
+using System.Net;
+using System.Security.Cryptography;
 using System.Text.Json.Serialization;
 using StandChillow.LanServer.Config;
 
@@ -23,6 +25,12 @@ public sealed class BanRecord
 {
     /// <summary>Ник, которого забанил админ (нормализованный).</summary>
     public string Nick { get; set; } = "";
+
+    /// <summary>
+    /// Номер бана (<c>B-XXXXXXXX</c>). Стабилен на всю жизнь записи: по нему журнал
+    /// связывает действие с откатом, а игрок видит его в сообщении.
+    /// </summary>
+    public string BanId { get; set; } = "";
 
     /// <summary>
     /// Другие ники этой же личности. Учатся только по жёсткому совпадению — userId
@@ -98,9 +106,55 @@ public sealed class BanRecord
         return left <= 0 ? TimeSpan.Zero : TimeSpan.FromMilliseconds(left);
     }
 
-    public bool HasIp(string? ip) =>
-        !string.IsNullOrWhiteSpace(ip)
-        && Ips.Any(i => string.Equals(i, ip, StringComparison.OrdinalIgnoreCase));
+    /// <summary>
+    /// Совпадает ли адрес с одним из записанных. Сравнение только по канону:
+    /// <c>::ffff:192.168.1.5</c> и <c>192.168.1.5</c> — один и тот же адрес.
+    /// </summary>
+    public bool HasIp(string? ip)
+    {
+        var normalized = NormalizeIp(ip);
+        return normalized.Length > 0
+               && Ips.Any(i => string.Equals(
+                   NormalizeIp(i), normalized, StringComparison.Ordinal));
+    }
+
+    /// <summary>
+    /// Канонический вид адреса: без пробелов и zone id, IPv4-mapped IPv6 → IPv4.
+    /// Неразборчивая строка возвращается в нижнем регистре — лучше сравнить как есть,
+    /// чем потерять ключ.
+    /// </summary>
+    public static string NormalizeIp(string? ip)
+    {
+        var value = (ip ?? string.Empty).Trim();
+        if (value.Length == 0)
+            return string.Empty;
+
+        var zone = value.IndexOf('%');
+        if (zone >= 0)
+            value = value[..zone].Trim();
+        if (value.Length == 0)
+            return string.Empty;
+
+        if (!IPAddress.TryParse(value, out var parsed))
+            return value.ToLowerInvariant();
+
+        if (parsed.IsIPv4MappedToIPv6)
+            parsed = parsed.MapToIPv4();
+
+        return parsed.ToString();
+    }
+
+    /// <summary>Выдать номер бана, если его ещё нет (старые записи после миграции).</summary>
+    public string EnsureBanId()
+    {
+        if (string.IsNullOrWhiteSpace(BanId))
+            BanId = NewBanId();
+        return BanId;
+    }
+
+    /// <summary>Новый номер бана: <c>B-</c> и 4 случайных байта.</summary>
+    public static string NewBanId() =>
+        "B-" + Convert.ToHexString(RandomNumberGenerator.GetBytes(4));
 
     /// <summary>Есть ли это устройство в записи. Регистр hex-части не важен.</summary>
     public bool HasDevice(string? device)
