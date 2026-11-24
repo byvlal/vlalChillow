@@ -20,26 +20,37 @@ public enum MatchStartMode
 
 /// <summary>Кто имеет право крутить серверные команды.</summary>
 /// <remarks>
-/// По умолчанию в списке стоит старый хеш владельца — <c>25354325</c> (ник «влал»).
-/// После первого входа сервер заменит его на номер аккаунта (<c>1_000_000</c> и выше)
-/// в памяти; файл не переписывается. Пустой <see cref="AdminOnlyCommands"/> +
-/// <see cref="AnyoneCanStart"/> = true значит «команды доступны всем». Кто хочет
-/// ограничить — вписывает номера аккаунтов в <see cref="Ids"/> и команды в
-/// <see cref="AdminOnlyCommands"/>.
+/// <para>
+/// <see cref="Ids"/> — обычные админы, <see cref="MegaIds"/> — мега-админы. Мега-админ
+/// получает все права и выдаёт их остальным; его статус не зависит от IP. Если id есть
+/// в обоих списках, побеждает мега-роль.
+/// </para>
+/// <para>
+/// Владелец по умолчанию — <c>1000000</c> в обеих секциях. Старые конфиги со старым
+/// хешем <c>25354325</c> мигрируются на диске при загрузке (см.
+/// <see cref="ConfigMigration"/>), а в памяти хеш заменяется на настоящий номер
+/// аккаунта после первого входа. Пустой <see cref="AdminOnlyCommands"/> +
+/// <see cref="AnyoneCanStart"/> = true значит «команды доступны всем».
+/// </para>
 /// </remarks>
 public sealed class AdminConfig
 {
     /// <summary>
-    /// Номера аккаунтов администраторов (числа из <c>/ids</c> или <c>/whoami</c>).
+    /// Номера аккаунтов обычных администраторов (числа из <c>/ids</c> или <c>/whoami</c>).
     /// В админских настройках только числа: список ников не читается.
     /// </summary>
     /// <remarks>
-    /// <c>25354325</c> — старый хеш ника «влал»: владелец сервера админ «из коробки».
-    /// Пока аккаунт ещё не создан, хеш работает как запасной ключ; при первом входе
-    /// он заменяется на настоящий номер аккаунта. Явный <c>"ids": []</c> в config.json
-    /// по-прежнему значит «админов нет».
+    /// После <see cref="ServerConfig.Normalize"/> сюда входят и мега-админы: это единый
+    /// рабочий список тех, кому вообще можно быть админом. Явный <c>"ids": []</c>
+    /// в config.json значит «обычных админов нет».
     /// </remarks>
-    public List<int> Ids { get; set; } = new() { 25_354_325 };
+    public List<int> Ids { get; set; } = new() { ConfigMigration.DefaultOwnerId };
+
+    /// <summary>
+    /// Номера аккаунтов мега-админов. Мега получает все права без привязки к IP и
+    /// может выдавать права обычным админам. Явный пустой список — мега-админов нет.
+    /// </summary>
+    public List<int> MegaIds { get; set; } = new() { ConfigMigration.DefaultOwnerId };
 
     /// <summary>Диапазон валидного номера (старый хеш тоже входит, пока не мигрировал).</summary>
     public const int MinId = 1;
@@ -342,12 +353,10 @@ public sealed class WebConfig
     /// IP/CIDR обратных прокси, которым доверяем <c>X-Forwarded-For</c>.
     /// </summary>
     /// <remarks>
-    /// <para>
-    /// Пусто — доверяем только loopback. Это важно для мега-админа: если верить
-    /// заголовку от любого LAN-клиента, он назовётся IP из <c>megaIps</c> и получит
-    /// полный доступ. Прокси на другой машине впиши сюда явно
+    /// Пусто — доверяем только loopback. Заголовку от любого LAN-клиента верить нельзя:
+    /// иначе он подделает адрес в лимитах и журнале. На мега-права это больше не влияет —
+    /// они задаются только <c>admin.megaIds</c>. Прокси на другой машине впиши сюда явно
     /// (<c>"192.168.1.10"</c> или <c>"192.168.1.0/24"</c>).
-    /// </para>
     /// </remarks>
     public List<string> TrustedProxies { get; set; } = new();
 
@@ -663,6 +672,11 @@ public sealed class ServerConfig
                 return false;
             }
 
+            // Старый config.json не знает admin.megaIds. Добавляем секцию байтово,
+            // не переформатируя файл и не теряя комментарии. Повторный запуск — no-op.
+            if (ConfigMigration.EnsureMegaSection(path, out var migration))
+                Console.WriteLine($"[config] миграция: {migration} ({path})");
+
             var parsed = JsonSerializer.Deserialize<ServerConfig>(
                 File.ReadAllText(path), JsonOptions);
             if (parsed is null)
@@ -697,23 +711,22 @@ public sealed class ServerConfig
         Network ??= new NetworkConfig();
         Admin ??= new AdminConfig();
         Admin.Ids ??= new List<int>();
+        Admin.MegaIds ??= new List<int>();
         Admin.AdminOnlyCommands ??= new List<string>();
 
         // Админы — только по серверному id. Мусор (0, отрицательные, числа вне
         // диапазона) не применяется молча: каждое значение видно в логе конфига.
-        var cleanIds = new List<int>();
-        foreach (var id in Admin.Ids)
+        Admin.Ids = CleanAdminIds(Admin.Ids, "admin.ids");
+        Admin.MegaIds = CleanAdminIds(Admin.MegaIds, "admin.megaIds");
+
+        // Рабочий список — объединение: мега-админ тоже админ. При пересечении
+        // мега имеет приоритет, а в Ids остаётся одна запись.
+        foreach (var id in Admin.MegaIds)
         {
-            if (id < AdminConfig.MinId || id > AdminConfig.MaxId)
-            {
-                Report("admin.ids", id.ToString(), "пропущен",
-                    $"вне диапазона {AdminConfig.MinId}..{AdminConfig.MaxId}");
-                continue;
-            }
-            if (!cleanIds.Contains(id))
-                cleanIds.Add(id);
+            if (!Admin.Ids.Contains(id))
+                Admin.Ids.Add(id);
         }
-        Admin.Ids = cleanIds;
+
         Admin.Ban ??= new BanConfig();
         MatchStart ??= new MatchStartConfig();
         MatchStart.Auto ??= new AutoStartConfig();
@@ -1092,9 +1105,35 @@ public sealed class ServerConfig
         return true;
     }
 
+    /// <summary>
+    /// Убрать из админского списка мусор и дубли, назвав каждое отброшенное значение
+    /// в <see cref="Issues"/>. Один и тот же проход для <c>ids</c> и <c>megaIds</c>.
+    /// </summary>
+    private List<int> CleanAdminIds(List<int> source, string key)
+    {
+        var clean = new List<int>(source.Count);
+        foreach (var id in source)
+        {
+            if (id < AdminConfig.MinId || id > AdminConfig.MaxId)
+            {
+                Report(key, id.ToString(), "пропущен",
+                    $"вне диапазона {AdminConfig.MinId}..{AdminConfig.MaxId}");
+                continue;
+            }
+
+            if (!clean.Contains(id))
+                clean.Add(id);
+        }
+
+        return clean;
+    }
+
     private void MigrateLegacyAdminGate()
     {
-        if (Admin.Ids.Count != 0)
+        // Дефолтный владелец (1000000) — не осознанная настройка: он появляется сам
+        // в старом конфиге без megaIds. Настоящий админ — любой другой id; только
+        // тогда гейт считается выставленным намеренно и миграция не вмешивается.
+        if (!HasOnlyDefaultOwner())
             return;
 
         if (Admin.AnyoneCanStart)
@@ -1112,6 +1151,19 @@ public sealed class ServerConfig
             "[config] миграция: старый дефолт «все команды только для админов» при пустом " +
             "admin.ids блокировал команды всем — теперь админские только " +
             $"{string.Join(", ", Admin.AdminOnlyCommands)}, запуск катки доступен всем");
+    }
+
+    /// <summary>
+    /// В списках нет никого, кроме владельца по умолчанию (или списки пусты).
+    /// Именно такое состояние старая миграция гейта и чинила.
+    /// </summary>
+    private bool HasOnlyDefaultOwner()
+    {
+        if (Admin.Ids.Count == 0 && Admin.MegaIds.Count == 0)
+            return true;
+
+        return Admin.Ids.All(id => id == ConfigMigration.DefaultOwnerId)
+            && Admin.MegaIds.All(id => id == ConfigMigration.DefaultOwnerId);
     }
 
     /// <summary>Точный набор команд из прежнего шаблона (<c>mode,map,set,play,end,start</c>).</summary>
@@ -1179,14 +1231,33 @@ public sealed class ServerConfig
     }
 
     /// <summary>
-    /// Админ ли этот серверный id. Права сверяются только с <c>admin.ids</c>;
-    /// id считает сервер из состояния сессии, а не из пакета клиента.
+    /// Админ ли этот серверный id: обычный из <c>admin.ids</c> или мега из
+    /// <c>admin.megaIds</c>. id считает сервер из состояния сессии, а не из пакета клиента.
     /// </summary>
-    public bool IsAdmin(int id) => id >= AdminConfig.MinId && Admin.Ids.Contains(id);
+    public bool IsAdmin(int id) =>
+        id >= AdminConfig.MinId
+        && (Admin.Ids.Contains(id) || Admin.MegaIds.Contains(id));
 
-    /// <summary>Список админов для логов и ответов: только id через запятую.</summary>
-    public string DescribeAdmins() =>
-        Admin.Ids.Count == 0 ? "(нет)" : string.Join(", ", Admin.Ids);
+    /// <summary>Мега-админ ли id. Статус даёт только конфиг, IP ни при чём.</summary>
+    public bool IsMegaId(int id) =>
+        id >= AdminConfig.MinId && Admin.MegaIds.Contains(id);
+
+    /// <summary>Список админов для логов и ответов: id, у мега-админов — пометка.</summary>
+    public string DescribeAdmins()
+    {
+        if (Admin.Ids.Count == 0 && Admin.MegaIds.Count == 0)
+            return "(нет)";
+
+        var ids = new List<int>(Admin.Ids);
+        foreach (var id in Admin.MegaIds)
+        {
+            if (!ids.Contains(id))
+                ids.Add(id);
+        }
+
+        return string.Join(", ", ids.Select(id =>
+            Admin.MegaIds.Contains(id) ? $"{id} (mega)" : id.ToString()));
+    }
 
     /// <summary>
     /// Приводит ник к сравнимому виду: обрезка, NFC-нормализация Unicode, удаление
@@ -1327,13 +1398,17 @@ public sealed class ServerConfig
   "admin": {
     // Админы — ТОЛЬКО по номеру аккаунта (число из /ids или /whoami).
     // Первый аккаунт — 1000000, дальше 1000001, 1000002, ...
-    // Ниже стоит старый хеш ника «влал»: он работает, пока аккаунта ещё нет,
-    // а при первом входе сам заменится на номер аккаунта (файл не перепишется).
     // Как вписать ещё: добавь через запятую, например
     //   "ids": [ 1000000, 1000001, 1000002 ],
-    // Пусто [] — админов нет, тогда /ban, /set, /end из чата не доступны никому.
+    // Пусто [] — обычных админов нет; мега-админы всё равно остаются.
     // Диапазон: 1..100000000, дубли и мусор сервер уберёт с записью в лог.
-    "ids": [ 25354325 ],
+    "ids": [ 1000000 ],
+
+    // ===== МЕГА-АДМИНЫ =====
+    // Мега-админ может всё и выдаёт права остальным. Его статус не зависит от IP.
+    // Если id есть и в "ids", и здесь — он мега, запись из "ids" игнорируется.
+    // Можно указать один id или несколько. Пусто [] — мега-админов нет.
+    "megaIds": [ 1000000 ],
 
     // Команды только для админов. По умолчанию set и end: они меняют параметры
     // хоста (раунды, победу, состав) и обрывают катку.
@@ -1443,7 +1518,7 @@ public sealed class ServerConfig
     "basePath": "",              // подпуть за прокси (nginx: location /vlalchillow/)
     "secureCookies": false,      // true — только если перед панелью есть https
     "trustedProxies": [],        // IP/CIDR прокси, которым верим X-Forwarded-For;
-                                 // пусто — только loopback (иначе LAN подделает мега-IP)
+                                 // пусто — только loopback (иначе LAN подделает адрес в лимитах)
     "codeTtlSec": 1800,          // сколько живёт код входа из лобби (30 минут)
 
     "limits": {

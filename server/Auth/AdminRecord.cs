@@ -2,7 +2,8 @@ namespace StandChillow.LanServer.Auth;
 
 /// <summary>
 /// Запись админа в <c>auth/admins.json</c>. Права и пароль живут только здесь;
-/// <c>config.json</c> знает лишь <c>admin.ids</c> — кто вообще может быть админом.
+/// <c>config.json</c> знает лишь <c>admin.ids</c> и <c>admin.megaIds</c> — кто вообще
+/// может быть админом и кто из них мега.
 /// </summary>
 public sealed class AdminRecord
 {
@@ -13,8 +14,8 @@ public sealed class AdminRecord
     public string Nick { get; set; } = "";
 
     /// <summary>
-    /// <c>admin</c> или <c>mega</c>. Роль информационная: настоящие мега-права даёт
-    /// только совпадение IP с <see cref="MegaIps"/>.
+    /// <c>admin</c> или <c>mega</c>. Роль пересчитывается из <c>admin.megaIds</c> при
+    /// каждой синхронизации; сама по себе она прав не даёт.
     /// </summary>
     public string Role { get; set; } = "admin";
 
@@ -29,9 +30,6 @@ public sealed class AdminRecord
     /// авторизации с другой версией считаются мёртвыми.
     /// </summary>
     public int AuthVersion { get; set; } = 1;
-
-    /// <summary>IP, с которых этот админ получает мега-права после обычного входа.</summary>
-    public List<string> MegaIps { get; set; } = new();
 
     /// <summary>SHA-256 полного пароля <c>&lt;id&gt;-&lt;hex64&gt;</c>.</summary>
     public string PasswordHash { get; set; } = "";
@@ -49,7 +47,6 @@ public sealed class AdminRecord
         Permissions = new List<string>(Permissions),
         AddedBy = AddedBy,
         AuthVersion = AuthVersion,
-        MegaIps = new List<string>(MegaIps),
         PasswordHash = PasswordHash,
         CreatedUtc = CreatedUtc,
         UpdatedUtc = UpdatedUtc,

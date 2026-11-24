@@ -204,9 +204,9 @@ public static class CommandAccessPolicy
             return $"команда /{command} только для админов: id #{playerId} авторизован, " +
                    $"но нет права «{missingPermission}» — его выдаёт мега-админ";
 
-        var admins = config.Admin.Ids.Count == 0
-            ? "в config.json admin.ids пусто — админ-команд ни у кого нет"
-            : $"админы (id): {string.Join(", ", config.Admin.Ids)}";
+        var admins = config.Admin.Ids.Count == 0 && config.Admin.MegaIds.Count == 0
+            ? "в config.json admin.ids и admin.megaIds пусты — админ-команд ни у кого нет"
+            : $"админы (id): {config.DescribeAdmins()}";
         return $"команда /{command} только для админов (твой id #{playerId}; {admins})";
     }
 

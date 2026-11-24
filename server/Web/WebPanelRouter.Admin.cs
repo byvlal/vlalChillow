@@ -1,4 +1,3 @@
-using System.Net;
 using System.Text;
 using System.Text.Json;
 using StandChillow.LanServer.Auth;
@@ -18,8 +17,9 @@ namespace StandChillow.LanServer.Web;
 /// зависит от кода из лобби. Без куки не отдаётся ни один байт данных.
 /// </para>
 /// <para>
-/// Права выдаёт только мега-админ: его IP есть в <c>megaIps</c> записи. Обычный админ
+/// Права выдаёт только мега-админ: его id входит в <c>admin.megaIds</c>. Обычный админ
 /// видит <c>dashboard</c> и <c>journal</c>, пока мега-админ не выдаст операционные.
+/// IP панели на мега-статус не влияет.
 /// </para>
 /// </remarks>
 public sealed partial class WebPanelRouter
@@ -56,8 +56,7 @@ public sealed partial class WebPanelRouter
         if (record is null)
             return ApiError(403, "not_admin", "для этого id нет записи админа");
 
-        if (!_options.AdminStore.HasPermission(
-                session.PlayerId, request.RemoteAddress, permission))
+        if (!_options.AdminStore.HasPermission(session.PlayerId, permission))
             return ApiError(403, "no_permission",
                 $"нет права «{permission}» — его выдаёт мега-админ");
 
@@ -95,8 +94,7 @@ public sealed partial class WebPanelRouter
 
         foreach (var permission in permissions)
         {
-            if (_options.AdminStore.HasPermission(
-                    session.PlayerId, request.RemoteAddress, permission))
+            if (_options.AdminStore.HasPermission(session.PlayerId, permission))
             {
                 admin = session;
                 return null;
@@ -107,15 +105,15 @@ public sealed partial class WebPanelRouter
             $"нет ни одного из прав: {string.Join(", ", permissions)}");
     }
 
-    /// <summary>Только мега-админ: IP должен совпасть с megaIps.</summary>
+    /// <summary>Только мега-админ из <c>admin.megaIds</c>; IP не важен.</summary>
     private WebResponse? MegaGate(WebRequestContext request, out AdminSession admin)
     {
         if (AdminGate(request, out admin, AdminPermissions.Dashboard) is { } denied)
             return denied;
 
-        if (_options.AdminStore?.IsMega(admin.PlayerId, request.RemoteAddress) != true)
+        if (_options.AdminStore?.IsMega(admin.PlayerId) != true)
             return ApiError(403, "not_mega",
-                "это действие доступно только мега-админу с его IP");
+                "это действие доступно только мега-админу из admin.megaIds");
 
         return null;
     }
@@ -132,11 +130,11 @@ public sealed partial class WebPanelRouter
         if (record is null)
             return ApiError(403, "not_admin", "для этого id нет записи админа");
 
-        return AdminStateJson(record, request.RemoteAddress);
+        return AdminStateJson(record);
     }
 
     /// <summary>JSON состояния вошедшего админа: без записи сюда не попадают.</summary>
-    private WebResponse AdminStateJson(AdminRecord record, IPAddress? ip)
+    private WebResponse AdminStateJson(AdminRecord record)
     {
         using var stream = new MemoryStream();
         using (var writer = new Utf8JsonWriter(stream, JsonText.WriterOptions))
@@ -146,9 +144,9 @@ public sealed partial class WebPanelRouter
             writer.WriteBoolean("admin", true);
             writer.WriteBoolean("authed", true);
 
-            var permissions = _options.AdminStore?.PermissionsFor(record.Id, ip)
+            var permissions = _options.AdminStore?.PermissionsFor(record.Id)
                 ?? AdminPermissions.Normalize(record.Permissions);
-            var mega = _options.AdminStore?.IsMega(record.Id, ip) == true;
+            var mega = _options.AdminStore?.IsMega(record.Id) == true;
 
             writer.WriteNumber("id", record.Id);
             writer.WriteString("nick", record.Nick ?? "");
@@ -230,10 +228,10 @@ public sealed partial class WebPanelRouter
         _options.AdminStore.Journal("auth", "login", record.Id, record.Id);
         Console.WriteLine(
             $"[web] админ-вход: #{record.Id} с {request.RemoteAddress} " +
-            $"(мега: {_options.AdminStore.IsMega(record.Id, request.RemoteAddress)})");
+            $"(мега: {_options.AdminStore.IsMega(record.Id)})");
 
         return WithCookie(
-            AdminStateJson(record, request.RemoteAddress),
+            AdminStateJson(record),
             AdminCookie.Build(adminSession.Token, _options.CookiePath, _options.SecureCookies));
     }
 
@@ -251,19 +249,19 @@ public sealed partial class WebPanelRouter
 
     // ── Админы и права (только мега) ────────────────────────────────────────────
 
-    /// <summary>Список админов. Только с правом <c>admins</c>; megaIps — только мега.</summary>
+    /// <summary>Список админов. Только с правом <c>admins</c>; мега получает его всегда.</summary>
     private WebResponse AdminList(WebRequestContext request)
     {
         if (AdminGate(request, out var admin, AdminPermissions.Admins) is { } denied)
             return denied;
 
-        return AdminListJson(admin.PlayerId, request.RemoteAddress);
+        return AdminListJson(admin.PlayerId);
     }
 
     /// <summary>Список без повторной проверки: вызывающий уже прошёл затвор.</summary>
-    private WebResponse AdminListJson(int viewerId, IPAddress? address)
+    private WebResponse AdminListJson(int viewerId)
     {
-        var viewerMega = _options.AdminStore?.IsMega(viewerId, address) == true;
+        var viewerMega = _options.AdminStore?.IsMega(viewerId) == true;
         var records = _options.AdminStore?.Records() ?? Array.Empty<AdminRecord>();
 
         using var stream = new MemoryStream();
@@ -275,24 +273,21 @@ public sealed partial class WebPanelRouter
             writer.WriteStartArray("admins");
             foreach (var record in records)
             {
+                var mega = _options.AdminStore?.IsMega(record.Id) == true;
                 writer.WriteStartObject();
                 writer.WriteNumber("id", record.Id);
                 writer.WriteString("nick", record.Nick ?? "");
-                writer.WriteString("role", record.Role);
+                writer.WriteString("role", mega ? "mega" : "admin");
+                writer.WriteBoolean("mega", mega);
                 writer.WriteString("addedBy", record.AddedBy);
                 writer.WriteNumber("authVersion", record.AuthVersion);
                 writer.WriteBoolean("live", _options.IsAdminLive?.Invoke(record.Id) == true);
                 writer.WriteStartArray("permissions");
-                foreach (var permission in AdminPermissions.Normalize(record.Permissions))
+                foreach (var permission in mega
+                             ? AdminPermissions.All
+                             : AdminPermissions.Normalize(record.Permissions))
                     writer.WriteStringValue(permission);
                 writer.WriteEndArray();
-                if (viewerMega)
-                {
-                    writer.WriteStartArray("megaIps");
-                    foreach (var ip in record.MegaIps)
-                        writer.WriteStringValue(ip);
-                    writer.WriteEndArray();
-                }
                 writer.WriteEndObject();
             }
             writer.WriteEndArray();
@@ -330,42 +325,7 @@ public sealed partial class WebPanelRouter
         Console.WriteLine(
             $"[web] права #{parsed.Id} → {AdminPermissions.Describe(parsed.Permissions)} " +
             $"(кто: #{admin.PlayerId})");
-        return AdminListJson(admin.PlayerId, request.RemoteAddress);
-    }
-
-    /// <summary>Добавить/убрать мега-IP. Только мега-админ.</summary>
-    private WebResponse AdminMegaIp(WebRequestContext request)
-    {
-        if (MegaGate(request, out var admin) is { } denied)
-            return denied;
-
-        AdminMegaRequest? parsed;
-        try
-        {
-            parsed = JsonSerializer.Deserialize<AdminMegaRequest>(request.Body, JsonOptions);
-        }
-        catch (JsonException)
-        {
-            return ApiError(400, "bad_json", "тело запроса — не JSON");
-        }
-
-        if (parsed is null || parsed.Id <= 0)
-            return ApiError(400, "bad_id", "id — число больше нуля");
-
-        var action = (parsed.Action ?? "").Trim().ToLowerInvariant();
-        var ok = action switch
-        {
-            "add" => _options.AdminStore?.AddMegaIp(
-                admin.PlayerId, parsed.Id, parsed.Ip, DateTime.UtcNow, out _) == true,
-            "remove" => _options.AdminStore?.RemoveMegaIp(
-                admin.PlayerId, parsed.Id, parsed.Ip, DateTime.UtcNow, out _) == true,
-            _ => false,
-        };
-
-        if (!ok)
-            return ApiError(400, "mega_refused", "не удалось изменить megaIps");
-
-        return AdminListJson(admin.PlayerId, request.RemoteAddress);
+        return AdminListJson(admin.PlayerId);
     }
 
     // ── Кастомизация ────────────────────────────────────────────────────────────
@@ -403,7 +363,7 @@ public sealed partial class WebPanelRouter
         var record = _options.AdminStore?.Find(admin.PlayerId);
         if (record is null)
             return ApiError(403, "not_admin", "для этого id нет записи админа");
-        return AdminStateJson(record, request.RemoteAddress);
+        return AdminStateJson(record);
     }
 
     // ── Баны ────────────────────────────────────────────────────────────────────
@@ -615,7 +575,6 @@ public sealed partial class WebPanelRouter
 
     private sealed record AdminLoginRequest(int Id, string? Password);
     private sealed record AdminPermissionsRequest(int Id, List<string>? Permissions);
-    private sealed record AdminMegaRequest(int Id, string? Ip, string? Action);
     private sealed record AdminCustomIdRequest(string? CustomId);
     private sealed record AdminBanRequest(int Id, string? Reason, int DurationValue, string? DurationUnit);
     private sealed record AdminUnbanRequest(int Id);

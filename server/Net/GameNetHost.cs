@@ -1072,10 +1072,6 @@ public sealed partial class GameNetHost : IDisposable
                 : Path.Combine(AppContext.BaseDirectory, "captures"),
             config.Debug.CapturesMaxFiles,
             config.Debug.CapturesMaxBytesMb * 1024L * 1024L);
-
-        // admin.ids мог прийти со старыми хешами: к этому моменту аккаунты уже есть
-        // (первый вызов из конструктора — ещё нет, тогда метод просто выходит).
-        MigrateAdminIds();
     }
 
     /// <summary>Показать действующий конфиг (консоль: <c>config</c>).</summary>
@@ -1083,8 +1079,12 @@ public sealed partial class GameNetHost : IDisposable
     {
         feedback($"config: {ServerConfig.LastLoadedPath}");
         feedback($"  админы (id): {_config.DescribeAdmins()}");
-        if (_config.Admin.Ids.Count == 0)
-            feedback("    (пусто — админ-команд ни у кого нет; добавь \"ids\": [ 25354325 ] " +
+        feedback($"  мега-админы (id): " +
+                 (_config.Admin.MegaIds.Count == 0
+                     ? "(нет)"
+                     : string.Join(", ", _config.Admin.MegaIds)));
+        if (_config.Admin.Ids.Count == 0 && _config.Admin.MegaIds.Count == 0)
+            feedback("    (пусто — админ-команд ни у кого нет; добавь \"ids\": [ 1000000 ] " +
                      $"в admin{{}} файла {ServerConfig.LastLoadedPath})");
         feedback($"  личные пароли админов: {_adminStore?.Directory ?? "auth/"} (файлы <id>/password.txt)");
         feedback($"  админов в auth: {_adminStore?.Count ?? 0}; ждут пароль: {PendingAdminCount}");
@@ -1132,8 +1132,10 @@ public sealed partial class GameNetHost : IDisposable
         _config = config;
         ApplyRuntimeConfig(_config);
 
-        // Новый id в admin.ids получает запись и пароль сразу, без перезапуска.
-        _adminStore?.Sync(_config.Admin.Ids, DateTime.UtcNow);
+        // Старые хеши → настоящие id, затем сразу записи и пароли под новый список.
+        // Без Sync после миграции вход по настоящему id не находит пароль.
+        MigrateAdminIds();
+        SyncAdminStore();
 
         if (_bans is not null)
         {

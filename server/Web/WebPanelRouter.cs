@@ -144,9 +144,6 @@ public sealed partial class WebPanelRouter
         if (request.Method == "POST" && path == "/api/admin/permissions")
             return AdminSetPermissions(request);
 
-        if (request.Method == "POST" && path == "/api/admin/mega")
-            return AdminMegaIp(request);
-
         if (request.Method == "POST" && path == "/api/admin/customid")
             return AdminSetCustomId(request);
 
@@ -205,7 +202,7 @@ public sealed partial class WebPanelRouter
         if (path is "/api/auth" or "/api/logout" or "/api/reports"
             or "/api/admin/login" or "/api/admin/logout"
             or "/api/admin/customid" or "/api/admin/ban" or "/api/admin/unban"
-            or "/api/admin/permissions" or "/api/admin/mega"
+            or "/api/admin/permissions"
             or "/api/admin/reports/status")
             return WithAllow("POST", WebResponse.Text("405", 405));
 
@@ -692,7 +689,7 @@ public sealed class WebPanelRouterOptions
     // ── Админ панель ─────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Хранилище админов: пароли, права и megaIps. <c>null</c> — вход в админку закрыт.
+    /// Хранилище админов: пароли и права. <c>null</c> — вход в админку закрыт.
     /// </summary>
     public AdminStore? AdminStore { get; init; }
 

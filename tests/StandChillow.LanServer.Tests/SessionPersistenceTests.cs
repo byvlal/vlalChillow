@@ -20,7 +20,7 @@ public sealed class SessionPersistenceTests : IDisposable
     {
         _dir = Path.Combine(Path.GetTempPath(), "stch-sessions-" + Guid.NewGuid().ToString("N"));
         _store = new AdminStore(Path.Combine(_dir, "auth"));
-        _store.Initialize(new[] { PlayerId }, Now);
+        _store.Initialize(new[] { PlayerId }, Array.Empty<int>(), Now);
     }
 
     public void Dispose()

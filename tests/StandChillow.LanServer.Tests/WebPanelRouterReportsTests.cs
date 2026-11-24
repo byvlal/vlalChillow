@@ -40,7 +40,7 @@ public sealed class WebPanelRouterReportsTests : IDisposable
         Directory.CreateDirectory(_dir);
         _reports = new ReportStore(Path.Combine(_dir, "reports.json"));
         _adminStore = new AdminStore(Path.Combine(_dir, "auth"));
-        _adminStore.Initialize(_admins, DateTime.UtcNow);
+        _adminStore.Initialize(_admins, Array.Empty<int>(), DateTime.UtcNow);
         _adminStore.SetPermissions(
             actorId: null, 1000, AdminPermissions.All, DateTime.UtcNow, out _);
     }

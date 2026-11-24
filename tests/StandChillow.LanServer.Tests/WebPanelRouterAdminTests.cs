@@ -12,12 +12,13 @@ namespace StandChillow.LanServer.Tests;
 
 /// <summary>
 /// Вход в админку и право-затворы: без пароля — 401, без права — 403, мега — только
-/// с IP из <c>megaIps</c>. Ни один админ-эндпоинт не отдаёт данные «просто админу».
+/// id из <c>admin.megaIds</c>. Ни один админ-эндпоинт не отдаёт данные «просто админу».
 /// </summary>
 public sealed class WebPanelRouterAdminTests : IDisposable
 {
     private const int AdminId = 1000;
     private const int SecondId = 1001;
+    private const int MegaId = 1002;
     private static readonly IPAddress ClientIp = IPAddress.Parse("203.0.113.10");
     private static readonly IPAddress OtherIp = IPAddress.Parse("203.0.113.11");
 
@@ -25,13 +26,14 @@ public sealed class WebPanelRouterAdminTests : IDisposable
     private readonly AdminStore _store;
     private readonly AdminSessions _sessions;
     private readonly ReportStore _reports;
-    private readonly HashSet<int> _admins = new() { AdminId, SecondId };
+    private readonly HashSet<int> _admins = new() { AdminId, SecondId, MegaId };
+    private readonly HashSet<int> _mega = new() { MegaId };
 
     public WebPanelRouterAdminTests()
     {
         _dir = Path.Combine(Path.GetTempPath(), "stch-adminrouter-" + Guid.NewGuid().ToString("N"));
         _store = new AdminStore(Path.Combine(_dir, "auth"));
-        _store.Initialize(_admins, DateTime.UtcNow);
+        _store.Initialize(_admins, _mega, DateTime.UtcNow);
         _sessions = new AdminSessions(Path.Combine(_dir, "sessions.json"), _store);
         _reports = new ReportStore(Path.Combine(_dir, "reports.json"));
     }
@@ -113,7 +115,6 @@ public sealed class WebPanelRouterAdminTests : IDisposable
                      GetQuery("/api/admin/lookup", "id=1001"),
                      Get("/api/admin/reports"),
                      Post("/api/admin/permissions", """{"id":1001,"permissions":["bans"]}"""),
-                     Post("/api/admin/mega", """{"id":1001,"ip":"1.2.3.4","action":"add"}"""),
                      Post("/api/admin/customid", """{"customId":"x"}"""),
                      Post("/api/admin/ban", """{"id":1}"""),
                      Post("/api/admin/unban", """{"id":1}"""),
@@ -202,12 +203,10 @@ public sealed class WebPanelRouterAdminTests : IDisposable
     }
 
     [Fact]
-    public void Mega_IsOnlyTheMatchingIp_AndGetsEveryRequest()
+    public void MegaFromConfig_GetsEveryRequestFromAnyIp()
     {
-        _store.AddMegaIp(null, AdminId, ClientIp.ToString(), DateTime.UtcNow, out _);
-
         var megaRouter = NewRouter();
-        var mega = Login(megaRouter, AdminId, PasswordOf(AdminId), ClientIp);
+        var mega = Login(megaRouter, MegaId, PasswordOf(MegaId), ClientIp);
 
         Assert.Equal(200, mega.Status);
         Assert.Contains("\"mega\":true", mega.Body);
@@ -215,13 +214,27 @@ public sealed class WebPanelRouterAdminTests : IDisposable
         Assert.Equal(200, megaRouter.Route(Get("/api/admin/admins", mega.Cookie, ClientIp)).Status);
         Assert.Equal(200, megaRouter.Route(Get("/api/admin/reports", mega.Cookie, ClientIp)).Status);
 
-        // Тот же пароль с другого IP — обычный админ: мега-прав нет.
+        // Тот же пароль с другого IP остаётся мега: статус даёт только config.
         var otherRouter = NewRouter();
-        var other = Login(otherRouter, AdminId, PasswordOf(AdminId), OtherIp);
+        var other = Login(otherRouter, MegaId, PasswordOf(MegaId), OtherIp);
 
         Assert.Equal(200, other.Status);
-        Assert.Contains("\"mega\":false", other.Body);
-        Assert.Equal(403, otherRouter.Route(Get("/api/admin/admins", other.Cookie, OtherIp)).Status);
+        Assert.Contains("\"mega\":true", other.Body);
+        Assert.Equal(200, otherRouter.Route(Get("/api/admin/admins", other.Cookie, OtherIp)).Status);
+    }
+
+    [Fact]
+    public void MegaIpEndpoint_IsGone()
+    {
+        var router = NewRouter();
+        var login = Login(router, MegaId, PasswordOf(MegaId));
+
+        var response = router.Route(Post(
+            "/api/admin/mega",
+            """{"id":1001,"ip":"1.2.3.4","action":"add"}""",
+            login.Cookie));
+
+        Assert.Equal(404, response.Status);
     }
 
     [Fact]

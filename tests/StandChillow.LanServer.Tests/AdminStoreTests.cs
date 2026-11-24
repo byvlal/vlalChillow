@@ -1,4 +1,3 @@
-using System.Net;
 using System.Text.Json;
 using StandChillow.LanServer.Auth;
 using Xunit;
@@ -6,13 +5,14 @@ using Xunit;
 namespace StandChillow.LanServer.Tests;
 
 /// <summary>
-/// Хранилище админов: персональные пароли, права, мега-IP и журнал. Файлы — во
-/// временном каталоге, поэтому проверяется и то, что реально ложится на диск.
+/// Хранилище админов: персональные пароли, права, конфиговые мега-админы и журнал.
+/// Файлы — во временном каталоге, поэтому проверяется и то, что реально ложится на диск.
 /// </summary>
 public sealed class AdminStoreTests : IDisposable
 {
     private const int AdminId = 1000;
     private const int SecondId = 1001;
+    private const int MegaId = 1002;
     private static readonly DateTime Now = new(2026, 11, 24, 12, 0, 0, DateTimeKind.Utc);
 
     private readonly string _dir;
@@ -22,7 +22,7 @@ public sealed class AdminStoreTests : IDisposable
     {
         _dir = Path.Combine(Path.GetTempPath(), "stch-adminstore-" + Guid.NewGuid().ToString("N"));
         _store = new AdminStore(Path.Combine(_dir, "auth"));
-        _store.Initialize(new[] { AdminId, SecondId }, Now);
+        _store.Initialize(new[] { AdminId, SecondId }, new[] { MegaId }, Now);
     }
 
     public void Dispose()
@@ -44,7 +44,7 @@ public sealed class AdminStoreTests : IDisposable
         Assert.Equal(1, record.AuthVersion);
         Assert.Equal("admin", record.Role);
         Assert.Equal(new[] { "dashboard", "journal" }, record.Permissions);
-        Assert.Empty(record.MegaIps);
+        Assert.False(_store.IsMega(AdminId));
         Assert.True(File.Exists(_store.PasswordPathOf(AdminId)));
 
         var password = PasswordOf(AdminId);
@@ -97,12 +97,12 @@ public sealed class AdminStoreTests : IDisposable
     {
         _store.SetPermissions(null, AdminId, new[] { "bans" }, Now, out _);
 
-        _store.Sync(new[] { AdminId, SecondId, 1002 }, Now.AddMinutes(1));
+        _store.Sync(new[] { AdminId, SecondId, 1003 }, Array.Empty<int>(), Now.AddMinutes(1));
 
-        var added = _store.Find(1002);
+        var added = _store.Find(1003);
         Assert.NotNull(added);
         Assert.Equal(new[] { "dashboard", "journal" }, added!.Permissions);
-        Assert.True(File.Exists(_store.PasswordPathOf(1002)));
+        Assert.True(File.Exists(_store.PasswordPathOf(1003)));
 
         var existing = _store.Find(AdminId)!;
         Assert.Equal(new[] { "dashboard", "journal", "bans" }, existing.Permissions);
@@ -116,9 +116,9 @@ public sealed class AdminStoreTests : IDisposable
 
         var record = _store.Find(AdminId)!;
         Assert.Equal(new[] { "dashboard", "journal", "bans" }, record.Permissions);
-        Assert.True(_store.HasPermission(AdminId, null, "bans"));
-        Assert.True(_store.HasPermission(AdminId, null, "journal"));
-        Assert.False(_store.HasPermission(AdminId, null, "reports"));
+        Assert.True(_store.HasPermission(AdminId, "bans"));
+        Assert.True(_store.HasPermission(AdminId, "journal"));
+        Assert.False(_store.HasPermission(AdminId, "reports"));
     }
 
     [Fact]
@@ -132,37 +132,60 @@ public sealed class AdminStoreTests : IDisposable
     }
 
     [Fact]
-    public void MegaIp_GrantsAllPermissionsOnlyFromThatAddress()
+    public void MegaFromConfig_GrantsAllPermissionsWithoutAnyIp()
     {
-        var megaIp = IPAddress.Parse("192.168.1.50");
-        Assert.True(_store.AddMegaIp(null, AdminId, megaIp.ToString(), Now, out _));
+        Assert.True(_store.IsMega(MegaId));
+        Assert.False(_store.IsMega(AdminId));
+        Assert.Equal(AdminPermissions.All, _store.PermissionsFor(MegaId));
+        Assert.True(_store.HasPermission(MegaId, "rollback"));
+        Assert.False(_store.HasPermission(AdminId, "rollback"));
 
-        Assert.True(_store.IsMega(AdminId, megaIp));
-        Assert.False(_store.IsMega(AdminId, IPAddress.Parse("192.168.1.51")));
-        Assert.Equal(AdminPermissions.All, _store.PermissionsFor(AdminId, megaIp));
-        Assert.True(_store.HasPermission(AdminId, megaIp, "rollback"));
-        Assert.False(_store.HasPermission(AdminId, IPAddress.Parse("192.168.1.51"), "rollback"));
+        var record = _store.Find(MegaId)!;
+        Assert.Equal("mega", record.Role);
+        Assert.Equal(AdminPermissions.Normalize(null), record.Permissions);
     }
 
     [Fact]
-    public void MegaIp_NormalizesMappedIPv4AndRejectsDuplicates()
+    public void IdInBothLists_IsOneRecordAndMega()
     {
-        Assert.True(_store.AddMegaIp(null, AdminId, "::ffff:192.168.1.50", Now, out _));
+        _store.Sync(new[] { AdminId, SecondId }, new[] { AdminId }, Now.AddMinutes(1));
 
-        Assert.True(_store.IsMega(AdminId, IPAddress.Parse("192.168.1.50")));
-        Assert.False(_store.AddMegaIp(null, AdminId, "192.168.1.50", Now, out var duplicate));
-        Assert.NotNull(duplicate);
-        Assert.Single(_store.Find(AdminId)!.MegaIps);
+        Assert.True(_store.IsMega(AdminId));
+        Assert.Equal("mega", _store.Find(AdminId)!.Role);
+        Assert.Single(_store.Records().Where(record => record.Id == AdminId));
+        Assert.Equal(AdminPermissions.All, _store.PermissionsFor(AdminId));
     }
 
     [Fact]
-    public void RemoveMegaIp_StopsMegaRights()
+    public void RemovedFromMegaIds_DropsMegaButKeepsAdminRecord()
     {
-        Assert.True(_store.AddMegaIp(null, AdminId, "192.168.1.50", Now, out _));
-        Assert.True(_store.RemoveMegaIp(null, AdminId, "192.168.1.50", Now, out _));
+        _store.Sync(new[] { AdminId, MegaId }, Array.Empty<int>(), Now.AddMinutes(1));
 
-        Assert.False(_store.IsMega(AdminId, IPAddress.Parse("192.168.1.50")));
-        Assert.Equal("admin", _store.Find(AdminId)!.Role);
+        Assert.False(_store.IsMega(MegaId));
+        Assert.Equal("admin", _store.Find(MegaId)!.Role);
+        Assert.False(_store.HasPermission(MegaId, "rollback"));
+        Assert.True(File.Exists(_store.PasswordPathOf(MegaId)));
+    }
+
+    [Fact]
+    public void OldAdminsJsonWithMegaIps_LoadsAndRoleComesFromConfig()
+    {
+        var path = _store.RecordsPath;
+        var json = File.ReadAllText(path);
+        json = json.Replace(
+            $"\"id\": {MegaId},",
+            $"\"id\": {MegaId},\n    \"megaIps\": [ \"192.168.1.50\" ],");
+        File.WriteAllText(path, json);
+
+        var store = new AdminStore(Path.Combine(_dir, "auth"));
+        store.Initialize(new[] { AdminId, MegaId }, new[] { MegaId }, Now);
+
+        Assert.True(store.Find(MegaId) is not null);
+        Assert.True(store.IsMega(MegaId));
+
+        // Любая следующая запись пересобирает JSON без старого поля.
+        store.SetPermissions(null, AdminId, new[] { "bans" }, Now, out _);
+        Assert.DoesNotContain("megaIps", File.ReadAllText(path));
     }
 
     [Fact]
@@ -186,12 +209,15 @@ public sealed class AdminStoreTests : IDisposable
     {
         var firstOld = PasswordOf(AdminId);
         var secondOld = PasswordOf(SecondId);
+        var megaOld = PasswordOf(MegaId);
 
         var result = _store.RegenerateAllPasswords(null, Now.AddMinutes(1));
 
-        Assert.Equal(2, result.Count);
+        // Мега-админ тоже админ: пароль есть и у него.
+        Assert.Equal(3, result.Count);
         Assert.NotEqual(firstOld, PasswordOf(AdminId));
         Assert.NotEqual(secondOld, PasswordOf(SecondId));
+        Assert.NotEqual(megaOld, PasswordOf(MegaId));
         Assert.All(result, pair => Assert.True(File.Exists(pair.Path)));
     }
 
@@ -203,7 +229,7 @@ public sealed class AdminStoreTests : IDisposable
         File.WriteAllText(legacy, "OLDCODE");
 
         var store = new AdminStore(Path.Combine(_dir, "auth"));
-        store.Initialize(new[] { AdminId }, Now);
+        store.Initialize(new[] { AdminId }, Array.Empty<int>(), Now);
 
         Assert.False(File.Exists(legacy));
     }

@@ -1624,20 +1624,6 @@ body.so-side-open .so-side{transform:none}
 }
 .so-admperm input{accent-color:var(--so-acc);width:15px;height:15px;cursor:pointer}
 .so-admperm--fixed{color:var(--so-muted);cursor:default}
-.so-admips{
-  display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-top:14px;
-  padding-top:12px;border-top:1px solid var(--so-line);
-}
-.so-admips .so-card__label{margin:0 4px 0 0}
-.so-admip{
-  display:inline-flex;align-items:center;gap:6px;padding:4px 8px 3px;border-radius:6px;
-  background:rgba(217,164,65,.14);border:1px solid rgba(217,164,65,.5);
-  color:#ffd76e;font-size:12px;letter-spacing:.04em;
-}
-.so-admip__x{
-  border:0;background:none;color:inherit;font-size:15px;line-height:1;
-  padding:0;cursor:pointer;
-}
 
 /* ── жалобы, публичные профили, администрация ── */
 .so-badge-adm{
@@ -2988,8 +2974,8 @@ img.so-pubav{object-fit:cover;}
         <div class="so-card__t">АДМИНЫ И ПРАВА</div>
         <p class="so-card__d" style="margin-top:10px">
           Права выдаёт только мега-админ. <b>dashboard</b> и <b>journal</b> есть у каждого
-          и не отнимаются; остальные включаются поштучно. Мега-права привязаны к IP —
-          добавь адрес, с которого заходишь, и он получит полный доступ.
+          и не отнимаются; остальные включаются поштучно. Список мега-админов задаётся
+          в <b>config.json</b> → <b>admin.megaIds</b> и из панели не меняется.
         </p>
         <div class="so-admbans" id="adm-admins"></div>
         <p class="so-err" id="adm-admins-err"></p>
@@ -4072,31 +4058,23 @@ function renderAdminAdmins(){
 
   var data = adminAdmins;
   if (!data || !data.admins || !data.admins.length){
-    box.innerHTML = '<p class="so-note">Админов нет: впиши id в admin.ids.</p>';
+    box.innerHTML = '<p class="so-note">Админов нет: впиши id в admin.ids или admin.megaIds.</p>';
     return;
   }
 
   box.innerHTML = data.admins.map(function(a){
     var perms = a.permissions || [];
-    var mega = a.megaIps && a.megaIps.length > 0;
+    var mega = a.mega === true || a.role === 'mega';
     var checks = ADMIN_PERMS.map(function(p){
       return '<label class="so-admperm"><input type="checkbox" data-adm-perm="'
-        + p[0] + '"' + (perms.indexOf(p[0]) >= 0 ? ' checked' : '') + '> ' + p[1] + '</label>';
+        + p[0] + '"' + (perms.indexOf(p[0]) >= 0 ? ' checked' : '')
+        + (mega ? ' disabled' : '') + '> ' + p[1] + '</label>';
     }).join('');
 
-    var megaIps = '';
-    if (data.mega && a.megaIps){
-      megaIps = '<div class="so-admips"><span class="so-card__label">MEGA IP</span>'
-        + a.megaIps.map(function(ip){
-            return '<span class="so-admip">' + esc(ip)
-              + ' <button type="button" class="so-admip__x" data-adm-mega-del="' + esc(ip)
-              + '" aria-label="Убрать IP">×</button></span>';
-          }).join('')
-        + '<input class="so-input so-input--slim" data-adm-mega-input spellcheck="false"'
-        + ' placeholder="192.168.1.10" aria-label="IP для мега-прав">'
-        + '<button type="button" class="so-btn so-btn--sm so-btn--ghost" data-adm-mega-add>'
-        + 'ДОБАВИТЬ</button></div>';
-    }
+    var megaNote = mega
+      ? '<p class="so-note" style="margin-top:12px">MEGA: все права всегда. Список '
+        + 'мега-админов задаётся в config.json → admin.megaIds.</p>'
+      : '';
 
     return '<div class="so-admban so-admban--col" data-adm-id="' + a.id + '">'
       + '<div class="so-admban__head">'
@@ -4109,9 +4087,10 @@ function renderAdminAdmins(){
       + '</div>'
       + '<div class="so-admperms"><span class="so-admperm so-admperm--fixed">'
       + 'dashboard, journal — всегда</span>' + checks + '</div>'
-      + megaIps
+      + megaNote
       + '<div class="so-formrow" style="margin-top:12px">'
-      + '<button type="button" class="so-btn so-btn--sm" data-adm-perm-save>СОХРАНИТЬ ПРАВА</button>'
+      + '<button type="button" class="so-btn so-btn--sm" data-adm-perm-save'
+      + (mega ? ' disabled' : '') + '>СОХРАНИТЬ ПРАВА</button>'
       + '</div></div>';
   }).join('');
 }
@@ -4128,20 +4107,6 @@ function adminSavePermissions(card){
   return api('POST', 'api/admin/permissions', { id: id, permissions: list }).then(function(res){
     if (!res.ok || !res.data){
       if (err) err.textContent = (res.data && res.data.message) || 'права не изменились';
-      return;
-    }
-    adminAdmins = res.data;
-    renderAdminAdmins();
-  });
-}
-
-function adminSetMegaIp(card, action, ip){
-  var id = Number(card.getAttribute('data-adm-id'));
-  var err = $('adm-admins-err');
-  if (err) err.textContent = '';
-  return api('POST', 'api/admin/mega', { id: id, ip: ip, action: action }).then(function(res){
-    if (!res.ok || !res.data){
-      if (err) err.textContent = (res.data && res.data.message) || 'IP не изменён';
       return;
     }
     adminAdmins = res.data;
@@ -6096,24 +6061,6 @@ function init(){
 
     if (e.target.closest('[data-adm-perm-save]')){
       adminSavePermissions(card);
-      return;
-    }
-
-    var del = e.target.closest('[data-adm-mega-del]');
-    if (del){
-      adminSetMegaIp(card, 'remove', del.getAttribute('data-adm-mega-del'));
-      return;
-    }
-
-    if (e.target.closest('[data-adm-mega-add]')){
-      var input = card.querySelector('[data-adm-mega-input]');
-      var ip = input ? input.value.trim() : '';
-      var err = $('adm-admins-err');
-      if (!ip){
-        if (err) err.textContent = 'введи IP, например 192.168.1.10';
-        return;
-      }
-      adminSetMegaIp(card, 'add', ip);
     }
   });
   $('adm-cid').addEventListener('input', adminFilterCid);

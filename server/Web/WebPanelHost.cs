@@ -102,7 +102,7 @@ public sealed class WebPanelHost : IDisposable
         // тот же объект, поэтому смена пароля сразу видна обеим сторонам.
         var authDirectory = AdminStore.ResolveDirectory(ServerConfig.LastLoadedPath);
         _adminStore = adminStore ?? new AdminStore(authDirectory, Console.WriteLine);
-        _adminStore.Initialize(server.Admin.Ids, DateTime.UtcNow);
+        _adminStore.Initialize(server.Admin.Ids, server.Admin.MegaIds, DateTime.UtcNow);
         _sessions = new SiteSessions(Path.Combine(authDirectory, "site-sessions.json"));
         _adminSessions = new AdminSessions(
             Path.Combine(authDirectory, "sessions.json"), _adminStore);
