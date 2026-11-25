@@ -56,13 +56,13 @@ public sealed class ConfigUnknownKeysTests : IDisposable
         var cfg = Load("""
         {
           "admin": {
-            "ids": [ 25354325 ],
+            "ids": [ 123456 ],
             "adminNicknames": [ "влал" ]
           }
         }
         """);
 
-        Assert.True(cfg.IsAdmin(25_354_325));
+        Assert.True(cfg.IsAdmin(123456));
         var issue = Assert.Single(cfg.Issues.Where(i => i.Key == "admin.adminNicknames"));
         Assert.Contains("admin", issue.Detail);
     }

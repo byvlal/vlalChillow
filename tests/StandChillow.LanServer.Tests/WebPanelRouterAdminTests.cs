@@ -12,12 +12,13 @@ namespace StandChillow.LanServer.Tests;
 
 /// <summary>
 /// Вход в админку и право-затворы: без пароля — 401, без права — 403, мега — только
-/// с IP из <c>megaIps</c>. Ни один админ-эндпоинт не отдаёт данные «просто админу».
+/// id из <c>admin.megaIds</c>. Ни один админ-эндпоинт не отдаёт данные «просто админу».
 /// </summary>
 public sealed class WebPanelRouterAdminTests : IDisposable
 {
     private const int AdminId = 1000;
     private const int SecondId = 1001;
+    private const int MegaId = 1002;
     private static readonly IPAddress ClientIp = IPAddress.Parse("203.0.113.10");
     private static readonly IPAddress OtherIp = IPAddress.Parse("203.0.113.11");
 
@@ -25,13 +26,14 @@ public sealed class WebPanelRouterAdminTests : IDisposable
     private readonly AdminStore _store;
     private readonly AdminSessions _sessions;
     private readonly ReportStore _reports;
-    private readonly HashSet<int> _admins = new() { AdminId, SecondId };
+    private readonly HashSet<int> _admins = new() { AdminId, SecondId, MegaId };
+    private readonly HashSet<int> _mega = new() { MegaId };
 
     public WebPanelRouterAdminTests()
     {
         _dir = Path.Combine(Path.GetTempPath(), "stch-adminrouter-" + Guid.NewGuid().ToString("N"));
         _store = new AdminStore(Path.Combine(_dir, "auth"));
-        _store.Initialize(_admins, DateTime.UtcNow);
+        _store.Initialize(_admins, _mega, DateTime.UtcNow);
         _sessions = new AdminSessions(Path.Combine(_dir, "sessions.json"), _store);
         _reports = new ReportStore(Path.Combine(_dir, "reports.json"));
     }
@@ -45,7 +47,11 @@ public sealed class WebPanelRouterAdminTests : IDisposable
     private string PasswordOf(int id) =>
         File.ReadAllLines(_store.PasswordPathOf(id)).First();
 
-    private WebPanelRouter NewRouter() =>
+    private WebPanelRouter NewRouter(
+        Func<bool>? testNoPassword = null,
+        Func<bool>? testAutoMega = null,
+        Func<int, bool>? accountExists = null,
+        Func<int, bool>? isAdminLive = null) =>
         new(
             new RoomRegistry(),
             () => "<!doctype html><title>тест</title>",
@@ -54,7 +60,10 @@ public sealed class WebPanelRouterAdminTests : IDisposable
             {
                 AdminStore = _store,
                 AdminSessionStore = _sessions,
-                IsAdminLive = id => _admins.Contains(id),
+                IsAdminLive = isAdminLive ?? (id => _admins.Contains(id)),
+                TestNoAdminPassword = testNoPassword,
+                TestAutoMegaAdmin = testAutoMega,
+                AccountExists = accountExists,
                 CookiePath = "/",
                 BanSettings = () => (true, 10, 14),
                 Reports = _reports,
@@ -80,24 +89,51 @@ public sealed class WebPanelRouterAdminTests : IDisposable
         string path, string json, string? cookie = null, IPAddress? ip = null) =>
         new("POST", path, "", Encoding.UTF8.GetBytes(json), ip ?? ClientIp, Headers(cookie));
 
+    /// <summary>POST от вошедшего админа: без CSRF-токена сервер обязан отказать.</summary>
+    private static WebRequestContext PostAs(
+        string path, string json, string cookie, string csrf, IPAddress? ip = null)
+    {
+        var headers = Headers(cookie);
+        headers["X-CSRF-Token"] = csrf;
+        return new WebRequestContext(
+            "POST", path, "", Encoding.UTF8.GetBytes(json), ip ?? ClientIp, headers);
+    }
+
+    private static string Csrf(string loginBody) =>
+        JsonDocument.Parse(loginBody).RootElement.GetProperty("csrf").GetString() ?? "";
+
     private static string Body(WebResponse response) =>
         Encoding.UTF8.GetString(response.Body);
 
     private static string LoginJson(int id, string password) =>
         JsonSerializer.Serialize(new { id, password });
 
-    /// <summary>Ответ логина: статус, тело и токен админ-куки (если вход удался).</summary>
+    /// <summary>Ответ логина: статус, тело и куки админ-сессии + устройства.</summary>
     private static (int Status, string Body, string? Cookie) Login(
         WebPanelRouter router, int id, string password, IPAddress? ip = null)
     {
         var response = router.Route(Post(
             "/api/admin/login", LoginJson(id, password), ip: ip));
-        var setCookie = response.ExtraHeaders
-            .FirstOrDefault(header => header.Item1 == "Set-Cookie").Item2;
-        var cookie = setCookie is null
-            ? null
-            : setCookie.Split(';')[0];
+        var cookies = response.ExtraHeaders
+            .Where(header => header.Item1 == "Set-Cookie")
+            .Select(header => header.Item2.Split(';')[0])
+            .Where(cookie => cookie.Length > 0)
+            .ToArray();
+        var cookie = cookies.Length == 0 ? null : string.Join("; ", cookies);
         return (response.Status, Body(response), cookie);
+    }
+
+    /// <summary>Подтвердить пароль заново: без step-up изменяющие POST теперь закрыты.</summary>
+    private static WebResponse StepUp(
+        WebPanelRouter router, (int Status, string Body, string? Cookie) login, string password)
+    {
+        var response = router.Route(PostAs(
+            "/api/admin/stepup",
+            JsonSerializer.Serialize(new { password }),
+            login.Cookie!,
+            Csrf(login.Body)));
+        Assert.Equal(200, response.Status);
+        return response;
     }
 
     [Fact]
@@ -113,7 +149,6 @@ public sealed class WebPanelRouterAdminTests : IDisposable
                      GetQuery("/api/admin/lookup", "id=1001"),
                      Get("/api/admin/reports"),
                      Post("/api/admin/permissions", """{"id":1001,"permissions":["bans"]}"""),
-                     Post("/api/admin/mega", """{"id":1001,"ip":"1.2.3.4","action":"add"}"""),
                      Post("/api/admin/customid", """{"customId":"x"}"""),
                      Post("/api/admin/ban", """{"id":1}"""),
                      Post("/api/admin/unban", """{"id":1}"""),
@@ -186,28 +221,61 @@ public sealed class WebPanelRouterAdminTests : IDisposable
     }
 
     [Fact]
+    public void PostWithoutCsrfToken_IsRejectedEvenWithValidSession()
+    {
+        var router = NewRouter();
+        var login = Login(router, MegaId, PasswordOf(MegaId));
+
+        var response = router.Route(Post(
+            "/api/admin/customid", """{"customId":"x"}""", login.Cookie));
+
+        Assert.Equal(403, response.Status);
+        Assert.Contains("bad_csrf", Body(response));
+    }
+
+    [Fact]
+    public void PostFromAnotherOrigin_IsRejectedEvenWithCsrfToken()
+    {
+        var router = NewRouter();
+        var login = Login(router, MegaId, PasswordOf(MegaId));
+
+        var headers = Headers(login.Cookie);
+        headers["X-CSRF-Token"] = Csrf(login.Body);
+        headers["Origin"] = "https://evil.example";
+        headers["Host"] = "panel.example";
+        var request = new WebRequestContext(
+            "POST", "/api/admin/customid", "", Encoding.UTF8.GetBytes("""{"customId":"x"}"""),
+            ClientIp, headers);
+
+        var response = router.Route(request);
+
+        Assert.Equal(403, response.Status);
+        Assert.Contains("bad_origin", Body(response));
+    }
+
+    [Fact]
     public void OrdinaryAdmin_CanNotChangePermissionsEvenWithAdminsRight()
     {
         var router = NewRouter();
         var login = Login(router, AdminId, PasswordOf(AdminId));
         _store.SetPermissions(null, AdminId, new[] { "admins" }, DateTime.UtcNow, out _);
+        StepUp(router, login, PasswordOf(AdminId));
 
-        var response = router.Route(Post(
+        var response = router.Route(PostAs(
             "/api/admin/permissions",
             JsonSerializer.Serialize(new { id = SecondId, permissions = new[] { "bans" } }),
-            login.Cookie));
+            login.Cookie!,
+            Csrf(login.Body)));
 
         Assert.Equal(403, response.Status);
         Assert.Contains("not_mega", Body(response));
     }
 
     [Fact]
-    public void Mega_IsOnlyTheMatchingIp_AndGetsEveryRequest()
+    public void MegaFromConfig_GetsEveryRequestFromAnyIp()
     {
-        _store.AddMegaIp(null, AdminId, ClientIp.ToString(), DateTime.UtcNow, out _);
-
         var megaRouter = NewRouter();
-        var mega = Login(megaRouter, AdminId, PasswordOf(AdminId), ClientIp);
+        var mega = Login(megaRouter, MegaId, PasswordOf(MegaId), ClientIp);
 
         Assert.Equal(200, mega.Status);
         Assert.Contains("\"mega\":true", mega.Body);
@@ -215,13 +283,29 @@ public sealed class WebPanelRouterAdminTests : IDisposable
         Assert.Equal(200, megaRouter.Route(Get("/api/admin/admins", mega.Cookie, ClientIp)).Status);
         Assert.Equal(200, megaRouter.Route(Get("/api/admin/reports", mega.Cookie, ClientIp)).Status);
 
-        // Тот же пароль с другого IP — обычный админ: мега-прав нет.
+        // Тот же пароль с другого IP остаётся мега: статус даёт только config.
         var otherRouter = NewRouter();
-        var other = Login(otherRouter, AdminId, PasswordOf(AdminId), OtherIp);
+        var other = Login(otherRouter, MegaId, PasswordOf(MegaId), OtherIp);
 
         Assert.Equal(200, other.Status);
-        Assert.Contains("\"mega\":false", other.Body);
-        Assert.Equal(403, otherRouter.Route(Get("/api/admin/admins", other.Cookie, OtherIp)).Status);
+        Assert.Contains("\"mega\":true", other.Body);
+        Assert.Equal(200, otherRouter.Route(Get("/api/admin/admins", other.Cookie, OtherIp)).Status);
+    }
+
+    [Fact]
+    public void MegaIpEndpoint_IsGone()
+    {
+        var router = NewRouter();
+        var login = Login(router, MegaId, PasswordOf(MegaId));
+        StepUp(router, login, PasswordOf(MegaId));
+
+        var response = router.Route(PostAs(
+            "/api/admin/mega",
+            """{"id":1001,"ip":"1.2.3.4","action":"add"}""",
+            login.Cookie!,
+            Csrf(login.Body)));
+
+        Assert.Equal(404, response.Status);
     }
 
     [Fact]
@@ -263,7 +347,8 @@ public sealed class WebPanelRouterAdminTests : IDisposable
         var router = NewRouter();
         var login = Login(router, AdminId, PasswordOf(AdminId));
 
-        var logout = router.Route(Post("/api/admin/logout", "{}", login.Cookie));
+        var logout = router.Route(PostAs(
+            "/api/admin/logout", "{}", login.Cookie!, Csrf(login.Body)));
 
         Assert.Equal(200, logout.Status);
         Assert.Equal(401, router.Route(Get("/api/admin", login.Cookie)).Status);
@@ -281,5 +366,164 @@ public sealed class WebPanelRouterAdminTests : IDisposable
         var after = router.Route(Get("/api/admin", login.Cookie));
         Assert.Equal(403, after.Status);
         Assert.Contains("not_admin", Body(after));
+    }
+
+    [Fact]
+    public void EveryMutationWithoutStepUp_IsRejected_EvenForMega()
+    {
+        var router = NewRouter();
+        var login = Login(router, MegaId, PasswordOf(MegaId));
+        var csrf = Csrf(login.Body);
+
+        var posts = new[]
+        {
+            ("/api/admin/kick", """{"id":1001}"""),
+            ("/api/admin/rooms/close", """{"number":1}"""),
+            ("/api/admin/ban", """{"id":1001,"durationValue":1,"durationUnit":"d"}"""),
+            ("/api/admin/unban", """{"id":1001}"""),
+            ("/api/admin/reports/status", """{"id":1,"status":"accepted"}"""),
+            ("/api/admin/customid", """{"customId":"x"}"""),
+            ("/api/admin/permissions", """{"id":1001,"permissions":["bans"]}"""),
+            ("/api/admin/add", """{"id":1001}"""),
+            ("/api/admin/remove", """{"id":1001}"""),
+            ("/api/admin/password", """{"id":1001}"""),
+            ("/api/admin/config/set", """{"key":"web.port","value":8080}"""),
+            ("/api/admin/reload", "{}"),
+            ("/api/admin/sessions/revoke", """{"sessionId":"x"}"""),
+            ("/api/admin/journal/undo", """{"id":"J-0"}"""),
+        };
+
+        foreach (var (path, json) in posts)
+        {
+            var response = router.Route(PostAs(path, json, login.Cookie!, csrf));
+            Assert.True(
+                response.Status == 403,
+                $"{path}: {response.Status} {Body(response)}");
+            Assert.Contains("step_up_required", Body(response));
+        }
+    }
+
+    [Fact]
+    public void OrdinaryAdminMutation_AlsoNeedsStepUp_AndPassesAfterIt()
+    {
+        var router = NewRouter();
+        var login = Login(router, AdminId, PasswordOf(AdminId));
+        _store.SetPermissions(
+            null, AdminId, new[] { "customization" }, DateTime.UtcNow, out _);
+
+        var body = """{"customId":"x"}""";
+        var denied = router.Route(PostAs(
+            "/api/admin/customid", body, login.Cookie!, Csrf(login.Body)));
+
+        Assert.Equal(403, denied.Status);
+        Assert.Contains("step_up_required", Body(denied));
+
+        StepUp(router, login, PasswordOf(AdminId));
+
+        var allowed = router.Route(PostAs(
+            "/api/admin/customid", body, login.Cookie!, Csrf(login.Body)));
+
+        Assert.DoesNotContain("step_up_required", Body(allowed));
+        // Сам кастомный ID в этом тесте не настроен — важен только пройденный затвор.
+        Assert.Equal(503, allowed.Status);
+    }
+
+    [Fact]
+    public void AdminSession_CopiedWithoutDeviceCookie_DoesNotWork()
+    {
+        var router = NewRouter();
+        var login = Login(router, AdminId, PasswordOf(AdminId));
+        var parts = login.Cookie!.Split("; ");
+        var sessionCookie = parts.Single(cookie =>
+            cookie.StartsWith("sc_admin=", StringComparison.Ordinal));
+        var deviceCookie = parts.Single(cookie =>
+            cookie.StartsWith("sc_admin_dev=", StringComparison.Ordinal));
+
+        Assert.Equal(401, router.Route(Get("/api/admin", sessionCookie)).Status);
+        Assert.Equal(401, router.Route(Get("/api/admin", deviceCookie)).Status);
+        Assert.Equal(200, router.Route(Get("/api/admin", login.Cookie)).Status);
+    }
+
+    [Fact]
+    public void LoginInfo_IsPublicAndReflectsTestFlags()
+    {
+        var normal = NewRouter();
+        var plain = normal.Route(Get("/api/admin/login-info"));
+
+        Assert.Equal(200, plain.Status);
+        Assert.Contains("\"testNoPassword\":false", Body(plain));
+        Assert.Contains("\"testAutoMega\":false", Body(plain));
+
+        var test = NewRouter(() => true, () => true);
+        var flags = test.Route(Get("/api/admin/login-info"));
+
+        Assert.Equal(200, flags.Status);
+        Assert.Contains("\"testNoPassword\":true", Body(flags));
+        Assert.Contains("\"testAutoMega\":true", Body(flags));
+    }
+
+    [Fact]
+    public void TestMode_NoAdminPassword_LogsInWithoutPassword_AndSkipsStepUp()
+    {
+        var router = NewRouter(() => true, () => false);
+        var login = Login(router, MegaId, "");
+
+        Assert.Equal(200, login.Status);
+        Assert.Contains("\"testNoPassword\":true", login.Body);
+        Assert.Contains("\"testAutoMega\":false", login.Body);
+
+        var body = """{"customId":"x"}""";
+        var mutation = router.Route(PostAs(
+            "/api/admin/customid", body, login.Cookie!, Csrf(login.Body)));
+
+        Assert.NotEqual(403, mutation.Status);
+        Assert.DoesNotContain("step_up_required", Body(mutation));
+
+        // Тестовый режим снимает только пароль: CSRF остаётся обязательным.
+        var noCsrf = router.Route(Post("/api/admin/customid", body, login.Cookie));
+        Assert.Equal(403, noCsrf.Status);
+        Assert.Contains("bad_csrf", Body(noCsrf));
+    }
+
+    [Fact]
+    public void TestMode_AutoMega_GrantsRuntimeMegaOnlyToExistingAccounts()
+    {
+        const int PlayerId = 2000;
+        var router = NewRouter(
+            () => true,
+            () => true,
+            accountExists: id => id == PlayerId,
+            isAdminLive: id => _admins.Contains(id) || _store.Find(id) is not null);
+
+        var login = Login(router, PlayerId, "");
+
+        Assert.Equal(200, login.Status);
+        Assert.Contains("\"mega\":true", login.Body);
+        Assert.Contains("\"role\":\"mega\"", login.Body);
+        Assert.Contains("\"testAutoMega\":true", login.Body);
+        Assert.True(_store.IsRuntimeMega(PlayerId));
+        Assert.True(_store.IsMega(PlayerId));
+        Assert.Equal(200, router.Route(Get("/api/admin", login.Cookie)).Status);
+
+        var unknown = Login(router, PlayerId + 1, "");
+        Assert.Equal(401, unknown.Status);
+        Assert.Contains("bad_credentials", unknown.Body);
+    }
+
+    [Fact]
+    public void TestMode_AutoMegaAlone_DoesNotBypassPassword()
+    {
+        const int PlayerId = 2000;
+        var router = NewRouter(
+            () => false,
+            () => true,
+            accountExists: id => id == PlayerId,
+            isAdminLive: id => _admins.Contains(id) || _store.Find(id) is not null);
+
+        var login = Login(router, PlayerId, "любой-пароль");
+
+        Assert.Equal(401, login.Status);
+        Assert.Contains("bad_credentials", login.Body);
+        Assert.False(_store.IsRuntimeMega(PlayerId));
     }
 }

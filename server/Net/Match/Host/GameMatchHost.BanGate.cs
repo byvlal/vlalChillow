@@ -244,6 +244,40 @@ public sealed partial class GameMatchHost
     }
 
     /// <summary>
+    /// Отключить от катки всех, кто сидит под этим аккаунтом. Кик из панели:
+    /// бан не ставится, флаг <see cref="MatchPeerState.BannedForMatch"/> не трогаем,
+    /// иначе повторный вход после кика считался бы банным.
+    /// </summary>
+    /// <returns>Сколько сокетов матча закрыто.</returns>
+    public int DisconnectAccount(int accountId)
+    {
+        if (accountId <= 0)
+            return 0;
+
+        var kicked = 0;
+        foreach (var (peer, state) in _peers)
+        {
+            if (state.AccountId != accountId)
+                continue;
+
+            try
+            {
+                DisconnectPeerSoon(peer);
+                kicked++;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[admin] kick match {peer.Address}: {ex.Message}");
+            }
+        }
+
+        if (kicked > 0)
+            Console.WriteLine($"[admin] матч: кик аккаунта {accountId} — сокетов {kicked}");
+
+        return kicked;
+    }
+
+    /// <summary>
     /// Отключить забаненного от канала матча (7777). Ищем по аккаунту, адресу и
     /// устройствам сразу: к моменту бана сокет мог ещё не прислать JoinRoom, а ник —
     /// уже смениться. Ник ключом не является: тёзка не должен пострадать.

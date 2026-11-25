@@ -30,7 +30,7 @@ public sealed partial class GameNetHost
     /// Не-админ кастомного ID не получает никогда, даже если запись осталась в файле:
     /// один источник правды — живой <c>admin.ids</c>, а не <c>customids.json</c>.
     /// </remarks>
-    internal string? CustomIdOf(int id) => _config.IsAdmin(id) ? _customIds.Get(id) : null;
+    internal string? CustomIdOf(int id) => IsAdminId(id) ? _customIds.Get(id) : null;
 
     /// <summary>
     /// Поставить/сбросить кастомный ID админа. Пустая строка — сброс.
@@ -38,7 +38,7 @@ public sealed partial class GameNetHost
     /// </summary>
     internal string? SetCustomId(int id, string? value)
     {
-        if (!_config.IsAdmin(id))
+        if (!IsAdminId(id))
             return "кастомный ID доступен только админам из admin.ids";
 
         var nick = id > 0 ? _directory.Resolve(id)?.Nick : null;

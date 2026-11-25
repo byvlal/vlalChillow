@@ -23,6 +23,8 @@ public sealed class WebPanelRouterReportsTests : IDisposable
     private readonly AdminStore _adminStore;
     private readonly Dictionary<int, string> _siteTokens = new();
     private readonly Dictionary<int, string> _adminTokens = new();
+    private readonly Dictionary<int, string> _adminDevices = new();
+    private readonly Dictionary<int, string> _adminCsrf = new();
     private readonly HashSet<int> _admins = new() { 1000 };
     private readonly string _dir;
     private readonly ReportStore _reports;
@@ -40,7 +42,7 @@ public sealed class WebPanelRouterReportsTests : IDisposable
         Directory.CreateDirectory(_dir);
         _reports = new ReportStore(Path.Combine(_dir, "reports.json"));
         _adminStore = new AdminStore(Path.Combine(_dir, "auth"));
-        _adminStore.Initialize(_admins, DateTime.UtcNow);
+        _adminStore.Initialize(_admins, Array.Empty<int>(), DateTime.UtcNow);
         _adminStore.SetPermissions(
             actorId: null, 1000, AdminPermissions.All, DateTime.UtcNow, out _);
     }
@@ -125,10 +127,15 @@ public sealed class WebPanelRouterReportsTests : IDisposable
         if (_adminTokens.TryGetValue(playerId, out var token))
             return token;
 
-        token = _adminSessions.Create(
+        var session = _adminSessions.Create(
             playerId, "игрок " + playerId,
-            _adminStore.Find(playerId)?.AuthVersion ?? 1, DateTime.UtcNow)!.Token;
+            _adminStore.Find(playerId)?.AuthVersion ?? 1, DateTime.UtcNow)!;
+        token = session.Token;
         _adminTokens[playerId] = token;
+        _adminDevices[playerId] = session.DeviceToken;
+        _adminCsrf[playerId] = session.CsrfToken;
+        // Модерация — изменяющий запрос: без step-up сервер ответит 403.
+        _adminSessions.SetStepUp(token, DateTime.UtcNow.AddMinutes(15));
         return token;
     }
 
@@ -139,7 +146,12 @@ public sealed class WebPanelRouterReportsTests : IDisposable
         if (asPlayer > 0)
             cookies.Add("sc_session=" + SiteToken(asPlayer));
         if (asAdmin)
+        {
             cookies.Add("sc_admin=" + AdminToken(asPlayer));
+            cookies.Add("sc_admin_dev=" + _adminDevices[asPlayer]);
+            if (_adminCsrf.TryGetValue(asPlayer, out var csrf))
+                map["X-CSRF-Token"] = csrf;
+        }
         if (cookies.Count > 0)
             map["Cookie"] = string.Join("; ", cookies);
         return map;

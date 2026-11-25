@@ -109,11 +109,11 @@ public sealed partial class GameNetHost
                     ? DateTimeOffset.FromUnixTimeMilliseconds(seen.LastSeenUtcMs).UtcDateTime
                     : null;
                 return new ReportTarget(
-                    id, seen.Nick, custom, display, _config.IsAdmin(id), "offline",
+                    id, seen.Nick, custom, display, IsAdminId(id), "offline",
                     false, IsPlayerBannedById(id), lastSeen, devices, null);
             }
 
-            if (!_config.IsAdmin(id))
+            if (!IsAdminId(id))
                 return null;
 
             return new ReportTarget(
@@ -126,7 +126,7 @@ public sealed partial class GameNetHost
             found.Nick,
             custom,
             display,
-            _config.IsAdmin(found.Id),
+            IsAdminId(found.Id),
             found.Status,
             found.HasAvatar,
             found.Banned,

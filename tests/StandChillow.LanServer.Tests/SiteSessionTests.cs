@@ -35,7 +35,7 @@ public sealed class SiteSessionTests
     }
 
     [Fact]
-    public void Find_ReturnsSessionAndRefreshesLastSeen()
+    public void Find_ReturnsSessionWithoutWritingLastSeen()
     {
         var sessions = new SiteSessions();
         var session = sessions.Create(4242, "влал", Now)!;
@@ -43,8 +43,14 @@ public sealed class SiteSessionTests
         var found = sessions.Find(session.Token, Now.AddMinutes(5));
 
         Assert.NotNull(found);
-        Assert.Equal(Now.AddMinutes(5), found!.LastSeenUtc);
+        Assert.Equal(Now, found!.LastSeenUtc);
         Assert.Equal(Now, found.IssuedUtc);
+
+        var renewed = sessions.Renew(session.Token, Now.AddMinutes(5));
+
+        Assert.NotNull(renewed);
+        Assert.Equal(Now.AddMinutes(5), renewed!.LastSeenUtc);
+        Assert.Equal(Now, renewed.IssuedUtc);
     }
 
     [Fact]

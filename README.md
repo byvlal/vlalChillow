@@ -201,9 +201,9 @@ admin can set a custom displayed ID (`customids.json`; the numeric id used by ba
 `admin.ids` never changes), run bans — the same path as `/ban` in chat, so who / what / why /
 for how long is announced to everyone the same way — and, if granted `reports`, moderate
 reports. Who may
-do what is decided by personal permissions in `auth/admins.json`; only a mega admin (matching
-`megaIps`) grants them, and the first mega admin is added from the owner's console with
-`admin mega add <id> <ip>`.
+do what is decided by personal permissions in `auth/admins.json`; only a mega admin — an id
+from `admin.megaIds` in `config.json` — grants them. The mega list is edited only in the
+config (hot reload applies it) and is never exposed in the panel.
 
 `stats.json` and `customids.json` are local runtime state next to the executable and are
 git-ignored.
@@ -212,7 +212,8 @@ The page can also be published on the internet behind a reverse proxy. Limits ar
 counted **per real visitor**, not per proxy: the panel takes the client address from
 `X-Forwarded-For` only when the request came from a proxy listed in `web.trustedProxies`
 (loopback by default). Without an entry, a LAN client cannot name himself somebody else and
-steal a mega-admin IP; a proxy on another machine has to be listed explicitly
+steal another visitor's rate limit or web session; a proxy on another machine has to be
+listed explicitly
 (`"192.168.1.10"` or `"192.168.1.0/24"`). Without the header (panel exposed directly, or a
 proxy that does not send it) every visitor shares one bucket, so the limits count the proxy
 instead of the person; such a shared bucket is deliberately **never** put on the long pause,
@@ -324,20 +325,19 @@ entered once per address — otherwise the id only gets a shadow lobby. Anyone e
 private «только для админов» reply naming the reason, and the command does not run.
 `/help`, `/ready` and `/unready` are always open to everyone.
 
-Roles, permissions, mega IPs and password hashes live in `auth/admins.json`, never in
-`config.json`. A new admin gets `dashboard` and `journal` automatically; operational
-permissions (`bans`, `reports`, `customization`, `rooms`, `players`, `config`, `admins`,
-`rollback`) are granted by a mega admin from the panel or by the owner's console. A mega
-admin is an admin whose request IP matches one of his `megaIps`; the first mega admin is
-added only from the console: `admin mega add <id> <ip>`.
+Roles, permissions and password hashes live in `auth/admins.json`; who is a mega admin is
+decided only by `admin.megaIds` in `config.json`. A new admin gets `dashboard` and `journal`
+automatically; operational permissions (`bans`, `reports`, `customization`, `rooms`,
+`players`, `config`, `admins`, `rollback`) are granted by a mega admin from the panel or by
+the owner's console. A mega admin is an id from `admin.megaIds`; mega ids are automatically
+admins too, and an id present in both lists is a mega. The list is edited in `config.json`
+and applied on hot reload — there is no console command for it.
 
-`admin.ids` comes with the owner's old hash already in it — **25354325** («влал») — so a
-fresh `config.json` is not locked out of its own admin commands. On the owner's first login
-the server replaces that hash with the real account number (`1000000` for a clean install)
-in memory; the file is not rewritten, and the replacement repeats on every start. After the
-replacement the password lives in `auth/1000000/password.txt`; the old `auth/25354325/`
-entry stays for history but no longer opens anything. An explicit `"ids": []` is respected
-as «админов нет»; to drop the default, just write the list you actually want.
+A fresh `config.json` lists **1000000** in both `admin.ids` and `admin.megaIds`, so the owner
+is not locked out of their own admin commands. An old config with `"ids": []` or the previous
+default `[ 25354325 ]` gets `1000000` in both sections on the first load; the password then
+lives in `auth/1000000/password.txt`. Explicit `"ids": []` and `"megaIds": []` are respected
+as «админов нет».
 
 **`admin.adminOnlyCommands`** defaults to `[ "set", "end" ]`: `/set` changes match parameters,
 `/end` stops the match. `/mode`, `/map`, `/start` and `/play` stay open — anyone can run the
@@ -388,8 +388,8 @@ debug), `config reload` re-reads the file and applies it without a restart.
 - Проверка стоит на всех входах: лобби (включая переподключение), `JoinRoom` в матче и в
   каждой команде. Мимо лобби на 7777 с админским id не пройти.
 - `admin list` в консоли — кто есть, у кого есть пароль и кто его ещё ждёт;
-  `admin passwd regen [id|all]` — новый пароль; `admin mega add|remove <id> <ip>` —
-  мега-права по IP; `admin perm grant|revoke|set <id> <права…>` — операционные права.
+  `admin passwd regen [id|all]` — новый пароль; `admin perm grant|revoke|set <id> <права…>` —
+  операционные права. Мега-админы задаются только в `config.json` → `admin.megaIds`.
 - `/whoami` в чате — что сервер реально знает о тебе: id, ник, IP, админ ли, введён ли пароль
   и какие права выданы.
 

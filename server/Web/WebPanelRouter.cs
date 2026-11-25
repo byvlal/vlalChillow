@@ -121,8 +121,31 @@ public sealed partial class WebPanelRouter
         if (request.Method == "GET" && path == "/api/reports/mine")
             return MyReports(request);
 
+        // Изменяющие админ-запросы требуют CSRF-токен сессии. Вход — исключение:
+        // сессии ещё нет, её выдаёт сам /api/admin/login.
+        if (request.Method == "POST"
+            && path.StartsWith("/api/admin/", StringComparison.Ordinal)
+            && path != "/api/admin/login"
+            && AdminCsrfGate(request) is { } csrfDenied)
+            return csrfDenied;
+
+        // Единый затвор подтверждения паролем: любое изменение в админке, кроме
+        // входа/выхода/самого подтверждения, требует свежий step-up. Проверка стоит
+        // здесь, а не в каждом обработчике, поэтому новый опасный маршрут не сможет
+        // появиться без пароля. Тестовый test.noAdminPassword отключает только её.
+        if (request.Method == "POST"
+            && path.StartsWith("/api/admin/", StringComparison.Ordinal)
+            && path is not ("/api/admin/login" or "/api/admin/logout" or "/api/admin/stepup")
+            && AdminMutationGate(request) is { } mutationDenied)
+            return mutationDenied;
+
         // Админ панель: состояние (аноним видит только «не админ ты»), вход и выход —
         // по коду этого запуска. Все данные — только после тройного затвора (Admin.cs).
+        // login-info — единственное исключение: экрану входа нужно знать, включён ли
+        // тестовый режим, иначе он требует пароль, которого на тесте нет.
+        if (request.Method == "GET" && path == "/api/admin/login-info")
+            return AdminLoginInfo();
+
         if (request.Method == "GET" && path == "/api/admin")
             return AdminState(request);
 
@@ -131,6 +154,56 @@ public sealed partial class WebPanelRouter
 
         if (request.Method == "POST" && path == "/api/admin/logout")
             return AdminLogout(request);
+
+        if (request.Method == "POST" && path == "/api/admin/stepup")
+            return AdminStepUp(request);
+
+        // Консоль: дашборд, журнал, игроки, комнаты, конфиг, состав админов,
+        // безопасность. Каждый обработчик сам проверяет своё право.
+        if (request.Method == "GET" && path == "/api/admin/dashboard")
+            return AdminDashboard(request);
+
+        if (request.Method == "GET" && path == "/api/admin/journal")
+            return AdminJournal(request);
+
+        if (request.Method == "POST" && path == "/api/admin/journal/undo")
+            return AdminJournalUndo(request);
+
+        if (request.Method == "GET" && path == "/api/admin/players")
+            return AdminPlayers(request);
+
+        if (request.Method == "POST" && path == "/api/admin/kick")
+            return AdminKick(request);
+
+        if (request.Method == "GET" && path == "/api/admin/rooms")
+            return AdminRooms(request);
+
+        if (request.Method == "POST" && path == "/api/admin/rooms/close")
+            return AdminRoomClose(request);
+
+        if (request.Method == "GET" && path == "/api/admin/config")
+            return AdminConfigView(request);
+
+        if (request.Method == "POST" && path == "/api/admin/config/set")
+            return AdminConfigSet(request);
+
+        if (request.Method == "POST" && path == "/api/admin/reload")
+            return AdminReloadConfig(request);
+
+        if (request.Method == "POST" && path == "/api/admin/add")
+            return AdminAdd(request);
+
+        if (request.Method == "POST" && path == "/api/admin/remove")
+            return AdminRemove(request);
+
+        if (request.Method == "POST" && path == "/api/admin/password")
+            return AdminRegeneratePassword(request);
+
+        if (request.Method == "GET" && path == "/api/admin/security")
+            return AdminSecurity(request);
+
+        if (request.Method == "POST" && path == "/api/admin/sessions/revoke")
+            return AdminSessionRevoke(request);
 
         if (request.Method == "GET" && path == "/api/admin/lookup")
             return AdminLookupPlayer(request);
@@ -143,9 +216,6 @@ public sealed partial class WebPanelRouter
 
         if (request.Method == "POST" && path == "/api/admin/permissions")
             return AdminSetPermissions(request);
-
-        if (request.Method == "POST" && path == "/api/admin/mega")
-            return AdminMegaIp(request);
 
         if (request.Method == "POST" && path == "/api/admin/customid")
             return AdminSetCustomId(request);
@@ -188,8 +258,11 @@ public sealed partial class WebPanelRouter
         // Метод не тот — это не «нет маршрута», и панель должна сказать честно.
         if (path is "/" or "/index.html" or "/api/status" or "/api/modes"
             or "/api/me" or "/api/avatar" or "/api/stats/me" or "/api/admin"
+            or "/api/admin/login-info"
             or "/api/admin/lookup" or "/api/admin/avatar" or "/api/admin/bans"
             or "/api/admin/admins"
+            or "/api/admin/dashboard" or "/api/admin/journal" or "/api/admin/players"
+            or "/api/admin/rooms" or "/api/admin/config" or "/api/admin/security"
             or "/api/player" or "/api/player/avatar" or "/api/matches"
             or "/api/administration" or "/api/reports/mine"
             or "/api/admin/reports" or "/healthz")
@@ -205,7 +278,12 @@ public sealed partial class WebPanelRouter
         if (path is "/api/auth" or "/api/logout" or "/api/reports"
             or "/api/admin/login" or "/api/admin/logout"
             or "/api/admin/customid" or "/api/admin/ban" or "/api/admin/unban"
-            or "/api/admin/permissions" or "/api/admin/mega"
+            or "/api/admin/permissions"
+            or "/api/admin/stepup" or "/api/admin/journal/undo"
+            or "/api/admin/kick" or "/api/admin/rooms/close"
+            or "/api/admin/config/set" or "/api/admin/reload"
+            or "/api/admin/add" or "/api/admin/remove" or "/api/admin/password"
+            or "/api/admin/sessions/revoke"
             or "/api/admin/reports/status")
             return WithAllow("POST", WebResponse.Text("405", 405));
 
@@ -692,7 +770,7 @@ public sealed class WebPanelRouterOptions
     // ── Админ панель ─────────────────────────────────────────────────────────────
 
     /// <summary>
-    /// Хранилище админов: пароли, права и megaIps. <c>null</c> — вход в админку закрыт.
+    /// Хранилище админов: пароли и права. <c>null</c> — вход в админку закрыт.
     /// </summary>
     public AdminStore? AdminStore { get; init; }
 
@@ -701,6 +779,24 @@ public sealed class WebPanelRouterOptions
     /// <c>null</c> — вход в админку закрыт (503).
     /// </summary>
     public AdminSessions? AdminSessionStore { get; init; }
+
+    /// <summary>
+    /// Тестовый режим: админам не нужен личный пароль. Читается из
+    /// <c>config.json</c> на каждый запрос, чтобы <c>config reload</c> сразу менял ответ.
+    /// </summary>
+    public Func<bool>? TestNoAdminPassword { get; init; }
+
+    /// <summary>
+    /// Тестовый режим: аккаунту без админки выдаётся мега-админка. Читается из
+    /// <c>config.json</c> на каждый запрос.
+    /// </summary>
+    public Func<bool>? TestAutoMegaAdmin { get; init; }
+
+    /// <summary>
+    /// Существует ли аккаунт с таким id. Нужен тестовой автовыдаче: нельзя выдать
+    /// мега-права случайному числу, которого нет среди игроков.
+    /// </summary>
+    public Func<int, bool>? AccountExists { get; init; }
 
     /// <summary>
     /// Живая проверка админства: читает <b>текущий</b> конфиг, а не снимок со старта —
@@ -734,4 +830,48 @@ public sealed class WebPanelRouterOptions
 
     /// <summary>Настройки банов: включены ли и диапазон сроков. <c>null</c> — выключены.</summary>
     public Func<(bool Enabled, int MinMinutes, int MaxDays)>? BanSettings { get; init; }
+
+    // ── Консоль: игроки, комнаты, конфиг и безопасность ─────────────────────────
+
+    /// <summary>Когда запущен сервер — для аптайма на дашборде.</summary>
+    public DateTime? StartedUtc { get; init; }
+
+    /// <summary>Сколько игроков сервер вообще помнит (справочник личностей).</summary>
+    public Func<int>? KnownPlayersCount { get; init; }
+
+    /// <summary>Живое состояние сервера: онлайн, комнаты, катка, режим.</summary>
+    public Func<AdminServerState>? AdminServerState { get; init; }
+
+    /// <summary>
+    /// Поиск игроков по id, нику, кастомному id, IP или устройству. Возвращает
+    /// онлайн-людей (лобби + катка) и офлайн-записи справочника. <c>null</c> — поиск
+    /// выключен (503).
+    /// </summary>
+    public Func<string, int, IReadOnlyList<AdminPlayerRow>>? AdminSearchPlayers { get; init; }
+
+    /// <summary>
+    /// Кик игрока из лобби и/или катки. Возвращает текст ошибки или <c>null</c> при
+    /// успехе. Себя кикнуть нельзя: вызывающий проверяет это до делегирования.
+    /// </summary>
+    public Func<int, string, string?>? AdminKickPlayer { get; init; }
+
+    /// <summary>
+    /// Принудительно закрыть комнату из админки. Возвращает текст ошибки или <c>null</c>.
+    /// </summary>
+    public Func<int, string, string?>? AdminCloseRoom { get; init; }
+
+    /// <summary>Безопасная часть конфига для страницы «Конфиг». <c>null</c> — 503.</summary>
+    public Func<AdminConfigSnapshot>? AdminConfig { get; init; }
+
+    /// <summary>
+    /// Изменить разрешённый ключ конфига. Первый аргумент — ключ, второй — значение
+    /// в строковом виде. Возвращает текст ошибки или <c>null</c>.
+    /// </summary>
+    public Func<string, AdminConfigValueKind, string, string?>? AdminConfigSet { get; init; }
+
+    /// <summary>Заменить <c>admin.ids</c> (без мега-админов). Возвращает текст ошибки.</summary>
+    public Func<IReadOnlyList<int>, string?>? AdminSetIds { get; init; }
+
+    /// <summary>Перечитать config.json немедленно. Возвращает текст ошибки или <c>null</c>.</summary>
+    public Func<string?>? AdminReloadConfig { get; init; }
 }

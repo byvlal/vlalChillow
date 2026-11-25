@@ -146,12 +146,12 @@
   вход по коду из лобби, `GET /api/stats/me` (401 без сессии), `api/me` отдаёт поле `admin`.
   Админ: `POST /api/admin/login` (id + личный пароль, кука sc_admin на 7 дней),
   `GET /api/admin` (без куки 401, без права 403 — данных нет), `POST /api/admin/logout`,
-  `GET /api/admin/admins`, `POST /api/admin/permissions` и `/mega` (только мега),
+  `GET /api/admin/admins`, `POST /api/admin/permissions` (только мега),
   `GET /api/admin/lookup?id=`, `POST /api/admin/customid`, `POST /api/admin/ban` / `unban`,
   `GET /api/admin/bans`, `GET /api/admin/avatar`, репорты — `GET /api/admin/reports`.
   Не-админ не получает ничего: 401 без куки, 403 без права. Публикуется на
   **http://192.168.1.65:8080/** (локально 127.0.0.1).
-- Админ-инфраструктура: `Auth/AdminStore.cs` (записи, права, megaIps, журнал, пароли),
+- Админ-инфраструктура: `Auth/AdminStore.cs` (записи, права, журнал, пароли),
   `Auth/AdminPassword.cs` (формат `<id>-<hex64>`, SHA-256, constant-time),
   `Web/AdminSessions.cs`/`AdminCookie.cs` (кука `sc_admin`, 7 дней, в `auth/sessions.json`
   только SHA-256 токена), `Web/SiteSessions.cs` (30 дней), `Net/GameNetHost.AdminAuth.cs`
@@ -270,7 +270,8 @@
    `auth/<id>/password.txt`, сессии 7 дней и переживают рестарт. Вкладки «Кастомизация»
    (свой отображаемый ID, `customids.json`), «Баны» (3 шага: ввод ID с живым превью →
    «всё верно?» → причина+срок; список активных с разбаном; объявление в чат лобби) и
-   «Репорты». Права выдаёт только мега-админ (по IP из `megaIps`); новый админ получает
+   «Репорты». Права выдаёт только мега-админ (id из `admin.megaIds` в config.json);
+   новый админ получает
    `dashboard` и `journal`. E2E: 401/403/405, хот-релоад админа, бан+кик+объявление,
    разбан, отказ админ/себя/ниже минимума/неизвестный id.
 2. **Страница репортов** (`#/reports` сейчас якорь на главной → потом отдельная вью).

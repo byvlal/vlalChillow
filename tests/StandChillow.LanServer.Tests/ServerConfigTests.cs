@@ -34,8 +34,11 @@ public sealed class ServerConfigTests
         Assert.True(cfg.MatchStart.Ready.ResetOnLeave);
         Assert.True(cfg.MatchStart.Ready.AllowUnready);
         Assert.True(cfg.Admin.AnyoneCanStart);
-        // Владелец сервера админ «из коробки» — без правки config.json.
-        Assert.Contains(25_354_325, cfg.Admin.Ids);
+        // Владелец сервера — и админ, и мега-админ «из коробки».
+        Assert.Contains(1_000_000, cfg.Admin.Ids);
+        Assert.Contains(1_000_000, cfg.Admin.MegaIds);
+        Assert.True(cfg.IsAdmin(1_000_000));
+        Assert.True(cfg.IsMegaId(1_000_000));
         Assert.Empty(cfg.Launch.Args);
         Assert.False(cfg.Debug.Captures);
         Assert.False(cfg.Debug.Verbose);
@@ -122,8 +125,9 @@ public sealed class ServerConfigTests
 
         // auto — единственный режим, который у пользователя работал без /start.
         Assert.Equal(MatchStartMode.Auto, cfg.StartMode);
-        // 25_354_325 — id ника «влал»: владелец админ без правки config.json.
-        Assert.True(cfg.IsAdmin(25_354_325));
+        // 1_000_000 — владелец по умолчанию: админ и мега-админ.
+        Assert.True(cfg.IsAdmin(1_000_000));
+        Assert.True(cfg.IsMegaId(1_000_000));
         Assert.False(cfg.IsAdmin(65_054_804));
         Assert.False(cfg.IsAdmin(0));
         Assert.False(cfg.IsAdmin(-1));
@@ -132,17 +136,42 @@ public sealed class ServerConfigTests
     [Fact]
     public void ExplicitEmptyAdminList_StillMeansNoAdmins()
     {
-        // Явный "ids": [] — осознанный выбор, дефолт его не перебивает.
+        // Явные "ids": [] и "megaIds": [] — осознанный выбор, дефолт их не перебивает.
         var cfg = Parse("""
         {
-          "admin": { "ids": [] }
+          "admin": { "ids": [], "megaIds": [] }
         }
         """);
 
         cfg.Normalize();
 
         Assert.Empty(cfg.Admin.Ids);
-        Assert.False(cfg.IsAdmin(25_354_325));
+        Assert.Empty(cfg.Admin.MegaIds);
+        Assert.False(cfg.IsAdmin(1_000_000));
+        Assert.False(cfg.IsMegaId(1_000_000));
+    }
+
+    [Fact]
+    public void MegaId_JoinsAdminsAndWinsOverlap()
+    {
+        var cfg = Parse("""
+        {
+          "admin": {
+            "ids": [ 500000 ],
+            "megaIds": [ 500000, 600000 ]
+          }
+        }
+        """);
+
+        cfg.Normalize();
+
+        Assert.True(cfg.IsAdmin(500000));
+        Assert.True(cfg.IsMegaId(500000));
+        Assert.True(cfg.IsAdmin(600000));
+        Assert.True(cfg.IsMegaId(600000));
+        Assert.Single(cfg.Admin.Ids.Where(id => id == 500000));
+        Assert.Contains(600000, cfg.Admin.Ids);
+        Assert.False(cfg.IsMegaId(500001));
     }
 
     [Fact]

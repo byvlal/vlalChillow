@@ -201,6 +201,17 @@ public sealed partial class GameNetHost
             if (id is < AccountStore.FirstId or > AccountStore.MaxId)
                 continue;
 
+            // Номер уже занят этим аккаунтом: перенумерация его сохранит, выдавать
+            // чужому нечего.
+            if (accounts.FindById(id) is not null)
+                continue;
+
+            // 1000000 — владелец по умолчанию. Его аккаунт получает первый номер
+            // при перенумерации (см. ResolvePreferredAdminAccountIds), поэтому это
+            // не «литерал, который достанется другому».
+            if (id == ConfigMigration.DefaultOwnerId && accounts.Count > 0)
+                continue;
+
             // Старый хеш ника тоже может выглядеть как номер аккаунта — это не литерал.
             if (accounts.FindAccountIdsByLegacyId(id).Count > 0)
                 continue;
@@ -228,6 +239,28 @@ public sealed partial class GameNetHost
 
         foreach (var id in _config.Admin.Ids)
         {
+            // 1000000 — владелец по умолчанию, но его аккаунт ещё может носить
+            // старый номер. Отдаём первый номер владельцу прежнего дефолта
+            // (25354325), а если такого нет — самому свежему аккаунту: владелец
+            // заходил позже всех.
+            if (id == ConfigMigration.DefaultOwnerId && accounts.FindById(id) is null)
+            {
+                var owner = accounts.FindAccountIdsByLegacyId(ConfigMigration.LegacyOwnerId)
+                        .Select(accounts.FindById)
+                        .Where(a => a is not null)
+                        .OrderByDescending(a => a!.LastSeenUtcMs)
+                        .ThenByDescending(a => a!.Id)
+                        .FirstOrDefault()
+                    ?? accounts.Export()
+                        .OrderByDescending(a => a.LastSeenUtcMs)
+                        .ThenByDescending(a => a.Id)
+                        .FirstOrDefault();
+
+                if (owner is not null && !result.Contains(owner.Id))
+                    result.Add(owner.Id);
+                continue;
+            }
+
             if (id is >= AccountStore.FirstId and <= AccountStore.MaxId
                 && accounts.FindById(id) is { } byId)
             {
@@ -317,13 +350,16 @@ public sealed partial class GameNetHost
     {
         _accounts?.Save();
         MigrateAdminIds();
+        SyncAdminStore();
     }
 
     /// <summary>
-    /// Заменить старые хеши в <c>admin.ids</c> на account ID. Работает в памяти:
-    /// файл с комментариями не переписываем, при следующем старте миграция повторится
-    /// и снова найдёт уже существующий аккаунт. Пока аккаунта нет (человек ещё не
-    /// заходил), старый хеш остаётся и продолжает работать через fallback в <c>IdOf</c>.
+    /// Заменить старые хеши в <c>admin.ids</c> и <c>admin.megaIds</c> на account ID.
+    /// Работает в памяти: файл с комментариями не переписываем, при следующем старте
+    /// миграция повторится и снова найдёт уже существующий аккаунт. Пока аккаунта нет
+    /// (человек ещё не заходил), старый хеш остаётся и продолжает работать через
+    /// fallback в <c>IdOf</c>. После замены вызывающий обязан сделать
+    /// <see cref="SyncAdminStore"/>, иначе запись и пароль останутся под старым id.
     /// </summary>
     private void MigrateAdminIds()
     {
@@ -334,7 +370,8 @@ public sealed partial class GameNetHost
         lock (_adminIdsGate)
         {
             var ids = _config.Admin.Ids;
-            if (ids.Count == 0)
+            var megaIds = _config.Admin.MegaIds;
+            if (ids.Count == 0 && megaIds.Count == 0)
                 return;
 
             // Новые аккаунты с тем же ником не должны отбирать права: сначала самые
@@ -343,9 +380,6 @@ public sealed partial class GameNetHost
                          .OrderByDescending(a => a.LastSeenUtcMs)
                          .ThenByDescending(a => a.Id))
             {
-                if (ids.Contains(account.Id))
-                    continue;
-
                 var legacy = account.AllNicks
                     .Select(LegacyNickHash.ForNick)
                     .Where(id => id is >= LegacyNickHash.Min and <= LegacyNickHash.Max)
@@ -354,16 +388,47 @@ public sealed partial class GameNetHost
 
                 foreach (var oldId in legacy)
                 {
-                    var index = ids.IndexOf(oldId);
-                    if (index < 0)
-                        continue;
+                    if (ReplaceAdminId(ids, oldId, account.Id))
+                    {
+                        Console.WriteLine(
+                            $"[admin] admin.ids: старый хеш {oldId} → аккаунт {account.Id} " +
+                            $"('{account.Nick}')");
+                    }
 
-                    ids[index] = account.Id;
-                    Console.WriteLine(
-                        $"[admin] admin.ids: старый хеш {oldId} → аккаунт {account.Id} " +
-                        $"('{account.Nick}')");
+                    if (ReplaceAdminId(megaIds, oldId, account.Id))
+                    {
+                        Console.WriteLine(
+                            $"[admin] admin.megaIds: старый хеш {oldId} → аккаунт {account.Id} " +
+                            $"('{account.Nick}')");
+                    }
                 }
             }
+
+            DedupeAdminIds(ids);
+            DedupeAdminIds(megaIds);
+        }
+    }
+
+    private static bool ReplaceAdminId(List<int> list, int oldId, int newId)
+    {
+        var changed = false;
+        for (var i = 0; i < list.Count; i++)
+        {
+            if (list[i] != oldId)
+                continue;
+            list[i] = newId;
+            changed = true;
+        }
+
+        return changed;
+    }
+
+    private static void DedupeAdminIds(List<int> list)
+    {
+        for (var i = list.Count - 1; i >= 0; i--)
+        {
+            if (list.IndexOf(list[i]) != i)
+                list.RemoveAt(i);
         }
     }
 
@@ -444,19 +509,19 @@ public sealed partial class GameNetHost
         if (ServerIdentity.IsServerNick(nick))
             return true;
 
-        if (_config.IsAdmin(LegacyNickHash.ForNick(nick)))
+        if (IsAdminId(LegacyNickHash.ForNick(nick)))
             return true;
 
         var accounts = _accounts;
         if (accounts is null)
             return false;
 
-        if (accounts.FindByNick(nick) is { } owner && _config.IsAdmin(owner.Id))
+        if (accounts.FindByNick(nick) is { } owner && IsAdminId(owner.Id))
             return true;
 
         foreach (var account in accounts.FindAccountsByNick(nick))
         {
-            if (_config.IsAdmin(account.Id))
+            if (IsAdminId(account.Id))
                 return true;
         }
 

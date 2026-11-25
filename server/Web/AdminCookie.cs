@@ -6,24 +6,68 @@ namespace StandChillow.LanServer.Web;
 /// <remarks>
 /// <para>
 /// Отдельная от <see cref="SiteCookie"/>: админ-доступ — не то же самое, что вход на сайт.
-/// Токен и его срок (7 дней) лежат в <c>auth/sessions.json</c>, поэтому кука и сессия
+/// Токен и его срок лежат в <c>auth/sessions.json</c>, поэтому кука и сессия
 /// переживают и рестарт сервера, и закрытие браузера.
 /// </para>
 /// <para>
-/// Флаги как у куки сайта: <c>HttpOnly</c>, <c>SameSite=Lax</c>, <c>Secure</c> по флагу
-/// (по LAN панель обычно открывают по http).
+/// Вторая кука — <c>sc_admin_dev</c> — привязывает сессию к конкретному браузеру.
+/// Без неё скопированная админ-кука не даёт доступа: сервер сверяет хеш устройства,
+/// записанный при входе. Обе куки <c>HttpOnly</c>, <c>SameSite=Strict</c>, <c>Secure</c>
+/// по флагу (по LAN панель обычно открывают по http).
 /// </para>
 /// </remarks>
 public static class AdminCookie
 {
-    /// <summary>Имя куки.</summary>
+    /// <summary>Имя куки админ-сессии.</summary>
     public const string Name = "sc_admin";
+
+    /// <summary>Имя куки устройства, к которому привязана админ-сессия.</summary>
+    public const string DeviceName = "sc_admin_dev";
 
     /// <summary>
     /// Достать токен админ-сессии из заголовка <c>Cookie</c>. Нет куки — <c>null</c>.
     /// </summary>
     /// <param name="headers">Заголовки запроса (регистр имени не важен).</param>
-    public static string? ReadToken(IReadOnlyDictionary<string, string> headers)
+    public static string? ReadToken(IReadOnlyDictionary<string, string> headers) =>
+        ReadCookie(headers, Name);
+
+    /// <summary>Достать токен устройства из заголовка <c>Cookie</c>.</summary>
+    public static string? ReadDeviceToken(IReadOnlyDictionary<string, string> headers) =>
+        ReadCookie(headers, DeviceName);
+
+    /// <summary>Заголовок <c>Set-Cookie</c> с живым админ-токеном.</summary>
+    /// <param name="token">Токен админ-сессии.</param>
+    /// <param name="path">Префикс панели (<c>/vlalchillow</c> за прокси) или <c>/</c>.</param>
+    /// <param name="secure">Ставить ли <c>Secure</c> (только https).</param>
+    public static (string Name, string Value) Build(string token, string path, bool secure) =>
+        BuildCookie(Name, token, path, secure, AdminSessions.TtlDays);
+
+    /// <summary>Заголовок <c>Set-Cookie</c> с живым токеном устройства.</summary>
+    public static (string Name, string Value) BuildDevice(string token, string path, bool secure) =>
+        BuildCookie(DeviceName, token, path, secure, AdminSessions.TtlDays);
+
+    /// <summary>Заголовок <c>Set-Cookie</c>, который гасит админ-куку.</summary>
+    public static (string Name, string Value) BuildExpired(string path, bool secure) =>
+        BuildCookie(Name, "", path, secure, 0);
+
+    /// <summary>Заголовок <c>Set-Cookie</c>, который гасит куку устройства.</summary>
+    public static (string Name, string Value) BuildDeviceExpired(string path, bool secure) =>
+        BuildCookie(DeviceName, "", path, secure, 0);
+
+    private static (string Name, string Value) BuildCookie(
+        string name, string token, string path, bool secure, int days)
+    {
+        var scope = SiteCookie.NormalizePath(path);
+        var value = $"{name}={token}; Path={scope}; Max-Age={days * 24 * 60 * 60}; " +
+                    "HttpOnly; SameSite=Strict";
+        if (secure)
+            value += "; Secure";
+
+        return ("Set-Cookie", value);
+    }
+
+    private static string? ReadCookie(
+        IReadOnlyDictionary<string, string> headers, string name)
     {
         if (headers is null)
             return null;
@@ -38,8 +82,8 @@ public static class AdminCookie
             if (eq <= 0)
                 continue;
 
-            var name = part[..eq].Trim();
-            if (!name.Equals(Name, StringComparison.OrdinalIgnoreCase))
+            var cookieName = part[..eq].Trim();
+            if (!cookieName.Equals(name, StringComparison.OrdinalIgnoreCase))
                 continue;
 
             var value = part[(eq + 1)..].Trim();
@@ -47,31 +91,5 @@ public static class AdminCookie
         }
 
         return null;
-    }
-
-    /// <summary>Заголовок <c>Set-Cookie</c> с живым админ-токеном.</summary>
-    /// <param name="token">Токен админ-сессии.</param>
-    /// <param name="path">Префикс панели (<c>/vlalchillow</c> за прокси) или <c>/</c>.</param>
-    /// <param name="secure">Ставить ли <c>Secure</c> (только https).</param>
-    public static (string Name, string Value) Build(string token, string path, bool secure)
-    {
-        var scope = SiteCookie.NormalizePath(path);
-        var value = $"{Name}={token}; Path={scope}; Max-Age={AdminSessions.TtlDays * 24 * 60 * 60}; " +
-                    "HttpOnly; SameSite=Lax";
-        if (secure)
-            value += "; Secure";
-
-        return ("Set-Cookie", value);
-    }
-
-    /// <summary>Заголовок <c>Set-Cookie</c>, который гасит админ-куку.</summary>
-    public static (string Name, string Value) BuildExpired(string path, bool secure)
-    {
-        var scope = SiteCookie.NormalizePath(path);
-        var value = $"{Name}=; Path={scope}; HttpOnly; SameSite=Lax; Max-Age=0";
-        if (secure)
-            value += "; Secure";
-
-        return ("Set-Cookie", value);
     }
 }

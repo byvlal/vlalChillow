@@ -14,9 +14,10 @@ namespace StandChillow.LanServer.Auth;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <c>config.json</c> — только <c>admin.ids</c>: кто может быть админом. Роли, права и
-/// мега-IP живут здесь и меняются только мега-админом (в панели) или консолью
-/// владельца. Обычный админ не может выдать права даже себе.
+/// <c>config.json</c> — <c>admin.ids</c> и <c>admin.megaIds</c>: кто может быть админом
+/// и кто из них мега. Права обычных админов живут здесь и меняются только мега-админом
+/// (в панели) или консолью владельца. Мега-статус приходит только из конфига, поэтому
+/// смена IP или VPN его не отнимает. Обычный админ не может выдать права даже себе.
 /// </para>
 /// <para>
 /// Пароль на диске — только в <c>password.txt</c> (600) и только в виде
@@ -27,13 +28,16 @@ namespace StandChillow.LanServer.Auth;
 /// одновременно, а файл переписывается атомарно (временный + rename).
 /// </para>
 /// </remarks>
-public sealed class AdminStore
+public sealed partial class AdminStore
 {
     public const string DirectoryName = "auth";
     public const string RecordsFileName = "admins.json";
     public const string JournalFileName = "journal.jsonl";
     public const string ReadmeFileName = "README.md";
     public const string PasswordFileName = "password.txt";
+
+    /// <summary>Отметка записи, созданной тестовой автовыдачей мега-прав.</summary>
+    private const string RuntimeMegaMarker = "test-auto";
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -66,6 +70,13 @@ public sealed class AdminStore
     private readonly string _directory;
     private readonly Action<string>? _log;
     private readonly Dictionary<int, AdminRecord> _byId = new();
+    private readonly HashSet<int> _megaIds = new();
+
+    /// <summary>
+    /// Мега-права, выданные в рантайме тестовым режимом. В <c>config.json</c> и
+    /// <c>admins.json</c> они не попадают; после перезапуска выдаются заново.
+    /// </summary>
+    private readonly HashSet<int> _runtimeMega = new();
 
     public AdminStore(string directory, Action<string>? log = null)
     {
@@ -107,32 +118,47 @@ public sealed class AdminStore
     }
 
     /// <summary>
-    /// Загрузить хранилище и синхронизировать его с <c>admin.ids</c>: новым id —
-    /// запись и пароль, у кого пароля нет — сгенерировать. Повторный вызов безопасен.
+    /// Загрузить хранилище и синхронизировать его с <c>admin.ids</c> +
+    /// <c>admin.megaIds</c>: новым id — запись и пароль, у кого пароля нет —
+    /// сгенерировать. Повторный вызов безопасен.
     /// </summary>
-    public void Initialize(IEnumerable<int> adminIds, DateTime nowUtc)
+    public void Initialize(IEnumerable<int> adminIds, IEnumerable<int> megaIds, DateTime nowUtc)
     {
         lock (_gate)
         {
             EnsureDirectory(_directory, DirectoryMode);
             LoadLocked();
-            SyncLocked(adminIds, nowUtc);
+
+            // Записи, созданные тестовой автовыдачей, не должны переживать
+            // перезапуск: сервер снова выдаст мега-права при входе, а мусорные
+            // «админы» из прошлого запуска останутся только в журнале.
+            var stale = _byId.Values
+                .Where(record => record.AddedBy == RuntimeMegaMarker)
+                .Select(record => record.Id)
+                .ToList();
+            foreach (var id in stale)
+                _byId.Remove(id);
+            if (stale.Count > 0)
+                SaveLocked();
+
+            SyncLocked(adminIds, megaIds, nowUtc);
             WriteReadmeLocked();
             RetireLegacyAuthFileLocked();
         }
     }
 
     /// <summary>
-    /// Досоздать записи после перечитывания <c>admin.ids</c>. Существующие права и
-    /// пароли не трогаются; удалённые из конфига записи остаются для истории.
+    /// Досоздать записи после перечитывания <c>admin.ids</c>/<c>admin.megaIds</c>.
+    /// Существующие права и пароли не трогаются; удалённые из конфига записи остаются
+    /// для истории. Роль пересчитывается: мега — только id из <c>megaIds</c>.
     /// </summary>
-    public void Sync(IEnumerable<int> adminIds, DateTime nowUtc)
+    public void Sync(IEnumerable<int> adminIds, IEnumerable<int> megaIds, DateTime nowUtc)
     {
         lock (_gate)
         {
             EnsureDirectory(_directory, DirectoryMode);
             LoadLocked();
-            SyncLocked(adminIds, nowUtc);
+            SyncLocked(adminIds, megaIds, nowUtc);
             WriteReadmeLocked();
         }
     }
@@ -194,33 +220,95 @@ public sealed class AdminStore
             return _byId.TryGetValue(id, out var record) ? record.AuthVersion : 0;
     }
 
-    /// <summary>Мега-права: IP должен совпасть с <c>megaIps</c> записи.</summary>
-    public bool IsMega(int id, IPAddress? ip)
+    /// <summary>
+    /// Мега-права: id входит в <c>admin.megaIds</c> и для него создана запись либо
+    /// права выданы тестовым режимом в этом процессе. IP и адрес запроса не участвуют.
+    /// </summary>
+    public bool IsMega(int id)
     {
-        if (ip is null)
-            return false;
+        lock (_gate)
+            return (_byId.ContainsKey(id) && _megaIds.Contains(id))
+                   || _runtimeMega.Contains(id);
+    }
 
-        var text = NormalizeIp(ip);
-        if (text.Length == 0)
+    /// <summary>Мега-права, выданные тестовым режимом (не из конфига).</summary>
+    public bool IsRuntimeMega(int id)
+    {
+        lock (_gate)
+            return _runtimeMega.Contains(id);
+    }
+
+    /// <summary>
+    /// Выдать мега-права в рантайме (тестовый режим). Создаёт запись админа без
+    /// пароля, чтобы затворы нашли её; в <c>config.json</c> ничего не пишется.
+    /// Повторная выдача идемпотентна.
+    /// </summary>
+    public bool GrantRuntimeMega(
+        int id, string nick, DateTime nowUtc, AdminJournalContext? context = null)
+    {
+        if (id <= 0)
             return false;
 
         lock (_gate)
         {
-            return _byId.TryGetValue(id, out var record)
-                   && record.MegaIps.Any(candidate =>
-                       string.Equals(candidate, text, StringComparison.OrdinalIgnoreCase));
+            var changed = _runtimeMega.Add(id);
+            if (!_byId.TryGetValue(id, out var record))
+            {
+                record = new AdminRecord
+                {
+                    Id = id,
+                    Nick = nick ?? "",
+                    Role = "mega",
+                    Permissions = AdminPermissions.All.ToList(),
+                    AddedBy = RuntimeMegaMarker,
+                    AuthVersion = 1,
+                    CreatedUtc = nowUtc,
+                    UpdatedUtc = nowUtc,
+                };
+                _byId[id] = record;
+                changed = true;
+            }
+            else
+            {
+                if (record.Role != "mega")
+                {
+                    record.Role = "mega";
+                    changed = true;
+                }
+                if (record.UpdatedUtc < nowUtc)
+                {
+                    record.UpdatedUtc = nowUtc;
+                    changed = true;
+                }
+            }
+
+            if (!changed)
+                return true;
+
+            SaveLocked();
+            JournalLocked(new
+            {
+                category = "security",
+                action = "test_auto_mega",
+                actorId = id,
+                targetId = id,
+                nick,
+            }, nowUtc, context ?? new AdminJournalContext(
+                id, nick ?? "", TargetType: "admin", TargetId: id, TargetNick: nick ?? "",
+                Note: "тестовый режим: автовыдача мега-админки"));
+            return true;
         }
     }
 
     /// <summary>Права с учётом мега-обхода. Неотнимаемые есть всегда.</summary>
-    public IReadOnlyList<string> PermissionsFor(int id, IPAddress? ip)
+    public IReadOnlyList<string> PermissionsFor(int id)
     {
         lock (_gate)
         {
             if (!_byId.TryGetValue(id, out var record))
                 return Array.Empty<string>();
 
-            if (IsMegaLocked(record, ip))
+            if (_megaIds.Contains(id) || _runtimeMega.Contains(id))
                 return AdminPermissions.All.ToList();
 
             return AdminPermissions.Normalize(record.Permissions);
@@ -228,7 +316,7 @@ public sealed class AdminStore
     }
 
     /// <summary>Есть ли право. Мега-админ получает любое.</summary>
-    public bool HasPermission(int id, IPAddress? ip, string permission)
+    public bool HasPermission(int id, string permission)
     {
         if (!AdminPermissions.IsKnown(permission))
             return false;
@@ -237,7 +325,7 @@ public sealed class AdminStore
         {
             if (!_byId.TryGetValue(id, out var record))
                 return false;
-            if (IsMegaLocked(record, ip))
+            if (_megaIds.Contains(id) || _runtimeMega.Contains(id))
                 return true;
             return AdminPermissions.Normalize(record.Permissions)
                 .Contains(permission, StringComparer.Ordinal);
@@ -253,7 +341,8 @@ public sealed class AdminStore
         int targetId,
         IEnumerable<string>? permissions,
         DateTime nowUtc,
-        out string? error)
+        out string? error,
+        AdminJournalContext? context = null)
     {
         error = null;
         lock (_gate)
@@ -278,101 +367,8 @@ public sealed class AdminStore
                 targetId,
                 before,
                 after,
-            }, nowUtc);
-            return true;
-        }
-    }
-
-    /// <summary>Добавить мега-IP. Первого мега создаёт только консоль владельца.</summary>
-    public bool AddMegaIp(
-        int? actorId,
-        int targetId,
-        string? ipText,
-        DateTime nowUtc,
-        out string? error)
-    {
-        error = null;
-        var canonical = NormalizeIpText(ipText);
-        if (canonical.Length == 0)
-        {
-            error = "IP не распознан";
-            return false;
-        }
-
-        lock (_gate)
-        {
-            if (!_byId.TryGetValue(targetId, out var record))
-            {
-                error = $"id #{targetId} нет среди админов";
-                return false;
-            }
-
-            if (record.MegaIps.Contains(canonical, StringComparer.OrdinalIgnoreCase))
-            {
-                error = $"IP {canonical} уже в megaIps";
-                return false;
-            }
-
-            record.MegaIps.Add(canonical);
-            record.Role = "mega";
-            record.UpdatedUtc = nowUtc;
-            SaveLocked();
-            JournalLocked(new
-            {
-                category = "permission",
-                action = "mega_add",
-                actorId,
-                targetId,
-                after = canonical,
-            }, nowUtc);
-            return true;
-        }
-    }
-
-    /// <summary>Убрать мега-IP.</summary>
-    public bool RemoveMegaIp(
-        int? actorId,
-        int targetId,
-        string? ipText,
-        DateTime nowUtc,
-        out string? error)
-    {
-        error = null;
-        var canonical = NormalizeIpText(ipText);
-        if (canonical.Length == 0)
-        {
-            error = "IP не распознан";
-            return false;
-        }
-
-        lock (_gate)
-        {
-            if (!_byId.TryGetValue(targetId, out var record))
-            {
-                error = $"id #{targetId} нет среди админов";
-                return false;
-            }
-
-            var removed = record.MegaIps.RemoveAll(candidate =>
-                string.Equals(candidate, canonical, StringComparison.OrdinalIgnoreCase));
-            if (removed == 0)
-            {
-                error = $"IP {canonical} нет в megaIps";
-                return false;
-            }
-
-            if (record.MegaIps.Count == 0)
-                record.Role = "admin";
-            record.UpdatedUtc = nowUtc;
-            SaveLocked();
-            JournalLocked(new
-            {
-                category = "permission",
-                action = "mega_remove",
-                actorId,
-                targetId,
-                before = canonical,
-            }, nowUtc);
+            }, nowUtc, context ?? new AdminJournalContext(
+                actorId, TargetType: "admin", TargetId: targetId, Reversible: true));
             return true;
         }
     }
@@ -386,7 +382,8 @@ public sealed class AdminStore
         int targetId,
         DateTime nowUtc,
         out string passwordPath,
-        out string? error)
+        out string? error,
+        AdminJournalContext? context = null)
     {
         passwordPath = "";
         error = null;
@@ -407,14 +404,15 @@ public sealed class AdminStore
                 actorId,
                 targetId,
                 authVersion = record.AuthVersion,
-            }, nowUtc);
+            }, nowUtc, context ?? new AdminJournalContext(
+                actorId, TargetType: "admin", TargetId: targetId));
             return true;
         }
     }
 
     /// <summary>Новый пароль всем записям. Возвращает пары id → путь к файлу.</summary>
     public IReadOnlyList<(int Id, string Path)> RegenerateAllPasswords(
-        int? actorId, DateTime nowUtc)
+        int? actorId, DateTime nowUtc, AdminJournalContext? context = null)
     {
         lock (_gate)
         {
@@ -429,7 +427,8 @@ public sealed class AdminStore
                 action = "password_regen_all",
                 actorId,
                 count = result.Count,
-            }, nowUtc);
+            }, nowUtc, context ?? new AdminJournalContext(
+                actorId, TargetType: "admin", Note: $"всего {result.Count}"));
             return result;
         }
     }
@@ -439,31 +438,43 @@ public sealed class AdminStore
         Path.Combine(_directory, id.ToString(CultureInfo.InvariantCulture), PasswordFileName);
 
     /// <summary>Дописать запись в журнал (JSONL, по одной строке).</summary>
-    public void Journal(string category, string action, int? actorId, int? targetId,
-        object? before = null, object? after = null)
+    /// <returns>Id записи или <c>null</c>, если журнал недоступен.</returns>
+    public string? Journal(
+        string category, string action, int? actorId, int? targetId,
+        object? before = null, object? after = null,
+        AdminJournalContext? context = null)
     {
         lock (_gate)
-            JournalLocked(new { category, action, actorId, targetId, before, after }, DateTime.UtcNow);
+            return JournalLocked(
+                new { category, action, actorId, targetId, before, after },
+                DateTime.UtcNow,
+                context ?? new AdminJournalContext(
+                    actorId, TargetType: "player", TargetId: targetId));
     }
 
     // ── внутренности (вызываются под lock) ───────────────────────────────────
 
-    private static bool IsMegaLocked(AdminRecord record, IPAddress? ip)
-    {
-        if (ip is null || record.MegaIps.Count == 0)
-            return false;
-        var text = NormalizeIp(ip);
-        return text.Length > 0 && record.MegaIps.Contains(text, StringComparer.OrdinalIgnoreCase);
-    }
-
-    private void SyncLocked(IEnumerable<int> adminIds, DateTime nowUtc)
+    private void SyncLocked(
+        IEnumerable<int> adminIds,
+        IEnumerable<int> megaIds,
+        DateTime nowUtc)
     {
         var changed = false;
-        foreach (var raw in (adminIds ?? Array.Empty<int>()).Distinct().OrderBy(id => id))
-        {
-            if (raw < 1)
-                continue;
+        var mega = new HashSet<int>((megaIds ?? Array.Empty<int>()).Where(id => id >= 1));
+        _megaIds.Clear();
+        foreach (var id in mega)
+            _megaIds.Add(id);
 
+        // Мега-админ обязан быть админом, даже если в ids его забыли вписать.
+        var allIds = (adminIds ?? Array.Empty<int>())
+            .Concat(mega)
+            .Where(id => id >= 1)
+            .Distinct()
+            .OrderBy(id => id)
+            .ToList();
+
+        foreach (var raw in allIds)
+        {
             if (!_byId.TryGetValue(raw, out var record))
             {
                 record = new AdminRecord
@@ -488,26 +499,21 @@ public sealed class AdminStore
                 changed = true;
             }
 
-            var normalizedIps = record.MegaIps
-                .Select(NormalizeIpText)
-                .Where(ip => ip.Length > 0)
-                .Distinct(StringComparer.OrdinalIgnoreCase)
-                .ToList();
-            if (!normalizedIps.SequenceEqual(record.MegaIps, StringComparer.OrdinalIgnoreCase))
-            {
-                record.MegaIps = normalizedIps;
+            if (EnsurePasswordLocked(record, nowUtc))
                 changed = true;
-            }
+        }
 
-            var role = record.MegaIps.Count > 0 ? "mega" : "admin";
+        // Роль — информационная, но список и журнал должны показывать правду.
+        foreach (var record in _byId.Values)
+        {
+            var role = mega.Contains(record.Id) || _runtimeMega.Contains(record.Id)
+                ? "mega"
+                : "admin";
             if (record.Role != role)
             {
                 record.Role = role;
                 changed = true;
             }
-
-            if (EnsurePasswordLocked(record, nowUtc))
-                changed = true;
         }
 
         if (changed)
@@ -608,11 +614,6 @@ public sealed class AdminStore
                     continue;
                 record.Nick ??= "";
                 record.Permissions = AdminPermissions.Normalize(record.Permissions);
-                record.MegaIps = (record.MegaIps ?? new List<string>())
-                    .Select(NormalizeIpText)
-                    .Where(ip => ip.Length > 0)
-                    .Distinct(StringComparer.OrdinalIgnoreCase)
-                    .ToList();
                 record.AuthVersion = Math.Max(1, record.AuthVersion);
                 record.CreatedUtc = record.CreatedUtc == default ? DateTime.UtcNow : record.CreatedUtc;
                 record.UpdatedUtc = record.UpdatedUtc == default ? record.CreatedUtc : record.UpdatedUtc;
@@ -647,37 +648,9 @@ public sealed class AdminStore
         TrySetMode(RecordsPath, SecretFileMode);
     }
 
-    private void JournalLocked(object entry, DateTime nowUtc)
-    {
-        try
-        {
-            EnsureDirectory(_directory, DirectoryMode);
-            var payload = new Dictionary<string, object?>
-            {
-                ["id"] = "J-" + Guid.NewGuid().ToString("N")[..12].ToUpperInvariant(),
-                ["ts"] = nowUtc.ToString("O"),
-            };
-
-            // JsonElement из анонимного объекта: дописываем поля в тот же объект.
-            // Значения оставляем узлами: списки прав должны лежать массивами, а не
-            // строкой — по журналу потом строится откат.
-            var node = JsonSerializer.SerializeToNode(entry, JournalJsonOptions)?.AsObject();
-            if (node is not null)
-            {
-                foreach (var property in node)
-                    payload[property.Key] = property.Value;
-            }
-
-            var line = JsonSerializer.Serialize(payload, JournalJsonOptions) + "\n";
-            var path = Path.Combine(_directory, JournalFileName);
-            File.AppendAllText(path, line, new UTF8Encoding(false));
-            TrySetMode(path, SecretFileMode);
-        }
-        catch (Exception ex)
-        {
-            Log($"[auth] журнал не записан: {ex.Message}");
-        }
-    }
+    private string? JournalLocked(
+        object entry, DateTime nowUtc, AdminJournalContext? context = null) =>
+        AppendJournal(entry, nowUtc, context);
 
     private void WriteReadmeLocked()
     {
@@ -686,25 +659,26 @@ public sealed class AdminStore
             "Этот каталог сервер ведёт сам. Руками править можно, но осторожно:\n" +
             "пароль читается из `password.txt` при старте, а права — только из `admins.json`.\n\n" +
             "## Файлы\n\n" +
-            "- `admins.json` — id, ник, роль, права, `authVersion`, `megaIps`, SHA-256 пароля.\n" +
+            "- `admins.json` — id, ник, роль, права, `authVersion`, SHA-256 пароля.\n" +
             "- `<id>/password.txt` — личный пароль вида `<id>-<hex64>` (права 600).\n" +
             "  Показывать его никому нельзя: кто ввёл пароль, тот и админ.\n" +
             "- `sessions.json` — веб-сессии админки (хранится только SHA-256 токена).\n" +
             "- `site-sessions.json` — сессии сайта (тоже только хеши токенов).\n" +
             "- `journal.jsonl` — журнал действий: вход, права, пароли, баны.\n\n" +
             "## Права\n\n" +
-            "`admin.ids` в `config.json` — только список id, кто может быть админом.\n" +
-            "Роли и права в конфиге не задаются. Новый админ получает `dashboard` и\n" +
-            "`journal`; остальное (`bans`, `reports`, `customization`, `rooms`, `players`,\n" +
-            "`config`, `admins`, `rollback`) выдаёт только мега-админ.\n\n" +
+            "`admin.ids` в `config.json` — обычные админы, `admin.megaIds` — мега-админы.\n" +
+            "Мега-статус даёт только конфиг и не зависит от IP. Если id есть в обоих\n" +
+            "списках, он мега. Новый админ получает `dashboard` и `journal`; остальное\n" +
+            "(`bans`, `reports`, `customization`, `rooms`, `players`, `config`, `admins`,\n" +
+            "`rollback`) выдаёт только мега-админ.\n\n" +
             "`dashboard` и `journal` не отнимаются ни у кого. Мега-админ обходит матрицу\n" +
-            "прав целиком, но только с IP из своего `megaIps`.\n\n" +
+            "прав целиком с любого адреса.\n\n" +
             "## Консоль\n\n" +
             "- `admin list` — кто есть и какие права.\n" +
             "- `admin passwd regen <id>|all` — новый пароль; старые сессии умирают.\n" +
-            "- `admin mega add <id> <ip>` — первый мега-админ только отсюда.\n" +
-            "- `admin mega remove <id> <ip>`.\n" +
-            "- `admin perm grant|revoke|set <id> <права...>`.\n\n" +
+            "- `admin perm grant|revoke|set <id> <права...>`.\n" +
+            "- Мега-админы задаются в `config.json` → `admin.megaIds`; из консоли список\n" +
+            "  не меняется.\n\n" +
             "`auth.txt` больше не используется: у каждого свой пароль в этом каталоге.\n";
 
         try

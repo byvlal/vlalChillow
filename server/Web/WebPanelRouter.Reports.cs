@@ -354,10 +354,20 @@ public sealed partial class WebPanelRouter
         if (status is not (ReportStatuses.Accepted or ReportStatuses.Rejected))
             return ApiError(400, "bad_status", "статус — accepted или rejected");
 
+        var before = _options.Reports.Export()
+            .FirstOrDefault(r => string.Equals(r.Id, id, StringComparison.Ordinal));
         var (error, record) = _options.Reports.SetStatus(
             id, status, admin.Nick, parsed?.Note, DateTime.UtcNow);
         if (error is not null || record is null)
             return ApiError(400, "report_not_updated", error ?? "жалоба не обновлена");
+
+        _options.AdminStore?.Journal("report", "status", admin.PlayerId, record.TargetId,
+            before: new { reportId = record.Id, status = before?.Status ?? ReportStatuses.Open },
+            after: new { reportId = record.Id, status = record.Status },
+            context: new AdminJournalContext(
+                admin.PlayerId, admin.Nick, request.RemoteAddress?.ToString() ?? "",
+                "report", record.TargetId, record.TargetNick,
+                Reversible: true, Note: parsed?.Note ?? ""));
 
         Console.WriteLine(
             $"[report] #{admin.PlayerId} " +

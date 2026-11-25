@@ -11,8 +11,8 @@ namespace StandChillow.LanServer.Auth;
 /// выдаются поштучно.
 /// </para>
 /// <para>
-/// Мега-админ обходит эту матрицу целиком: его права определяет IP из <c>megaIps</c>,
-/// а не список <c>permissions</c>.
+/// Мега-админ обходит эту матрицу целиком: его статус задаётся только
+/// <c>admin.megaIds</c> в <c>config.json</c>, а не списком <c>permissions</c> и не IP.
 /// </para>
 /// </remarks>
 public static class AdminPermissions

@@ -118,9 +118,42 @@ public sealed class SiteSessions
                 return null;
             }
 
-            var updated = session with { LastSeenUtc = nowUtc };
-            _byHash[hash] = updated;
-            return updated;
+            // LastSeen обновляет Renew при заходе на сайт, а не каждый запрос:
+            // иначе страница с десятком GET переписывала бы файл.
+            return session;
+        }
+    }
+
+    /// <summary>
+    /// Продлить сессию при заходе на сайт и вернуть обновлённую. На диск пишем не
+    /// чаще раза в 6 часов; куку всё равно перевыставляем при каждом <c>/api/me</c>.
+    /// </summary>
+    public SiteSession? Renew(string? token, DateTime nowUtc)
+    {
+        if (string.IsNullOrEmpty(token))
+            return null;
+
+        var hash = HashToken(token);
+        lock (_gate)
+        {
+            if (!_byHash.TryGetValue(hash, out var session))
+                return null;
+            if (session.ExpiresUtc <= nowUtc)
+            {
+                RemoveLocked(hash, session.PlayerId);
+                SaveLocked();
+                return null;
+            }
+
+            var extended = session with
+            {
+                LastSeenUtc = nowUtc,
+                ExpiresUtc = nowUtc.Add(_ttl),
+            };
+            _byHash[hash] = extended;
+            if (session.ExpiresUtc - nowUtc < _ttl - TimeSpan.FromHours(6))
+                SaveLocked();
+            return extended;
         }
     }
 

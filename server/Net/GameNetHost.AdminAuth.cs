@@ -41,16 +41,44 @@ public sealed partial class GameNetHost
         public int Attempts;
     }
 
-    /// <summary>Хранилище админов (пароли, права, megaIps). Может быть <c>null</c> в тестах.</summary>
+    /// <summary>Хранилище админов (пароли, права). Может быть <c>null</c> в тестах.</summary>
     internal AdminStore? Admins => _adminStore;
 
     /// <summary>
-    /// Id в <c>admin.ids</c> И этот адрес уже ввёл пароль — только тогда есть права.
+    /// Пересоздать записи и пароли под текущие <c>admin.ids</c>/<c>admin.megaIds</c>.
+    /// Вызывается после перечитывания конфига и после миграции старых хешей: иначе
+    /// в <c>auth/</c> остаётся запись под хешем, и вход по настоящему id не находит пароль.
+    /// </summary>
+    private void SyncAdminStore()
+    {
+        _adminStore?.Sync(_config.Admin.Ids, _config.Admin.MegaIds, DateTime.UtcNow);
+    }
+
+    /// <summary>
+    /// Id админа с учётом рантайм-выдачи тестового режима: конфиг или
+    /// <see cref="AdminStore.GrantRuntimeMega"/>. Обычные проверки игры должны
+    /// использовать этот метод, а не <c>_config.IsAdmin</c> напрямую.
+    /// </summary>
+    internal bool IsAdminId(int id) =>
+        id >= AdminConfig.MinId
+        && (_config.IsAdmin(id) || _adminStore?.IsRuntimeMega(id) == true);
+
+    /// <summary>Мега-админ: конфиг <c>admin.megaIds</c> или тестовая выдача.</summary>
+    internal bool IsMegaId(int id) =>
+        id >= AdminConfig.MinId
+        && (_config.IsMegaId(id) || _adminStore?.IsRuntimeMega(id) == true);
+
+    /// <summary>
+    /// Id в админском списке И этот адрес уже ввёл пароль — только тогда есть права.
+    /// В тестовом режиме <c>test.noAdminPassword</c> пароль не нужен.
     /// </summary>
     internal bool IsAdminAuthorized(int id, IPAddress? ip)
     {
-        if (!_config.IsAdmin(id) || _adminStore is null || ip is null)
+        if (!IsAdminId(id) || _adminStore is null || ip is null)
             return false;
+
+        if (_config.Test.NoAdminPassword)
+            return true;
 
         var key = AuthKey(id, ip);
         if (!_gameAdminAuth.TryGetValue(key, out var version))
@@ -67,21 +95,48 @@ public sealed partial class GameNetHost
     }
 
     /// <summary>
-    /// Админский id, но этот адрес пароль ещё не вводил: в игру пускать нельзя.
+    /// Админский id из конфига, но этот адрес пароль ещё не вводил: в игру пускать
+    /// нельзя. Рантайм-мега из тестового режима сюда не входит: у него может не быть
+    /// пароля, и запирать его в теневом лобби нельзя. Права ему всё равно даст только
+    /// <c>test.noAdminPassword</c> или обычный ввод пароля.
     /// </summary>
     internal bool IsUnauthorizedAdmin(int id, IPAddress? ip) =>
-        _config.IsAdmin(id) && !IsAdminAuthorized(id, ip);
-
+        !_config.Test.NoAdminPassword && _config.IsAdmin(id) && !IsAdminAuthorized(id, ip);
     /// <summary>
     /// Живая проверка админства для веб-панели: читает текущий <c>_config</c>, поэтому
     /// перечитывание конфига (admin.ids) сразу меняет ответ.
     /// </summary>
-    internal bool IsAdminLive(int id) => _config.IsAdmin(id);
+    internal bool IsAdminLive(int id) => IsAdminId(id);
+
+    /// <summary>
+    /// Тестовый режим: выдать мега-админку аккаунту, у которого её нет. Вызывается
+    /// только после того, как сервер узнал настоящий id аккаунта (существующего или
+    /// только что созданного при входе). В <c>config.json</c> ничего не пишется.
+    /// </summary>
+    internal bool TryAutoMega(int id, string nick, DateTime nowUtc)
+    {
+        if (!_config.Test.AutoMegaAdmin || id < AdminConfig.MinId)
+            return false;
+        if (_config.IsAdmin(id))
+            return false;
+
+        var account = _accounts?.FindById(id);
+        if (account is null)
+            return false;
+
+        var display = string.IsNullOrWhiteSpace(account.Nick) ? nick : account.Nick;
+        return _adminStore?.GrantRuntimeMega(
+            id, display ?? "", nowUtc,
+            new AdminJournalContext(
+                id, display ?? "", TargetType: "admin", TargetId: id,
+                TargetNick: display ?? "",
+                Note: "тестовый режим: автовыдача мега-админки")) == true;
+    }
 
     /// <summary>Есть ли право на действие. Мега-админ получает любое.</summary>
     internal bool HasAdminPermission(int id, IPAddress? ip, string permission) =>
         IsAdminAuthorized(id, ip)
-        && _adminStore?.HasPermission(id, ip, permission) == true;
+        && _adminStore?.HasPermission(id, permission) == true;
 
     /// <summary>Путь к личному паролю — для подсказки в чате и консоли.</summary>
     internal string PasswordPathOf(int id) =>
@@ -103,11 +158,11 @@ public sealed partial class GameNetHost
             $"[auth] личные пароли админов: {directory}/<id>/password.txt " +
             "(вида <id>-<hex64>; вводится в чат лобби)");
 
-        if (_config.Admin.Ids.Count == 0)
+        if (_config.Admin.Ids.Count == 0 && _config.Admin.MegaIds.Count == 0)
         {
             Console.WriteLine(
-                "[auth] админских id нет — пока в config.json admin.ids пусто, " +
-                "админ-команд ни у кого нет");
+                "[auth] админских id нет — пока в config.json admin.ids и admin.megaIds " +
+                "пусты, админ-команд ни у кого нет");
             return;
         }
 
@@ -117,9 +172,7 @@ public sealed partial class GameNetHost
         foreach (var id in _config.Admin.Ids)
         {
             var record = _adminStore?.Find(id);
-            var mega = record is { MegaIps.Count: > 0 }
-                ? $" · MEGA IP: {string.Join(", ", record.MegaIps)}"
-                : "";
+            var mega = IsMegaId(id) ? " · MEGA (admin.megaIds)" : "";
             Console.WriteLine(
                 $"[auth]   #{id}: {PasswordPathOf(id)} · права: " +
                 $"{AdminPermissions.Describe(record?.Permissions)}{mega}");
@@ -300,7 +353,7 @@ public sealed partial class GameNetHost
 
         var nick = ServerConfig.NormalizeNick(player.Name);
         var id = player.PublicId > 0 ? player.PublicId : IdOf(nick);
-        var isAdmin = _config.IsAdmin(id);
+        var isAdmin = IsAdminId(id);
         var authorized = IsAdminAuthorized(id, player.Peer.Address);
 
         reply($"ник: '{nick}' · id: #{id} · IP: {player.Peer.Address}");
@@ -310,14 +363,14 @@ public sealed partial class GameNetHost
             : "админ: нет");
         if (isAdmin && authorized)
         {
-            var permissions = _adminStore?.PermissionsFor(id, player.Peer.Address)
+            var permissions = _adminStore?.PermissionsFor(id)
                 ?? Array.Empty<string>();
-            var mega = _adminStore?.IsMega(id, player.Peer.Address) == true;
+            var mega = _adminStore?.IsMega(id) == true;
             reply($"права: {string.Join(", ", permissions)}" + (mega ? " (MEGA)" : ""));
         }
-        reply(_config.Admin.Ids.Count == 0
-            ? "в config.json admin.ids пусто — админ-команд ни у кого нет"
-            : $"админы в конфиге (id): {_config.DescribeAdmins()}");
+        reply(_config.Admin.Ids.Count == 0 && _config.Admin.MegaIds.Count == 0
+            ? "в config.json admin.ids и admin.megaIds пусты — админ-команд ни у кого нет"
+            : $"админы в конфиге: {_config.DescribeAdmins()}");
     }
 
     /// <summary>
@@ -328,11 +381,11 @@ public sealed partial class GameNetHost
     {
         if (player is null)
         {
-            reply("пароли и права: admin help (admin passwd regen <id|all>, admin mega, admin perm)");
+            reply("пароли и права: admin help (admin passwd regen <id|all>, admin perm)");
             return;
         }
 
-        if (_config.IsAdmin(IdOf(player.Name))
+        if (IsAdminId(IdOf(player.Name))
             && IsAdminAuthorized(IdOf(player.Name), player.Peer.Address))
         {
             reply("пароль уже принят на этом запуске");
@@ -344,7 +397,8 @@ public sealed partial class GameNetHost
     }
 
     /// <summary>
-    /// Консольная команда <c>admin</c>: пароли, мега-IP, права. Только консоль/панель.
+    /// Консольная команда <c>admin</c>: пароли и права. Мега-админы задаются только
+    /// в <c>config.json</c> → <c>admin.megaIds</c>.
     /// </summary>
     private void HandleAdminCommand(Action<string> reply, string args, ConnectedPlayer? player)
     {
@@ -360,8 +414,8 @@ public sealed partial class GameNetHost
         {
             reply("admin list — кто есть и какие права");
             reply("admin passwd regen <id|all> — новый личный пароль");
-            reply("admin mega add|remove <id> <ip> — мега-права по IP");
             reply("admin perm grant|revoke|set <id> <права...> — выдать/отнять права");
+            reply("мега-админы: config.json → admin.megaIds (из консоли не меняются)");
             return;
         }
 
@@ -377,9 +431,9 @@ public sealed partial class GameNetHost
 
             foreach (var record in records)
             {
-                var live = _config.IsAdmin(record.Id) ? "в admin.ids" : "не в admin.ids";
-                var mega = record.MegaIps.Count > 0
-                    ? $" · MEGA IP: {string.Join(", ", record.MegaIps)}"
+                var live = IsAdminId(record.Id) ? "в admin.ids" : "не в admin.ids";
+                var mega = IsMegaId(record.Id)
+                    ? " · MEGA (admin.megaIds)"
                     : "";
                 reply($"#{record.Id} '{record.Nick}' · {live} · v{record.AuthVersion} · " +
                       $"права: {AdminPermissions.Describe(record.Permissions)}{mega}");
@@ -425,31 +479,6 @@ public sealed partial class GameNetHost
 
             reply($"#{id}: новый пароль — {passwordPath}");
             reply("старые веб-сессии и игровые авторизации мертвы");
-            return;
-        }
-
-        if (sub == "mega")
-        {
-            if (parts.Length < 4
-                || (parts[1] is not ("add" or "remove"))
-                || !int.TryParse(parts[2], out var id) || id <= 0)
-            {
-                reply("admin mega add|remove <id> <ip>");
-                return;
-            }
-
-            if (_adminStore is null)
-            {
-                reply("хранилище админов не подключено");
-                return;
-            }
-
-            var ok = parts[1] == "add"
-                ? _adminStore.AddMegaIp(null, id, parts[3], DateTime.UtcNow, out var error)
-                : _adminStore.RemoveMegaIp(null, id, parts[3], DateTime.UtcNow, out error);
-            reply(ok
-                ? $"{parts[1]}: #{id} / {parts[3]} — готово"
-                : error ?? "не удалось");
             return;
         }
 

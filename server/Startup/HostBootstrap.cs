@@ -146,13 +146,13 @@ public static class HostBootstrap
             : LanInterfacePicker.PickLanBindAddress();
         Console.WriteLine($"[config] файл: {ServerConfig.LastLoadedPath}");
         Console.WriteLine($"[config] админы (id): {serverConfig.DescribeAdmins()}");
-        if (serverConfig.Admin.Ids.Count == 0)
+        if (serverConfig.Admin.Ids.Count == 0 && serverConfig.Admin.MegaIds.Count == 0)
         {
             // Пустой список — самая частая причина «я не админ»: человек в лобби есть,
             // а его id не вписан. Пишем готовую строку, которую надо вставить в конфиг.
             Console.WriteLine(
                 "[config] ВНИМАНИЕ: админ-команд ни у кого нет. Добавь в " +
-                $"{ServerConfig.LastLoadedPath} строку вида: \"ids\": [ 25354325 ] " +
+                $"{ServerConfig.LastLoadedPath} строку вида: \"ids\": [ 1000000 ] " +
                 "(id из /ids или /whoami) внутри admin{} — сервер перечитает файл на ходу");
         }
         Console.WriteLine(serverConfig.Admin.AdminOnlyCommands.Count == 0

@@ -1624,19 +1624,194 @@ body.so-side-open .so-side{transform:none}
 }
 .so-admperm input{accent-color:var(--so-acc);width:15px;height:15px;cursor:pointer}
 .so-admperm--fixed{color:var(--so-muted);cursor:default}
-.so-admips{
-  display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-top:14px;
-  padding-top:12px;border-top:1px solid var(--so-line);
+
+/* ── консоль: сетка, разделы, карточки ── */
+.so-console{
+  display:grid;grid-template-columns:216px minmax(0,1fr);gap:18px;
+  margin-top:22px;align-items:start;
 }
-.so-admips .so-card__label{margin:0 4px 0 0}
-.so-admip{
-  display:inline-flex;align-items:center;gap:6px;padding:4px 8px 3px;border-radius:6px;
-  background:rgba(217,164,65,.14);border:1px solid rgba(217,164,65,.5);
-  color:#ffd76e;font-size:12px;letter-spacing:.04em;
+.so-consnav{
+  display:flex;flex-direction:column;gap:5px;position:sticky;top:16px;
+  padding:8px;border-radius:12px;background:rgba(9,19,28,.78);
+  border:1px solid var(--so-line);
 }
-.so-admip__x{
-  border:0;background:none;color:inherit;font-size:15px;line-height:1;
-  padding:0;cursor:pointer;
+.so-consnav__b{
+  display:block;width:100%;text-align:left;padding:10px 12px 9px;border-radius:7px;
+  border:1px solid transparent;background:transparent;color:var(--so-muted);
+  font-family:var(--so-display);font-size:14px;letter-spacing:.13em;
+  text-transform:uppercase;cursor:pointer;transition:color .15s,background .15s,border-color .15s;
+}
+.so-consnav__b:hover{color:var(--so-text);background:rgba(20,39,55,.55)}
+.so-consnav__b[aria-selected="true"]{
+  color:var(--so-acc-ink);background:var(--so-acc);border-color:transparent;
+}
+.so-consmain{min-width:0}
+.so-consview{min-width:0}
+.so-conshead{
+  display:flex;align-items:flex-start;justify-content:space-between;gap:14px;
+  flex-wrap:wrap;margin-bottom:14px;
+}
+.so-conshead .so-card__t{margin:0}
+.so-consrow{
+  display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;
+}
+.so-consrow--line{padding:10px 0;border-top:1px solid var(--so-line)}
+.so-consrow--line:first-child{border-top:0;padding-top:0}
+.so-consplit{
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));
+  gap:14px;margin-top:14px;
+}
+.so-statgrid{
+  display:grid;grid-template-columns:repeat(auto-fit,minmax(138px,1fr));
+  gap:10px;margin-top:18px;
+}
+.so-stat{
+  padding:14px 16px 13px;border-radius:10px;background:rgba(5,12,19,.5);
+  border:1px solid var(--so-line);min-width:0;
+}
+.so-stat span{
+  display:block;font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;
+  color:#68809a;
+}
+.so-stat b{
+  display:block;font-family:var(--so-display);font-weight:400;font-size:30px;
+  letter-spacing:.04em;color:#fff;line-height:1.05;margin-top:6px;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.so-stat small{
+  display:block;margin-top:6px;font-size:11.5px;color:var(--so-muted);
+  line-height:1.4;white-space:normal;overflow-wrap:anywhere;
+}
+.so-filterbar{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+.so-filterbar .so-input{width:auto;flex:1 1 145px;min-width:0}
+.so-filterbar .so-btn{flex:0 0 auto}
+
+/* журнал */
+.so-jitem{
+  padding:0;border-radius:10px;background:rgba(5,12,19,.5);
+  border:1px solid var(--so-line);margin-top:0;overflow:hidden;
+}
+.so-jitem + .so-jitem{margin-top:10px}
+.so-jitem__head{
+  display:flex;align-items:flex-start;gap:12px;flex-wrap:wrap;
+  padding:12px 14px;
+}
+.so-jitem--exp .so-jitem__head{cursor:pointer;user-select:none}
+.so-jitem--exp .so-jitem__head:hover{background:rgba(143,180,232,.04)}
+.so-jitem--exp .so-jitem__head:focus-visible{outline:2px solid var(--so-acc);outline-offset:-2px}
+.so-jitem__chev{
+  flex:0 0 auto;width:0;height:0;margin-top:7px;
+  border-left:5px solid #68809a;border-top:4px solid transparent;
+  border-bottom:4px solid transparent;transition:transform .15s;
+}
+.so-jitem--open .so-jitem__chev{transform:rotate(90deg)}
+.so-jitem__main{min-width:0;flex:1 1 260px}
+.so-jitem__title{
+  display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+  font-family:var(--so-display);font-size:18px;letter-spacing:.04em;color:#fff;
+}
+.so-jitem__title a{color:#fff}
+.so-jitem__meta{font-size:12px;color:var(--so-muted);margin-top:5px;line-height:1.5}
+.so-jitem__badges{display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.so-jitem__body{padding:0 14px 13px;border-top:1px solid var(--so-line)}
+.so-jitem__note{
+  margin:11px 0 0;color:var(--so-muted);font-size:12.5px;line-height:1.55;
+  white-space:pre-wrap;overflow-wrap:anywhere;
+}
+.so-jitem__data{
+  margin-top:9px;padding:8px 11px;border-radius:7px;
+  background:rgba(143,180,232,.07);border:1px solid rgba(143,180,232,.2);
+  color:#a9bfd6;font-size:12.5px;line-height:1.55;overflow-wrap:anywhere;
+}
+.so-jitem__acts{
+  display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:10px;
+}
+.so-jitem__id{
+  font-size:11px;letter-spacing:.08em;color:#68809a;
+  font-family:var(--so-font);overflow-wrap:anywhere;
+}
+.so-jitem__undo{font-size:11px;color:#68809a;letter-spacing:.04em}
+.so-jitem__undo-btn{margin-left:auto}
+
+/* тестовый режим: красная плашка над консолью */
+.so-testmode{
+  margin-top:18px;padding:13px 16px;border-radius:10px;
+  background:rgba(92,18,22,.55);border:1px solid rgba(240,80,80,.65);
+  color:#ffc9c9;font-size:13px;line-height:1.55;
+}
+.so-testmode b{color:#fff}
+.so-testmode__t{
+  font-family:var(--so-display);font-size:15px;letter-spacing:.08em;
+  color:#ffb4b4;margin-bottom:4px;
+}
+.so-jcat{
+  display:inline-block;padding:3px 7px 2px;border-radius:4px;
+  font-family:var(--so-font);font-size:9.5px;font-weight:600;
+  letter-spacing:.12em;text-transform:uppercase;color:var(--so-acc);
+  background:rgba(143,180,232,.1);border:1px solid rgba(143,180,232,.3);
+  white-space:nowrap;
+}
+.so-admban__acts{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;margin-left:auto}
+.so-admban__head .so-admban__acts{margin-top:0;margin-left:auto}
+
+/* конфиг */
+.so-cfgsec + .so-cfgsec{margin-top:20px}
+.so-cfgsec__t{font-size:16px;margin-bottom:2px}
+.so-cfglist{display:block;margin-top:6px}
+.so-cfgrow{
+  display:grid;grid-template-columns:minmax(0,1fr) auto;gap:14px;
+  align-items:center;padding:13px 0;border-top:1px solid var(--so-line);
+}
+.so-cfgsec__t + .so-cfgrow{border-top:0}
+.so-cfginfo{min-width:0}
+.so-cfgname{color:var(--so-text);font-size:13.5px;line-height:1.45}
+.so-cfgkey{
+  font-size:11px;color:#68809a;letter-spacing:.05em;margin-top:3px;
+  overflow-wrap:anywhere;
+}
+.so-cfghelp{font-size:11.5px;color:var(--so-muted);margin-top:4px;line-height:1.5}
+.so-cfgrestart{
+  display:inline-block;margin-left:6px;padding:2px 6px 1px;border-radius:4px;
+  font-size:9.5px;letter-spacing:.1em;text-transform:uppercase;
+  color:#ffd76e;border:1px solid rgba(240,195,60,.4);
+  background:rgba(240,195,60,.08);white-space:nowrap;
+}
+.so-cfgctl{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:flex-end}
+.so-cfgctl .so-input{width:auto;min-width:150px;max-width:260px}
+
+/* безопасность */
+.so-sec-ua{overflow-wrap:anywhere}
+.so-toast{
+  position:fixed;left:50%;bottom:26px;transform:translateX(-50%);
+  z-index:90;max-width:min(520px,calc(100vw - 32px));
+  padding:12px 16px;border-radius:9px;
+  background:rgba(9,24,20,.97);border:1px solid rgba(87,217,138,.5);
+  color:#b9f0c8;font-size:13px;line-height:1.45;text-align:center;
+  box-shadow:0 14px 40px rgba(0,0,0,.5);
+}
+.so-toast--err{
+  background:rgba(32,12,14,.97);border-color:rgba(192,59,59,.55);color:#f0c0c0;
+}
+
+@media (max-width:900px){
+  .so-console{grid-template-columns:1fr;gap:12px}
+  .so-consnav{
+    position:static;flex-direction:row;overflow-x:auto;padding:6px;
+    -webkit-overflow-scrolling:touch;
+  }
+  .so-consnav__b{flex:0 0 auto;width:auto;white-space:nowrap;padding:8px 12px 7px}
+  .so-consplit{grid-template-columns:1fr}
+  .so-cfgrow{grid-template-columns:1fr;gap:8px}
+  .so-cfgctl{justify-content:flex-start}
+  .so-cfgctl .so-input{flex:1 1 150px;min-width:0;max-width:none}
+}
+@media (max-width:560px){
+  .so-admwho{flex-wrap:wrap}
+  .so-admwho__out{margin-left:0}
+  .so-statgrid{grid-template-columns:repeat(auto-fit,minmax(112px,1fr))}
+  .so-stat b{font-size:25px}
+  .so-jitem__undo-btn{margin-left:0}
+  .so-admban__acts{margin-left:0}
 }
 
 /* ── жалобы, публичные профили, администрация ── */
@@ -2856,9 +3031,12 @@ img.so-pubav{object-fit:cover;}
     </nav>
   </header>
 
-  <main class="so-sec" style="padding-top:30px;padding-bottom:110px">
+  <main class="so-sec so-console-wrap" style="padding-top:30px;padding-bottom:110px">
 
-    <h1 class="so-playhead__h">АДМИН <em>ПАНЕЛЬ</em></h1>
+    <h1 class="so-playhead__h">АДМИН <em>КОНСОЛЬ</em></h1>
+
+    <!-- тестовый режим: видно только вошедшему админу -->
+    <div class="so-testmode" id="adm-testmode" role="alert" hidden></div>
 
     <!-- вход: id и личный пароль; сессия сайта для панели не нужна -->
     <section class="so-card" id="adm-auth" aria-label="Вход в админ панель" hidden style="margin-top:30px;max-width:620px">
@@ -2877,8 +3055,10 @@ img.so-pubav{object-fit:cover;}
                aria-label="Личный пароль">
         <button class="so-btn so-btn--sm" id="adm-login">ВОЙТИ</button>
       </div>
-      <p class="so-note">Вход живёт 7 дней. Забыл пароль — его меняет мега-админ или
-         консоль сервера: <b>admin passwd regen &lt;id&gt;</b>.</p>
+      <p class="so-note">Вход живёт 30 дней и привязан к этому браузеру. Каждое действие,
+         которое меняет данные сервера (кик, бан, комнаты, жалобы, сессии, кастомный ID,
+         конфиг, админы), требует повторного пароля. Забыл пароль — его меняет мега-админ
+         или консоль сервера: <b>admin passwd regen &lt;id&gt;</b>.</p>
       <p class="so-err" id="adm-auth-err"></p>
     </section>
 
@@ -2891,112 +3071,366 @@ img.so-pubav{object-fit:cover;}
           <div class="so-acc__n" id="adm-nick">—</div>
           <div class="so-acc__i" id="adm-id">ID —</div>
         </div>
+        <span class="so-admst" id="adm-role">ADMIN</span>
+        <span class="so-admst so-admst--warn" id="adm-stepup-chip" hidden>ПАРОЛЬ НЕ ПОДТВЕРЖДЁН</span>
+        <button class="so-btn so-btn--sm so-btn--ghost so-admwho__out" id="adm-stepup-open" type="button">ПОДТВЕРДИТЬ ПАРОЛЬ</button>
         <button class="so-btn so-btn--sm so-admwho__out" id="adm-logout">ВЫЙТИ</button>
       </div>
 
-      <div class="so-admtabs" role="tablist" aria-label="Разделы админ панели">
-        <button class="so-tab" id="adm-tab-custom" aria-selected="true" aria-controls="adm-panel-custom" hidden>Кастомизация</button>
-        <button class="so-tab" id="adm-tab-bans" aria-selected="false" aria-controls="adm-panel-bans" hidden>Баны</button>
-        <button class="so-tab" id="adm-tab-admins" aria-selected="false" aria-controls="adm-panel-admins" hidden>Админы и права</button>
+      <div class="so-console">
+        <nav class="so-consnav" id="adm-nav" role="tablist" aria-label="Разделы админ консоли"></nav>
+
+        <div class="so-consmain">
+          <p class="so-note" id="adm-noperms" hidden style="margin-top:0">
+            Операционных прав пока нет: их выдаёт мега-админ. Тебе всегда доступны
+            обзор и журнал.
+          </p>
+
+          <!-- ── ОБЗОР ── -->
+          <section class="so-consview" data-adm-pane="overview" hidden>
+            <div class="so-conshead">
+              <div>
+                <div class="so-card__t">ОБЗОР СЕРВЕРА</div>
+                <p class="so-card__d">Живые цифры и последние действия администрации.</p>
+              </div>
+              <button class="so-btn so-btn--sm so-btn--ghost" type="button" id="adm-dash-refresh">ОБНОВИТЬ</button>
+            </div>
+
+            <div class="so-statgrid">
+              <div class="so-stat"><span>онлайн</span><b id="adm-dash-online">—</b><small id="adm-dash-online-sub">лобби · катка</small></div>
+              <div class="so-stat"><span>комнаты</span><b id="adm-dash-rooms">—</b><small>занято / максимум</small></div>
+              <div class="so-stat"><span>баны</span><b id="adm-dash-bans">—</b><small>активных</small></div>
+              <div class="so-stat"><span>жалобы</span><b id="adm-dash-reports">—</b><small id="adm-dash-reports-sub">—</small></div>
+              <div class="so-stat"><span>админы</span><b id="adm-dash-admins">—</b><small id="adm-dash-admins-sub">—</small></div>
+              <div class="so-stat"><span>сессии</span><b id="adm-dash-sessions">—</b><small>в панели</small></div>
+              <div class="so-stat"><span>ошибки входа</span><b id="adm-dash-failed">—</b><small>за 24 часа</small></div>
+              <div class="so-stat"><span>аптайм</span><b id="adm-dash-uptime">—</b><small id="adm-dash-mode">—</small></div>
+            </div>
+
+            <div class="so-card" style="margin-top:14px">
+              <div class="so-consrow">
+                <div>
+                  <div class="so-card__t" style="font-size:17px">СОСТОЯНИЕ</div>
+                  <p class="so-note" id="adm-dash-state" style="margin-top:8px">—</p>
+                </div>
+                <div class="so-note" id="adm-dash-memory" style="text-align:right"></div>
+              </div>
+              <p class="so-err" id="adm-dash-err"></p>
+            </div>
+
+            <div class="so-consplit">
+              <div class="so-card">
+                <div class="so-consrow">
+                  <div class="so-card__t" style="font-size:17px">ПОСЛЕДНИЕ ДЕЙСТВИЯ</div>
+                  <button class="so-btn so-btn--sm so-btn--ghost" type="button" data-adm-goto="journal">ВЕСЬ ЖУРНАЛ</button>
+                </div>
+                <div class="so-admbans" id="adm-dash-journal"></div>
+              </div>
+              <div class="so-card">
+                <div class="so-consrow">
+                  <div class="so-card__t" style="font-size:17px">КОМНАТЫ</div>
+                  <button class="so-btn so-btn--sm so-btn--ghost" type="button" data-adm-goto="rooms">ВСЕ КОМНАТЫ</button>
+                </div>
+                <div class="so-admbans" id="adm-dash-rooms-list"></div>
+              </div>
+            </div>
+          </section>
+
+          <!-- ── ЖУРНАЛ ── -->
+          <section class="so-consview" data-adm-pane="journal" hidden>
+            <div class="so-conshead">
+              <div>
+                <div class="so-card__t">ЖУРНАЛ ДЕЙСТВИЙ</div>
+                <p class="so-card__d">Кто, что, когда и с какого адреса. Обратимые записи можно откатить.</p>
+              </div>
+            </div>
+            <div class="so-card">
+              <div class="so-filterbar">
+                <select class="so-input so-input--slim so-input--select" id="adm-j-cat" aria-label="Категория">
+                  <option value="">все категории</option>
+                  <option value="auth">вход</option>
+                  <option value="security">безопасность</option>
+                  <option value="permission">права</option>
+                  <option value="admin">админы</option>
+                  <option value="config">конфиг</option>
+                  <option value="ban">баны</option>
+                  <option value="report">жалобы</option>
+                  <option value="customid">кастомный ID</option>
+                  <option value="player">игроки</option>
+                  <option value="room">комнаты</option>
+                </select>
+                <input class="so-input so-input--slim" id="adm-j-search" placeholder="поиск по нику, id, причине" aria-label="Поиск">
+                <input class="so-input so-input--slim" id="adm-j-actor" inputmode="numeric" placeholder="актор id" aria-label="ID актора">
+                <input class="so-input so-input--slim" id="adm-j-target" inputmode="numeric" placeholder="цель id" aria-label="ID цели">
+                <label class="so-admperm" style="white-space:nowrap"><input type="checkbox" id="adm-j-rev"> только обратимые</label>
+                <button class="so-btn so-btn--sm" type="button" id="adm-j-go">ПОКАЗАТЬ</button>
+                <button class="so-btn so-btn--sm so-btn--ghost" type="button" id="adm-j-reset">СБРОС</button>
+              </div>
+              <p class="so-err" id="adm-j-err"></p>
+              <div class="so-admbans" id="adm-j-list"></div>
+              <div class="so-pager" id="adm-j-pager"></div>
+              <p class="so-note" id="adm-j-count"></p>
+            </div>
+          </section>
+
+          <!-- ── ИГРОКИ ── -->
+          <section class="so-consview" data-adm-pane="players" hidden>
+            <div class="so-conshead">
+              <div>
+                <div class="so-card__t">ИГРОКИ</div>
+                <p class="so-card__d">Поиск по id, нику, IP и устройству. Пустой запрос — кто сейчас на сервере.</p>
+              </div>
+            </div>
+            <div class="so-card">
+              <div class="so-formrow" style="margin-top:0">
+                <input class="so-input" id="adm-p-q" placeholder="id, ник, IP или ключ устройства" aria-label="Поиск игрока">
+                <button class="so-btn so-btn--sm" type="button" id="adm-p-go">НАЙТИ</button>
+              </div>
+              <p class="so-err" id="adm-p-err"></p>
+              <div class="so-admbans" id="adm-p-list"></div>
+              <p class="so-note" id="adm-p-note"></p>
+            </div>
+          </section>
+
+          <!-- ── КОМНАТЫ ── -->
+          <section class="so-consview" data-adm-pane="rooms" hidden>
+            <div class="so-conshead">
+              <div>
+                <div class="so-card__t">КОМНАТЫ</div>
+                <p class="so-card__d">Живой состав, счёт и принудительное закрытие.</p>
+              </div>
+              <button class="so-btn so-btn--sm so-btn--ghost" type="button" id="adm-r-refresh">ОБНОВИТЬ</button>
+            </div>
+            <p class="so-err" id="adm-r-err"></p>
+            <div class="so-admbans" id="adm-r-list"></div>
+          </section>
+
+          <!-- ── БАНЫ ── -->
+          <section class="so-consview" data-adm-pane="bans" hidden>
+            <div class="so-conshead">
+              <div>
+                <div class="so-card__t">БАН ИГРОКА</div>
+                <p class="so-card__d">Три шага: найти, проверить, забанить. Себя и мега-админа забанить нельзя.</p>
+              </div>
+            </div>
+            <div class="so-card">
+              <div class="so-admsteps">
+                <span class="so-admstep so-admstep--on" id="adm-bstep-1"><i>1</i>найти игрока</span>
+                <span class="so-admstep" id="adm-bstep-2"><i>2</i>проверить</span>
+                <span class="so-admstep" id="adm-bstep-3"><i>3</i>бан</span>
+              </div>
+              <div id="adm-bstep1" style="margin-top:16px">
+                <label class="so-card__label" for="adm-bid">ID игрока</label>
+                <div class="so-formrow" style="margin-top:0">
+                  <input class="so-input so-input--slim" id="adm-bid" inputmode="numeric" autocomplete="off"
+                         placeholder="например 1000000" aria-label="ID игрока">
+                  <button class="so-btn so-btn--sm" id="adm-bnext" type="button">ДАЛЕЕ</button>
+                </div>
+                <div id="adm-bprev" hidden></div>
+                <p class="so-err" id="adm-berr"></p>
+              </div>
+              <div id="adm-bstep2" hidden style="margin-top:16px">
+                <p class="so-card__d" style="margin-top:0">Всё верно? Банится:</p>
+                <div id="adm-bconfirm"></div>
+                <div class="so-formrow">
+                  <button class="so-btn so-btn--sm" id="adm-byes" type="button">ДА, БАНИТЬ</button>
+                  <button class="so-btn so-btn--sm so-btn--ghost" id="adm-bback" type="button">НАЗАД</button>
+                </div>
+              </div>
+              <div id="adm-bstep3" hidden style="margin-top:16px">
+                <label class="so-card__label" for="adm-breason">Причина (можно пропустить)</label>
+                <input class="so-input so-input--slim" id="adm-breason" maxlength="200" autocomplete="off"
+                       placeholder="например: читы" aria-label="Причина бана">
+                <label class="so-card__label" for="adm-bdur" style="margin-top:14px">На сколько банить</label>
+                <div class="so-formrow" style="margin-top:0">
+                  <input class="so-input so-input--slim" id="adm-bdur" type="number" min="1" step="1" value="6"
+                         style="max-width:130px" inputmode="numeric" aria-label="Сколько">
+                  <select class="so-input so-input--slim so-input--select" id="adm-bunit" style="max-width:160px" aria-label="Единица срока">
+                    <option value="m">минут</option>
+                    <option value="h">часов</option>
+                    <option value="d" selected>дней</option>
+                  </select>
+                  <button class="so-btn so-btn--sm" id="adm-ban-go" type="button">ЗАБАНИТЬ</button>
+                </div>
+                <p class="so-note" id="adm-brange"></p>
+                <p class="so-err" id="adm-ban-err"></p>
+              </div>
+              <div id="adm-bdone" hidden style="margin-top:16px"></div>
+            </div>
+
+            <div class="so-card" style="margin-top:14px">
+              <div class="so-consrow">
+                <div class="so-card__t" style="font-size:17px">АКТИВНЫЕ БАНЫ</div>
+                <button class="so-btn so-btn--sm so-btn--ghost" type="button" id="adm-bans-refresh">ОБНОВИТЬ</button>
+              </div>
+              <p class="so-note" id="adm-bans-empty" style="margin-top:10px">Активных банов нет.</p>
+              <div class="so-admbans" id="adm-bans"></div>
+            </div>
+          </section>
+
+          <!-- ── ЖАЛОБЫ ── -->
+          <section class="so-consview" data-adm-pane="reports" hidden>
+            <div class="so-conshead">
+              <div>
+                <div class="so-card__t">ЖАЛОБЫ</div>
+                <p class="so-card__d">Модерация без перехода на отдельную страницу. Принять или отклонить — обратимо из журнала.</p>
+              </div>
+              <span class="so-note" id="adm-rep-sum"></span>
+            </div>
+            <div class="so-chips" id="adm-rep-filters" role="group" aria-label="Фильтр жалоб">
+              <button class="so-chip" type="button" data-adm-rep-filter="open" aria-pressed="true">НА РАССМОТРЕНИИ</button>
+              <button class="so-chip" type="button" data-adm-rep-filter="accepted" aria-pressed="false">ПРИНЯТЫЕ</button>
+              <button class="so-chip" type="button" data-adm-rep-filter="rejected" aria-pressed="false">ОТКЛОНЁННЫЕ</button>
+              <button class="so-chip" type="button" data-adm-rep-filter="all" aria-pressed="false">ВСЕ</button>
+            </div>
+            <p class="so-err" id="adm-rep-err"></p>
+            <div id="adm-rep-list"></div>
+            <div class="so-formrow" style="margin-top:14px">
+              <button class="so-btn so-btn--sm so-btn--ghost" type="button" id="adm-rep-more" hidden>ЕЩЁ</button>
+            </div>
+          </section>
+
+          <!-- ── АДМИНЫ ── -->
+          <section class="so-consview" data-adm-pane="admins" hidden>
+            <div class="so-conshead">
+              <div>
+                <div class="so-card__t">АДМИНЫ И ПРАВА</div>
+                <p class="so-card__d">Права выдаёт только мега-админ. Состав обычных админов — это <b>admin.ids</b>; мега — только <b>admin.megaIds</b>.</p>
+              </div>
+              <button class="so-btn so-btn--sm so-btn--ghost" type="button" id="adm-admins-refresh">ОБНОВИТЬ</button>
+            </div>
+
+            <div class="so-card" id="adm-add-card" hidden>
+              <div class="so-card__t" style="font-size:17px">ДОБАВИТЬ АДМИНА</div>
+              <p class="so-note">Сервер добавит id в <b>admin.ids</b> и создаст личный пароль. Игрок должен быть серверу известен.</p>
+              <div class="so-formrow" style="margin-top:12px">
+                <input class="so-input so-input--slim" id="adm-add-id" inputmode="numeric" placeholder="id игрока" aria-label="ID нового админа">
+                <button class="so-btn so-btn--sm" type="button" id="adm-add-btn">ДОБАВИТЬ</button>
+              </div>
+              <div id="adm-add-done" hidden style="margin-top:12px"></div>
+              <p class="so-err" id="adm-add-err"></p>
+            </div>
+
+            <p class="so-note">Пароль показывается один раз при смене. Мега-админ задаётся только в config.json → admin.megaIds и из панели не удаляется.</p>
+            <div class="so-admbans" id="adm-admins"></div>
+            <p class="so-err" id="adm-admins-err"></p>
+          </section>
+
+          <!-- ── КОНФИГ ── -->
+          <section class="so-consview" data-adm-pane="config" hidden>
+            <div class="so-conshead">
+              <div>
+                <div class="so-card__t">КОНФИГ</div>
+                <p class="so-card__d">Только безопасный список ключей. Порты, пути и сеть меняет владелец файла вручную.</p>
+              </div>
+              <button class="so-btn so-btn--sm so-btn--ghost" type="button" id="adm-cfg-reload" hidden>ПЕРЕЧИТАТЬ</button>
+            </div>
+            <div class="so-card">
+              <p class="so-note" id="adm-cfg-path">—</p>
+              <p class="so-note" id="adm-cfg-issues"></p>
+              <p class="so-note" id="adm-cfg-note" hidden style="color:#ffd76e">Изменения конфига делает только мега-админ после подтверждения пароля.</p>
+              <p class="so-err" id="adm-cfg-err"></p>
+              <div class="so-cfglist" id="adm-cfg-form"></div>
+            </div>
+            <div class="so-card" style="margin-top:14px">
+              <div class="so-card__t" style="font-size:17px">СОСТАВ АДМИНОВ</div>
+              <p class="so-note">Обычные админы хранятся в <b>admin.ids</b>. Добавляй и убирай их на вкладке «Админы» — массив переписывается безопасно, с комментариями и резервной копией.</p>
+              <p class="so-note" style="margin-top:10px"><b>admin.ids:</b> <span id="adm-cfg-ids">—</span></p>
+              <p class="so-note" style="margin-top:6px"><b>admin.megaIds (только чтение):</b> <span id="adm-cfg-megas">—</span></p>
+            </div>
+          </section>
+
+          <!-- ── БЕЗОПАСНОСТЬ ── -->
+          <section class="so-consview" data-adm-pane="security" hidden>
+            <div class="so-conshead">
+              <div>
+                <div class="so-card__t">БЕЗОПАСНОСТЬ</div>
+                <p class="so-card__d">Живые сессии панели и последние неудачные входы. Свои видит каждый, чужие — только мега-админ.</p>
+              </div>
+              <button class="so-btn so-btn--sm so-btn--ghost" type="button" id="adm-sec-refresh">ОБНОВИТЬ</button>
+            </div>
+            <div class="so-card">
+              <p class="so-note" id="adm-sec-count">—</p>
+              <p class="so-note" id="adm-sec-stepup">—</p>
+              <p class="so-err" id="adm-sec-err"></p>
+              <div class="so-admbans" id="adm-sec-sessions"></div>
+            </div>
+            <div class="so-card" style="margin-top:14px">
+              <div class="so-card__t" style="font-size:17px">НЕУДАЧНЫЕ ВХОДЫ</div>
+              <div class="so-admbans" id="adm-sec-fails"></div>
+            </div>
+          </section>
+
+          <!-- ── ПРОФИЛЬ ── -->
+          <section class="so-consview" data-adm-pane="profile" hidden>
+            <div class="so-conshead">
+              <div>
+                <div class="so-card__t">СВОЙ ID</div>
+                <p class="so-card__d">ID, который видят игроки вместо числового. Разрешены цифры и английские буквы; сервер помнит и оригинал.</p>
+              </div>
+            </div>
+            <div class="so-card">
+              <div class="so-formrow" style="margin-top:0">
+                <input class="so-input" id="adm-cid" maxlength="24" spellcheck="false" autocomplete="off"
+                       placeholder="MoйNick2026" aria-label="Кастомный ID">
+                <button class="so-btn so-btn--sm" id="adm-cid-save" type="button">СОХРАНИТЬ</button>
+                <button class="so-btn so-btn--sm so-btn--ghost" id="adm-cid-clear" type="button">СБРОС</button>
+              </div>
+              <p class="so-note" id="adm-cid-now"></p>
+              <p class="so-err" id="adm-cid-err"></p>
+            </div>
+          </section>
+        </div>
       </div>
-
-      <p class="so-note" id="adm-noperms" hidden style="margin-top:18px">
-        Операционных прав пока нет: их выдаёт мега-админ. Тебе всегда доступны только
-        обзор и журнал.
-      </p>
-
-      <!-- вкладка: кастомизация -->
-      <section class="so-card" id="adm-panel-custom" role="tabpanel" style="margin-top:18px;max-width:620px">
-        <div class="so-card__t">СВОЙ ID</div>
-        <p class="so-card__d" style="margin-top:10px">
-          ID, который видят игроки вместо числового. Разрешены только цифры и английские
-          буквы. Оригинальный числовой ID сервер помнит: баны, конфиг и статистика работают
-          по нему как раньше. Новое значение применится при следующем входе в игру, и все
-          увидят его в катке и в лобби.
-        </p>
-        <div class="so-formrow" style="margin-top:18px">
-          <input class="so-input" id="adm-cid" maxlength="24" spellcheck="false" autocomplete="off"
-                 placeholder="MoйNick2026" aria-label="Кастомный ID">
-          <button class="so-btn so-btn--sm" id="adm-cid-save">СОХРАНИТЬ</button>
-          <button class="so-btn so-btn--sm" id="adm-cid-clear">СБРОС</button>
-        </div>
-        <p class="so-note" id="adm-cid-now"></p>
-        <p class="so-err" id="adm-cid-err"></p>
-      </section>
-
-      <!-- вкладка: баны -->
-      <section class="so-card" id="adm-panel-bans" role="tabpanel" hidden style="margin-top:18px;max-width:680px">
-        <div class="so-card__t">БАН ИГРОКА</div>
-        <div class="so-admsteps">
-          <span class="so-admstep so-admstep--on" id="adm-bstep-1"><i>1</i>найти игрока</span>
-          <span class="so-admstep" id="adm-bstep-2"><i>2</i>проверить</span>
-          <span class="so-admstep" id="adm-bstep-3"><i>3</i>бан</span>
-        </div>
-
-        <!-- шаг 1: ввод ID с живым превью -->
-        <div id="adm-bstep1" style="margin-top:16px">
-          <label class="so-card__label" for="adm-bid">ID игрока</label>
-          <div class="so-formrow" style="margin-top:0">
-            <input class="so-input so-input--slim" id="adm-bid" inputmode="numeric" autocomplete="off"
-                   placeholder="например 12345" aria-label="ID игрока">
-            <button class="so-btn so-btn--sm" id="adm-bnext">ДАЛЕЕ</button>
-          </div>
-          <div id="adm-bprev" hidden></div>
-          <p class="so-err" id="adm-berr"></p>
-        </div>
-
-        <!-- шаг 2: «всё верно?» -->
-        <div id="adm-bstep2" hidden style="margin-top:16px">
-          <p class="so-card__d" style="margin-top:0">Всё верно? Банится:</p>
-          <div id="adm-bconfirm"></div>
-          <div class="so-formrow">
-            <button class="so-btn so-btn--sm" id="adm-byes">ДА, БАНИТЬ</button>
-            <button class="so-btn so-btn--sm" id="adm-bback">НАЗАД</button>
-          </div>
-        </div>
-
-        <!-- шаг 3: форма бана -->
-        <div id="adm-bstep3" hidden style="margin-top:16px">
-          <label class="so-card__label" for="adm-breason">Причина (можно пропустить)</label>
-          <input class="so-input so-input--slim" id="adm-breason" maxlength="200" autocomplete="off"
-                 placeholder="например: читы" aria-label="Причина бана">
-          <label class="so-card__label" for="adm-bdur" style="margin-top:14px">На сколько банить</label>
-          <div class="so-formrow" style="margin-top:0">
-            <input class="so-input so-input--slim" id="adm-bdur" type="number" min="1" step="1" value="6"
-                   style="max-width:130px" inputmode="numeric" aria-label="Сколько">
-            <select class="so-input so-input--slim so-input--select" id="adm-bunit" style="max-width:160px" aria-label="Единица срока">
-              <option value="m">минут</option>
-              <option value="h">часов</option>
-              <option value="d" selected>дней</option>
-            </select>
-            <button class="so-btn so-btn--sm" id="adm-ban-go">ЗАБАНИТЬ</button>
-          </div>
-          <p class="so-note" id="adm-brange"></p>
-          <p class="so-err" id="adm-ban-err"></p>
-        </div>
-
-        <!-- результат -->
-        <div id="adm-bdone" hidden style="margin-top:16px"></div>
-
-        <div class="so-card__t" style="margin-top:30px;font-size:17px">АКТИВНЫЕ БАНЫ</div>
-        <p class="so-note" id="adm-bans-empty" style="margin-top:10px">Активных банов нет.</p>
-        <div class="so-admbans" id="adm-bans"></div>
-      </section>
-
-      <!-- вкладка: админы и права (только мега) -->
-      <section class="so-card" id="adm-panel-admins" role="tabpanel" hidden style="margin-top:18px;max-width:780px">
-        <div class="so-card__t">АДМИНЫ И ПРАВА</div>
-        <p class="so-card__d" style="margin-top:10px">
-          Права выдаёт только мега-админ. <b>dashboard</b> и <b>journal</b> есть у каждого
-          и не отнимаются; остальные включаются поштучно. Мега-права привязаны к IP —
-          добавь адрес, с которого заходишь, и он получит полный доступ.
-        </p>
-        <div class="so-admbans" id="adm-admins"></div>
-        <p class="so-err" id="adm-admins-err"></p>
-      </section>
     </div>
   </main>
 </div><!-- /view-admin -->
+
+<!-- подтверждение пароля для опасных действий -->
+<div class="so-dlgwrap" id="adm-stepup" hidden>
+  <div class="so-dlg" role="dialog" aria-modal="true" aria-labelledby="adm-stepup-title">
+    <div class="so-dlg__k">Опасное действие</div>
+    <h2 class="so-dlg__t" id="adm-stepup-title">ПОДТВЕРДИ ПАРОЛЬ</h2>
+    <p class="so-dlg__d" id="adm-stepup-why">Это действие меняет данные сервера.</p>
+    <input class="so-input" id="adm-stepup-pass" type="password" autocomplete="current-password"
+           placeholder="личный пароль" aria-label="Личный пароль">
+    <p class="so-err" id="adm-stepup-err"></p>
+    <div class="so-formrow" style="margin-top:16px">
+      <button class="so-btn so-btn--sm" id="adm-stepup-go" type="button">ПОДТВЕРДИТЬ</button>
+      <button class="so-btn so-btn--sm so-btn--ghost" id="adm-stepup-cancel" type="button">ОТМЕНА</button>
+    </div>
+  </div>
+</div>
+
+<!-- подтверждение обычного действия: кик, закрытие комнаты, разбан -->
+<div class="so-dlgwrap" id="adm-ask" hidden>
+  <div class="so-dlg" role="dialog" aria-modal="true" aria-labelledby="adm-ask-title">
+    <div class="so-dlg__k">Подтверждение</div>
+    <h2 class="so-dlg__t" id="adm-ask-title">ПОДТВЕРДИ</h2>
+    <p class="so-dlg__d" id="adm-ask-text">—</p>
+    <input class="so-input" id="adm-ask-input" type="text" maxlength="200" autocomplete="off"
+           spellcheck="false" placeholder="причина" aria-label="Причина">
+    <p class="so-err" id="adm-ask-err"></p>
+    <div class="so-formrow" style="margin-top:16px">
+      <button class="so-btn so-btn--sm" id="adm-ask-go" type="button">ПОДТВЕРДИТЬ</button>
+      <button class="so-btn so-btn--sm so-btn--ghost" id="adm-ask-cancel" type="button">ОТМЕНА</button>
+    </div>
+  </div>
+</div>
+
+<!-- пароль нового/сброшенного админа: показываем один раз -->
+<div class="so-dlgwrap" id="adm-pwd" hidden>
+  <div class="so-dlg" role="dialog" aria-modal="true" aria-labelledby="adm-pwd-title">
+    <div class="so-dlg__k">Личный пароль</div>
+    <h2 class="so-dlg__t" id="adm-pwd-title">ПАРОЛЬ ИЗМЕНЁН</h2>
+    <p class="so-dlg__d" id="adm-pwd-why">Передай его админу лично. Больше панель его не покажет.</p>
+    <input class="so-cmd" id="adm-pwd-value" readonly aria-label="Новый пароль">
+    <p class="so-note" id="adm-pwd-path"></p>
+    <div class="so-formrow" style="margin-top:16px">
+      <button class="so-btn so-btn--sm so-btn--acc" id="adm-pwd-close" type="button">ПОНЯТНО</button>
+    </div>
+  </div>
+</div>
 
 <!-- ═════════════════════ ЖАЛОБЫ (#/reports) ═════════════════════ -->
 <div id="view-reports" hidden>
@@ -3868,44 +4302,202 @@ function fmtTime(sec){
   return m + ' м';
 }
 
-/* ═══════════ админ панель (#/admin) ═══════════ */
-/* Всё серверно: страница только показывает. Вход — отдельный личный пароль,
-   сессия сайта и код из лобби на него не влияют. */
-var adminState = null;   /* ответ GET api/admin */
-var adminTab = '';
-var adminAdmins = null;  /* ответ GET api/admin/admins */
-var adminTarget = null;  /* найденный для бана игрок */
+/* ═══════════ админ консоль (#/admin) ═══════════ */
+/* Всё серверно: страница только показывает и просит. Вход — отдельный личный
+   пароль, сессия сайта и код из лобби на него не влияют. Опасные действия
+   подтверждаются паролем ещё раз, а CSRF-токен уходит с каждым POST. */
+var adminState = null;      /* ответ GET api/admin */
+var adminLoginInfo = null;  /* ответ GET api/admin/login-info: только тестовые флаги */
+var adminPane = '';         /* открытый раздел консоли */
+var adminAdmins = null;     /* ответ GET api/admin/admins */
+var adminTarget = null;     /* найденный для бана игрок */
 var adminBidTimer = 0;
+var adminDash = null;       /* ответ GET api/admin/dashboard */
+var adminCfg = null;        /* ответ GET api/admin/config */
+var adminPlayersList = [];  /* последний ответ поиска игроков */
+var adminJournalPage = 1;   /* 1-based; 20 записей на страницу */
+var adminJournalCursors = []; /* adminJournalCursors[p-1] — курсор для страницы p+1 */
+var adminReportsPage = 1;
+var adminReportsFilter = 'open';
+var adminStepUpPending = null;
+var adminAskPending = null;
+var adminEpoch = 0;         /* ответы прошлой сессии не должны попасть в DOM */
+
 var ADMIN_PERMS = [
   ['bans', 'баны'],
   ['reports', 'жалобы'],
   ['customization', 'кастомизация'],
   ['rooms', 'комнаты'],
   ['players', 'игроки'],
-  ['config', 'команды /set, /end'],
+  ['config', 'конфиг'],
   ['admins', 'управление админами'],
   ['rollback', 'откат действий']
 ];
 
-function adminStatusText(status){
-  if (status === 'match') return 'в игре';
-  if (status === 'lobby') return 'в лобби';
-  return 'не в сети';
-}
-function adminStatusClass(status){
-  if (status === 'match') return 'so-admst so-admst--match';
-  if (status === 'lobby') return 'so-admst so-admst--lobby';
-  return 'so-admst';
-}
+var ADMIN_PANES = [
+  { id: 'overview',  label: 'ОБЗОР',        perms: ['dashboard'] },
+  { id: 'journal',   label: 'ЖУРНАЛ',       perms: ['journal'] },
+  { id: 'players',   label: 'ИГРОКИ',       perms: ['players', 'bans'] },
+  { id: 'rooms',     label: 'КОМНАТЫ',      perms: ['rooms'] },
+  { id: 'bans',      label: 'БАНЫ',         perms: ['bans'] },
+  { id: 'reports',   label: 'ЖАЛОБЫ',       perms: ['reports'] },
+  { id: 'admins',    label: 'АДМИНЫ',       perms: ['admins'] },
+  { id: 'config',    label: 'КОНФИГ',       perms: ['config'] },
+  { id: 'security',  label: 'БЕЗОПАСНОСТЬ', perms: ['dashboard'] },
+  { id: 'profile',   label: 'ПРОФИЛЬ',      perms: ['customization'] }
+];
+
 function adminHas(permission){
   var st = adminState || {};
   if (st.mega) return true;
   return !!(st.permissions && st.permissions.indexOf(permission) >= 0);
 }
 
+function adminPaneAllowed(id){
+  var pane = null;
+  for (var i = 0; i < ADMIN_PANES.length; i++){
+    if (ADMIN_PANES[i].id === id){ pane = ADMIN_PANES[i]; break; }
+  }
+  if (!pane) return false;
+  if (adminState && adminState.mega) return true;
+  for (var j = 0; j < pane.perms.length; j++){
+    if (adminHas(pane.perms[j])) return true;
+  }
+  return false;
+}
+
+function adminFirstPane(){
+  for (var i = 0; i < ADMIN_PANES.length; i++){
+    if (adminPaneAllowed(ADMIN_PANES[i].id)) return ADMIN_PANES[i].id;
+  }
+  return 'overview';
+}
+
+function adminStatusText(status){
+  if (status === 'match') return 'в игре';
+  if (status === 'lobby') return 'в лобби';
+  return 'не в сети';
+}
+
+function adminStatusClass(status){
+  if (status === 'match') return 'so-admst so-admst--match';
+  if (status === 'lobby') return 'so-admst so-admst--lobby';
+  return 'so-admst';
+}
+
+function adminRoomStateText(state){
+  if (state === 'live' || state === 'playing') return 'идёт';
+  if (state === 'waiting') return 'ждёт';
+  if (state === 'ended') return 'итоги';
+  if (state === 'closed') return 'закрыта';
+  return state || '—';
+}
+
+function adminRoomStateClass(state){
+  if (state === 'live' || state === 'playing') return 'so-admst so-admst--match';
+  if (state === 'waiting') return 'so-admst so-admst--lobby';
+  return 'so-admst';
+}
+
+function adminByteSize(bytes){
+  if (!bytes || bytes < 0) return '0 МБ';
+  var mb = bytes / 1048576;
+  return (mb >= 10 ? mb.toFixed(0) : mb.toFixed(1)).replace('.', ',') + ' МБ';
+}
+
+function adminUptime(sec){
+  sec = Math.max(0, Number(sec) || 0);
+  var d = Math.floor(sec / 86400);
+  var h = Math.floor((sec % 86400) / 3600);
+  var m = Math.floor((sec % 3600) / 60);
+  if (d > 0) return d + ' д ' + h + ' ч';
+  if (h > 0) return h + ' ч ' + m + ' м';
+  return m + ' м';
+}
+
+/* Диапазоны id: [1000000,1000001,1000002] → «1000000–1000002». */
+function adminRanges(ids){
+  var list = (ids || []).slice().sort(function(a, b){ return a - b; });
+  var out = [];
+  var start = null, prev = null;
+  for (var i = 0; i < list.length; i++){
+    var id = Number(list[i]);
+    if (!isFinite(id)) continue;
+    if (start === null){ start = prev = id; continue; }
+    if (id === prev + 1){ prev = id; continue; }
+    out.push(start === prev ? String(start) : start + '–' + prev);
+    start = prev = id;
+  }
+  if (start !== null)
+    out.push(start === prev ? String(start) : start + '–' + prev);
+  return out.join(', ');
+}
+
+function adminValText(value){
+  if (value === undefined || value === null || value === '') return '—';
+  if (Object.prototype.toString.call(value) === '[object Array]'){
+    var parts = [];
+    for (var i = 0; i < value.length; i++) parts.push(String(value[i]));
+    return parts.length ? parts.join(', ') : '[]';
+  }
+  if (typeof value === 'object'){
+    try { return JSON.stringify(value); } catch (e) { return String(value); }
+  }
+  return String(value);
+}
+
+function adminTrim(text, max){
+  text = String(text === undefined || text === null ? '' : text);
+  return text.length > max ? text.slice(0, max - 1) + '…' : text;
+}
+
+function adminIdsText(ids){
+  if (!ids || !ids.length) return '[]';
+  return adminRanges(ids) || adminValText(ids);
+}
+
+function adminSetText(id, text){
+  var el = $(id);
+  if (el) el.textContent = text;
+}
+
+function adminToast(text, bad){
+  if (!text) return;
+  var el = document.createElement('div');
+  el.className = 'so-toast' + (bad ? ' so-toast--err' : '');
+  el.textContent = text;
+  document.body.appendChild(el);
+  window.setTimeout(function(){
+    if (el.parentNode) el.parentNode.removeChild(el);
+  }, 4200);
+}
+
+/* ── вход и состояние ─────────────────────────────────────────────────────── */
+
+/* Тестовые флаги нужны экрану входа ДО входа: иначе он требует пароль,
+   которого на тестовом сервере нет. Отдаём только два булевых значения. */
+function loadAdminLoginInfo(){
+  return api('GET', 'api/admin/login-info').then(function(res){
+    adminLoginInfo = res.ok && res.data ? res.data : null;
+    var st = adminState || {};
+    if (st.admin && st.authed) return;
+    renderAdminTestBanner();
+    var pass = $('adm-password');
+    if (pass){
+      pass.placeholder = (adminLoginInfo && adminLoginInfo.testNoPassword)
+        ? 'пусто — тестовый режим' : 'личный пароль';
+    }
+  }).catch(function(){
+    adminLoginInfo = null;
+  });
+}
+
 function loadAdminState(){
+  var epoch = ++adminEpoch;
+  loadAdminLoginInfo();
   return api('GET', 'api/admin').then(function(res){
-    if (res.ok && res.data){
+    if (epoch !== adminEpoch) return adminState;
+    if (res.ok && res.data && res.data.authed){
       adminState = res.data;
       renderAdmin();
       return adminState;
@@ -3914,8 +4506,6 @@ function loadAdminState(){
     /* 401 — просто не вошёл; 403 — сессию отозвали/забанили, скажем почему.
        Никаких данных панели при этом не остаётся. */
     adminState = { admin: false, authed: false };
-    adminAdmins = null;
-    adminTarget = null;
     renderAdmin();
     if (res.status === 403 && res.data && res.data.message){
       var err = $('adm-auth-err');
@@ -3923,6 +4513,65 @@ function loadAdminState(){
     }
     return adminState;
   });
+}
+
+function adminSessionLost(message){
+  adminEpoch++;
+  adminState = { admin: false, authed: false };
+  renderAdmin();
+  var err = $('adm-auth-err');
+  if (err) err.textContent = message || 'сессия истекла — войди заново';
+}
+
+function adminHandleAuthError(res){
+  if (!res) return false;
+  var code = res.data && res.data.code;
+  if (res.status === 401
+      || (res.status === 403
+          && (code === 'no_admin_auth' || code === 'not_admin' || code === 'banned'))){
+    adminSessionLost((res.data && res.data.message) || '');
+    return true;
+  }
+  return false;
+}
+
+function adminApiMessage(res, fallback){
+  if (res && res.data && res.data.message) return res.data.message;
+  if (res && res.status === 429) return 'слишком много попыток — подожди немного';
+  return fallback || 'сервер не принял действие';
+}
+
+function adminClearData(){
+  var fields = [
+    'adm-dash-online', 'adm-dash-online-sub', 'adm-dash-rooms', 'adm-dash-bans',
+    'adm-dash-reports', 'adm-dash-reports-sub', 'adm-dash-admins',
+    'adm-dash-admins-sub', 'adm-dash-sessions', 'adm-dash-failed',
+    'adm-dash-uptime', 'adm-dash-mode', 'adm-dash-state', 'adm-dash-memory',
+    'adm-dash-err', 'adm-j-err', 'adm-j-count', 'adm-p-err', 'adm-p-note',
+    'adm-r-err', 'adm-berr', 'adm-ban-err', 'adm-admins-err', 'adm-add-err',
+    'adm-cfg-path', 'adm-cfg-issues', 'adm-cfg-ids', 'adm-cfg-megas',
+    'adm-cfg-err', 'adm-sec-count', 'adm-sec-stepup', 'adm-sec-err',
+    'adm-cid-now', 'adm-cid-err'
+  ];
+  for (var i = 0; i < fields.length; i++) adminSetText(fields[i], '');
+  var boxes = [
+    'adm-nav', 'adm-dash-journal', 'adm-dash-rooms-list', 'adm-j-list',
+    'adm-p-list', 'adm-r-list', 'adm-bans', 'adm-rep-list', 'adm-admins',
+    'adm-cfg-form', 'adm-sec-sessions', 'adm-sec-fails', 'adm-add-done'
+  ];
+  for (var j = 0; j < boxes.length; j++){
+    var box = $(boxes[j]);
+    if (box) box.innerHTML = '';
+  }
+  var pager = $('adm-j-pager'); if (pager) pager.innerHTML = '';
+  adminJournalPage = 1;
+  adminJournalCursors = [];
+  var repMore = $('adm-rep-more'); if (repMore) repMore.hidden = true;
+  var addCard = $('adm-add-card'); if (addCard) addCard.hidden = true;
+  var addDone = $('adm-add-done'); if (addDone) addDone.hidden = true;
+  var cid = $('adm-cid'); if (cid) cid.value = '';
+  adminStepUpClose(false);
+  adminAskClose(null);
 }
 
 function renderAdmin(){
@@ -3937,11 +4586,14 @@ function renderAdmin(){
 
   if (!signedIn){
     /* Не вошёл — в DOM не должно остаться ни ника, ни аватара прошлой сессии. */
-    $('adm-nick').textContent = '';
-    $('adm-id').textContent = '';
+    adminSetText('adm-nick', '');
+    adminSetText('adm-id', '');
     var stale = $('adm-avatar'), staleFb = $('adm-avatar-fb');
     if (stale){ stale.hidden = true; stale.removeAttribute('src'); }
     if (staleFb) staleFb.hidden = true;
+    adminClearData();
+    renderAdminTestBanner();
+    adminPane = '';
     return;
   }
 
@@ -3959,57 +4611,86 @@ function renderAdmin(){
     img.hidden = false; fb.hidden = true;
   }
 
-  /* Вкладки только по правам: лишних кнопок, которые сервер всё равно отклонит, нет. */
-  var canCustom = adminHas('customization');
-  var canBans = adminHas('bans');
-  var canAdmins = !!st.mega;
-  $('adm-tab-custom').hidden = !canCustom;
-  $('adm-tab-bans').hidden = !canBans;
-  $('adm-tab-admins').hidden = !canAdmins;
-  $('adm-noperms').hidden = canCustom || canBans || canAdmins;
+  var role = $('adm-role');
+  if (role){
+    role.textContent = st.mega ? 'MEGA' : 'ADMIN';
+    role.className = 'so-admst' + (st.mega ? ' so-admst--ok' : '');
+  }
+  renderAdminStepUpUi();
+  renderAdminTestBanner();
 
-  var allowed = { custom: canCustom, bans: canBans, admins: canAdmins };
-  if (!allowed[adminTab])
-    adminTab = canCustom ? 'custom' : (canBans ? 'bans' : (canAdmins ? 'admins' : ''));
+  var ops = ['bans', 'reports', 'customization', 'rooms', 'players', 'config', 'admins'];
+  var anyOps = false;
+  for (var i = 0; i < ops.length; i++){
+    if (adminHas(ops[i])){ anyOps = true; break; }
+  }
+  var noPerms = $('adm-noperms');
+  if (noPerms) noPerms.hidden = anyOps;
 
   var cid = $('adm-cid');
   if (cid) cid.value = st.customId || '';
   renderAdminCidNow();
   renderAdminBanRange();
-  switchAdminTab(adminTab);
+  renderAdminNav();
+
+  var wanted = adminPane && adminPaneAllowed(adminPane)
+    ? adminPane
+    : adminFirstPane();
+  showAdminPane(wanted);
 }
 
-function renderAdminCidNow(){
-  var st = adminState || {};
-  var el = $('adm-cid-now');
-  if (el) el.innerHTML = st.customId
-    ? 'Сейчас: <b>' + esc(st.customId) + '</b>'
-    : 'Сейчас: обычный числовой ID';
+function renderAdminNav(){
+  var nav = $('adm-nav');
+  if (!nav) return;
+  nav.innerHTML = '';
+
+  for (var i = 0; i < ADMIN_PANES.length; i++){
+    var pane = ADMIN_PANES[i];
+    if (!adminPaneAllowed(pane.id)) continue;
+    var btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'so-consnav__b';
+    btn.setAttribute('role', 'tab');
+    btn.setAttribute('data-adm-pane-btn', pane.id);
+    btn.setAttribute('aria-selected', String(pane.id === adminPane));
+    btn.textContent = pane.label;
+    nav.appendChild(btn);
+  }
 }
 
-function switchAdminTab(tab){
-  var allowed = {
-    custom: adminHas('customization'),
-    bans: adminHas('bans'),
-    admins: !!(adminState && adminState.mega)
-  };
-  adminTab = allowed[tab] ? tab : '';
+function showAdminPane(id){
+  if (!adminPaneAllowed(id)) id = adminFirstPane();
+  adminPane = id;
 
-  var custom = $('adm-panel-custom'), bans = $('adm-panel-bans');
-  var admins = $('adm-panel-admins');
-  var tCustom = $('adm-tab-custom'), tBans = $('adm-tab-bans');
-  var tAdmins = $('adm-tab-admins');
-  if (!custom || !bans || !admins || !tCustom || !tBans || !tAdmins) return;
+  var nav = $('adm-nav');
+  if (nav){
+    Array.prototype.forEach.call(
+      nav.querySelectorAll('[data-adm-pane-btn]'),
+      function(btn){
+        btn.setAttribute('aria-selected',
+          String(btn.getAttribute('data-adm-pane-btn') === adminPane));
+      });
+  }
 
-  custom.hidden = adminTab !== 'custom';
-  bans.hidden = adminTab !== 'bans';
-  admins.hidden = adminTab !== 'admins';
-  tCustom.setAttribute('aria-selected', String(adminTab === 'custom'));
-  tBans.setAttribute('aria-selected', String(adminTab === 'bans'));
-  tAdmins.setAttribute('aria-selected', String(adminTab === 'admins'));
+  var views = document.querySelectorAll('#adm-panel [data-adm-pane]');
+  Array.prototype.forEach.call(views, function(view){
+    view.hidden = view.getAttribute('data-adm-pane') !== adminPane;
+  });
 
-  if (adminTab === 'bans') loadAdminBans();
-  if (adminTab === 'admins') loadAdminAdmins();
+  loadAdminPane(adminPane);
+}
+
+function loadAdminPane(id){
+  if (id === 'overview'){ loadAdminDashboard(); return; }
+  if (id === 'journal'){ loadAdminJournal(true); return; }
+  if (id === 'players'){ loadAdminPlayers(); return; }
+  if (id === 'rooms'){ loadAdminRooms(); return; }
+  if (id === 'bans'){ loadAdminBans(); return; }
+  if (id === 'reports'){ loadAdminReports(adminReportsPage, adminReportsFilter); return; }
+  if (id === 'admins'){ loadAdminAdmins(); return; }
+  if (id === 'config'){ loadAdminConfig(); return; }
+  if (id === 'security'){ loadAdminSecurity(); return; }
+  if (id === 'profile'){ renderAdminProfile(); return; }
 }
 
 function adminLogin(){
@@ -4024,165 +4705,959 @@ function adminLogin(){
     if (err) err.textContent = 'id — число больше нуля (его показывает /whoami)';
     return;
   }
-  if (!password){
-    if (err) err.textContent = 'введи личный пароль из auth/<id>/password.txt';
-    return;
-  }
 
   return api('POST', 'api/admin/login', { id: Number(id), password: password }).then(function(res){
-    if (!res.ok || !res.data){
-      if (err) err.textContent = (res.data && res.data.message) || 'id или пароль не подходят';
+    if (!res.ok || !res.data || !res.data.authed){
+      if (err) err.textContent = adminApiMessage(res, 'id или пароль не подходят');
       return;
     }
+    adminEpoch++;
     adminState = res.data;
+    adminPane = '';
     if (passInput) passInput.value = '';
     renderAdmin();
   });
 }
 
 function adminLogout(){
+  var epoch = ++adminEpoch;
   return api('POST', 'api/admin/logout').then(function(){
+    if (epoch !== adminEpoch) return;
     adminState = { admin: false, authed: false };
-    adminAdmins = null;
-    adminTarget = null;
+    adminPane = '';
+    renderAdmin();
+  }).catch(function(){
+    if (epoch !== adminEpoch) return;
+    adminState = { admin: false, authed: false };
+    adminPane = '';
     renderAdmin();
   });
 }
 
-/* ── админы и права: только мега-админ ── */
-function loadAdminAdmins(){
-  var box = $('adm-admins');
-  var err = $('adm-admins-err');
-  if (!box) return Promise.resolve();
-  if (err) err.textContent = '';
+/* ── подтверждение пароля ─────────────────────────────────────────────────── */
 
-  return api('GET', 'api/admin/admins').then(function(res){
-    if (!res.ok || !res.data){
-      if (err) err.textContent = (res.data && res.data.message) || 'список админов не загрузился';
-      return;
-    }
-    adminAdmins = res.data;
-    renderAdminAdmins();
-  });
-}
-
-function renderAdminAdmins(){
-  var box = $('adm-admins');
+function renderAdminTestBanner(){
+  var box = $('adm-testmode');
   if (!box) return;
 
-  var data = adminAdmins;
-  if (!data || !data.admins || !data.admins.length){
-    box.innerHTML = '<p class="so-note">Админов нет: впиши id в admin.ids.</p>';
+  var st = adminState || {};
+  var signedIn = !!(st.admin && st.authed);
+  /* До входа берём отдельную подсказку: /api/admin ещё отвечает 401. */
+  var info = signedIn ? st : (adminLoginInfo || {});
+  if (!info.testNoPassword && !info.testAutoMega){
+    box.hidden = true;
+    box.innerHTML = '';
     return;
   }
 
-  box.innerHTML = data.admins.map(function(a){
-    var perms = a.permissions || [];
-    var mega = a.megaIps && a.megaIps.length > 0;
-    var checks = ADMIN_PERMS.map(function(p){
-      return '<label class="so-admperm"><input type="checkbox" data-adm-perm="'
-        + p[0] + '"' + (perms.indexOf(p[0]) >= 0 ? ' checked' : '') + '> ' + p[1] + '</label>';
-    }).join('');
+  var lines = [];
+  if (info.testNoPassword){
+    lines.push('<b>noAdminPassword</b>: вход в панель, подтверждение паролем и ' +
+      'команды в игре работают без личного пароля.' +
+      (signedIn ? '' : '<br>Вход: введи id, а поле пароля оставь пустым.'));
+  }
+  if (info.testAutoMega){
+    lines.push('<b>autoMegaAdmin</b>: аккаунт без админки получает MEGA при входе ' +
+      'в игру или панель.');
+  }
+  box.innerHTML =
+    '<div class="so-testmode__t">ТЕСТОВЫЙ РЕЖИМ — НЕ БОЕВОЙ СЕРВЕР</div>' +
+    lines.join('<br>') +
+    '<br>Флаги включены вручную в config.json. На боевом сервере это уничтожит защиту.';
+  box.hidden = false;
+}
 
-    var megaIps = '';
-    if (data.mega && a.megaIps){
-      megaIps = '<div class="so-admips"><span class="so-card__label">MEGA IP</span>'
-        + a.megaIps.map(function(ip){
-            return '<span class="so-admip">' + esc(ip)
-              + ' <button type="button" class="so-admip__x" data-adm-mega-del="' + esc(ip)
-              + '" aria-label="Убрать IP">×</button></span>';
-          }).join('')
-        + '<input class="so-input so-input--slim" data-adm-mega-input spellcheck="false"'
-        + ' placeholder="192.168.1.10" aria-label="IP для мега-прав">'
-        + '<button type="button" class="so-btn so-btn--sm so-btn--ghost" data-adm-mega-add>'
-        + 'ДОБАВИТЬ</button></div>';
+function adminStepUpValid(){
+  var st = adminState || {};
+  if (st.testNoPassword) return true;
+  if (!st.stepUp) return false;
+  if (!st.stepUpUntil) return true;
+  var until = Date.parse(st.stepUpUntil);
+  return isNaN(until) || until > Date.now();
+}
+
+function renderAdminStepUpUi(){
+  var st = adminState || {};
+  var valid = adminStepUpValid();
+  var chip = $('adm-stepup-chip');
+  var btn = $('adm-stepup-open');
+  if (chip) chip.hidden = !st.authed || valid;
+  if (btn) btn.hidden = !st.authed || valid;
+}
+
+function adminStepUpClose(ok){
+  var box = $('adm-stepup');
+  if (box) box.hidden = true;
+  var input = $('adm-stepup-pass');
+  if (input) input.value = '';
+  var err = $('adm-stepup-err');
+  if (err) err.textContent = '';
+  var pending = adminStepUpPending;
+  adminStepUpPending = null;
+  if (pending) pending.resolve(ok === true);
+}
+
+function adminEnsureStepUp(why){
+  if (!adminState || !adminState.authed) return Promise.resolve(false);
+  if (adminState.testNoPassword) return Promise.resolve(true);
+  if (adminStepUpValid()) return Promise.resolve(true);
+  if (adminStepUpPending) return adminStepUpPending.promise;
+
+  var box = $('adm-stepup');
+  if (!box) return Promise.resolve(false);
+
+  var resolveFn = null;
+  var promise = new Promise(function(resolve){ resolveFn = resolve; });
+  adminStepUpPending = { resolve: resolveFn, promise: promise };
+
+  adminSetText('adm-stepup-why', why || 'Это действие меняет важные данные сервера.');
+  var err = $('adm-stepup-err');
+  if (err) err.textContent = '';
+  var input = $('adm-stepup-pass');
+  if (input) input.value = '';
+  box.hidden = false;
+  window.setTimeout(function(){
+    if (input && !box.hidden) input.focus();
+  }, 40);
+  return promise;
+}
+
+function adminStepUpGo(){
+  var pending = adminStepUpPending;
+  if (!pending) return;
+  if (adminState && adminState.testNoPassword){
+    adminStepUpClose(true);
+    return;
+  }
+  var input = $('adm-stepup-pass');
+  var err = $('adm-stepup-err');
+  var btn = $('adm-stepup-go');
+  var password = input ? input.value : '';
+  if (err) err.textContent = '';
+
+  if (!password){
+    if (err) err.textContent = 'введи свой личный пароль';
+    return;
+  }
+
+  if (btn) btn.disabled = true;
+  api('POST', 'api/admin/stepup', { password: password }).then(function(res){
+    if (btn) btn.disabled = false;
+    if (!res.ok || !res.data){
+      if (adminHandleAuthError(res)) return;
+      if (err) err.textContent = adminApiMessage(res, 'пароль не подходит');
+      return;
     }
+    adminState = adminState || {};
+    adminState.stepUp = true;
+    adminState.stepUpUntil = res.data.until || '';
+    renderAdminStepUpUi();
+    adminToast('Пароль подтверждён');
+    adminStepUpClose(true);
+  }).catch(function(){
+    if (btn) btn.disabled = false;
+    if (err) err.textContent = 'сервер не ответил';
+  });
+}
 
-    return '<div class="so-admban so-admban--col" data-adm-id="' + a.id + '">'
-      + '<div class="so-admban__head">'
-      + '<div class="so-admban__n">' + esc(a.nick || ('id #' + a.id))
-      + ' <span class="so-admcard__id">#' + a.id + '</span>'
-      + (mega ? ' <span class="so-badge-adm">MEGA</span>' : '')
-      + (a.live === false ? ' <span class="so-admst so-admst--warn">не в admin.ids</span>' : '')
-      + '</div>'
-      + '<span class="so-admcard__id">v' + a.authVersion + '</span>'
-      + '</div>'
-      + '<div class="so-admperms"><span class="so-admperm so-admperm--fixed">'
-      + 'dashboard, journal — всегда</span>' + checks + '</div>'
-      + megaIps
-      + '<div class="so-formrow" style="margin-top:12px">'
-      + '<button type="button" class="so-btn so-btn--sm" data-adm-perm-save>СОХРАНИТЬ ПРАВА</button>'
-      + '</div></div>';
+/* Опасное действие: сначала подтверждение паролем, затем запрос.
+   Если окно 15 минут успело истечь, сервер скажет step_up_required — просим ещё раз. */
+function adminDanger(method, path, body, why){
+  return adminEnsureStepUp(why).then(function(ok){
+    if (!ok) return null;
+    return api(method, path, body).then(function(res){
+      if (res.status === 403 && res.data && res.data.code === 'step_up_required'){
+        if (adminState) { adminState.stepUp = false; adminState.stepUpUntil = ''; }
+        renderAdminStepUpUi();
+        return adminEnsureStepUp(why).then(function(again){
+          if (!again) return null;
+          return api(method, path, body);
+        });
+      }
+      return res;
+    });
+  }).catch(function(){
+    adminToast('сервер не ответил', true);
+    return null;
+  });
+}
+
+/* ── свой маленький диалог подтверждения ──────────────────────────────────── */
+
+function adminAsk(opts){
+  opts = opts || {};
+  return new Promise(function(resolve){
+    var box = $('adm-ask');
+    if (!box){ resolve(null); return; }
+    if (adminAskPending) adminAskPending.resolve(null);
+
+    adminSetText('adm-ask-title', opts.title || 'ПОДТВЕРДИ');
+    adminSetText('adm-ask-text', opts.text || '');
+    var text = $('adm-ask-text');
+    if (text) text.hidden = !opts.text;
+
+    var input = $('adm-ask-input');
+    if (input){
+      input.hidden = opts.input !== true;
+      input.value = opts.value || '';
+      input.placeholder = opts.placeholder || '';
+    }
+    var ok = $('adm-ask-go');
+    if (ok){
+      ok.textContent = opts.ok || 'ПОДТВЕРДИТЬ';
+      ok.className = 'so-btn so-btn--sm' + (opts.danger ? ' so-btn--no' : '');
+    }
+    var err = $('adm-ask-err');
+    if (err) err.textContent = '';
+
+    box.hidden = false;
+    adminAskPending = { resolve: resolve };
+    if (opts.input){
+      window.setTimeout(function(){ if (input && !box.hidden) input.focus(); }, 40);
+    }
+  });
+}
+
+function adminAskClose(value){
+  var box = $('adm-ask');
+  if (box) box.hidden = true;
+  var input = $('adm-ask-input');
+  if (input) input.value = '';
+  var pending = adminAskPending;
+  adminAskPending = null;
+  if (pending) pending.resolve(value);
+}
+
+function adminAskGo(){
+  if (!adminAskPending) return;
+  var input = $('adm-ask-input');
+  var value = (input && !input.hidden) ? input.value : '';
+  adminAskClose(value);
+}
+
+function adminConfirm(title, text, okLabel, danger){
+  return adminAsk({
+    title: title, text: text, ok: okLabel,
+    danger: danger === true, input: false
+  });
+}
+
+/* ── обзор ────────────────────────────────────────────────────────────────── */
+
+function loadAdminDashboard(){
+  var epoch = adminEpoch;
+  var err = $('adm-dash-err');
+  if (err) err.textContent = '';
+  var box = $('adm-dash-journal');
+  if (box && !adminDash) box.innerHTML = '<div class="so-repempty">Загружаю…</div>';
+
+  api('GET', 'api/admin/dashboard').then(function(res){
+    if (epoch !== adminEpoch) return;
+    if (!res.ok || !res.data){
+      if (adminHandleAuthError(res)) return;
+      if (err) err.textContent = adminApiMessage(res, 'обзор не загрузился');
+      return;
+    }
+    adminDash = res.data;
+    renderAdminDashboard();
+  }).catch(function(){
+    if (epoch !== adminEpoch) return;
+    if (err) err.textContent = 'сервер не ответил';
+  });
+}
+
+function renderAdminDashboard(){
+  var data = adminDash;
+  if (!data) return;
+  var server = data.server || {};
+  var counts = data.counts || {};
+
+  adminSetText('adm-dash-online', String(server.onlineTotal || 0));
+  adminSetText('adm-dash-online-sub',
+    'лобби ' + (server.lobbyOnline || 0) + ' · катка ' + (server.matchOnline || 0));
+  adminSetText('adm-dash-rooms', (server.rooms || 0) + ' / ' + (server.roomsMax || 0));
+  adminSetText('adm-dash-bans', String(counts.bans || 0));
+  adminSetText('adm-dash-reports', String(counts.reportsOpen || 0));
+  adminSetText('adm-dash-reports-sub',
+    'принято ' + (counts.reportsAccepted || 0) + ' · отклонено ' + (counts.reportsRejected || 0));
+  adminSetText('adm-dash-admins', String(counts.admins || 0));
+  adminSetText('adm-dash-admins-sub', 'мега ' + (counts.megas || 0));
+  adminSetText('adm-dash-sessions', String(counts.staffSessions || 0));
+  adminSetText('adm-dash-failed', String(counts.failedLogins24h || 0));
+  adminSetText('adm-dash-uptime', adminUptime(data.uptimeSec));
+  adminSetText('adm-dash-mode', server.mode ? ('режим: ' + server.mode) : 'режим: —');
+
+  var line = [];
+  if (server.gamePortFailed){
+    line.push('игровой порт не слушается — новые комнаты не запустятся');
+  } else if (server.gameListening){
+    line.push('игровой порт слушает');
+  } else {
+    line.push('игровой порт ждёт первую комнату');
+  }
+  if (server.matchRunning) line.push('идёт катка');
+  if (counts.playersKnown) line.push('известных игроков: ' + counts.playersKnown);
+  if (counts.matches) line.push('каток в памяти: ' + counts.matches);
+  var levels = server.levels || [];
+  if (levels.length) line.push('карты: ' + levels.join(', '));
+  var state = $('adm-dash-state');
+  if (state){
+    state.textContent = line.join(' · ');
+    state.style.color = server.gamePortFailed ? '#f0b9b9' : '';
+  }
+
+  var mem = data.memory || {};
+  adminSetText('adm-dash-memory',
+    'память: ' + adminByteSize(mem.managedBytes) +
+    ' · процесс: ' + adminByteSize(mem.workingSetBytes) +
+    '\nGC 0: ' + (mem.gen0 || 0) + ' · GC 2: ' + (mem.gen2 || 0));
+
+  renderAdminDashJournal(data.journal || []);
+  renderAdminDashRooms(data.rooms || []);
+}
+
+function renderAdminDashJournal(entries){
+  var box = $('adm-dash-journal');
+  if (!box) return;
+  if (!entries.length){
+    box.innerHTML = '<div class="so-repempty">Действий пока нет.</div>';
+    return;
+  }
+  var html = '';
+  for (var i = 0; i < entries.length; i++)
+    html += adminJournalItemHtml(entries[i], true);
+  box.innerHTML = html;
+}
+
+function renderAdminDashRooms(rooms){
+  var box = $('adm-dash-rooms-list');
+  if (!box) return;
+  if (!rooms.length){
+    box.innerHTML = '<div class="so-repempty">Комнат сейчас нет.</div>';
+    return;
+  }
+  box.innerHTML = rooms.map(function(r){
+    return '<div class="so-consrow so-consrow--line">' +
+        '<div style="min-width:0">' +
+          '<div class="so-admban__n">#' + esc(String(r.number)) + ' ' + esc(r.name || '') + '</div>' +
+          '<div class="so-admban__m">' + esc(r.modeName || r.mode || '—') +
+            ' · ' + esc(r.level || '—') +
+            ' · ' + (r.players || 0) + ' / ' + (r.maxPlayers || 0) +
+            (r.ownerNick ? ' · владелец ' + esc(r.ownerNick) : '') +
+          '</div>' +
+        '</div>' +
+        '<span class="' + adminRoomStateClass(r.state) + '">' +
+          esc(adminRoomStateText(r.state)) + '</span>' +
+      '</div>';
   }).join('');
 }
 
-function adminSavePermissions(card){
-  var id = Number(card.getAttribute('data-adm-id'));
-  var list = [];
-  Array.prototype.forEach.call(card.querySelectorAll('[data-adm-perm]'), function(cb){
-    if (cb.checked) list.push(cb.getAttribute('data-adm-perm'));
-  });
+/* ── журнал ───────────────────────────────────────────────────────────────── */
 
-  var err = $('adm-admins-err');
-  if (err) err.textContent = '';
-  return api('POST', 'api/admin/permissions', { id: id, permissions: list }).then(function(res){
-    if (!res.ok || !res.data){
-      if (err) err.textContent = (res.data && res.data.message) || 'права не изменились';
-      return;
-    }
-    adminAdmins = res.data;
-    renderAdminAdmins();
-  });
+function adminCatLabel(cat){
+  if (cat === 'auth') return 'ВХОД';
+  if (cat === 'security') return 'БЕЗОПАСНОСТЬ';
+  if (cat === 'permission') return 'ПРАВА';
+  if (cat === 'admin') return 'АДМИНЫ';
+  if (cat === 'config') return 'КОНФИГ';
+  if (cat === 'ban') return 'БАНЫ';
+  if (cat === 'report') return 'ЖАЛОБЫ';
+  if (cat === 'customid') return 'ID';
+  if (cat === 'player') return 'ИГРОКИ';
+  if (cat === 'room') return 'КОМНАТЫ';
+  return (cat || 'СОБЫТИЕ').toUpperCase();
 }
 
-function adminSetMegaIp(card, action, ip){
-  var id = Number(card.getAttribute('data-adm-id'));
-  var err = $('adm-admins-err');
-  if (err) err.textContent = '';
-  return api('POST', 'api/admin/mega', { id: id, ip: ip, action: action }).then(function(res){
-    if (!res.ok || !res.data){
-      if (err) err.textContent = (res.data && res.data.message) || 'IP не изменён';
-      return;
-    }
-    adminAdmins = res.data;
-    renderAdminAdmins();
-  });
+function adminActionLabel(entry){
+  var cat = entry.category, action = entry.action;
+  if (cat === 'auth'){
+    if (action === 'login') return 'вход в панель';
+    if (action === 'logout') return 'выход из панели';
+    if (action === 'password_regen') return 'новый пароль';
+    if (action === 'password_regen_all') return 'новые пароли всем';
+  }
+  if (cat === 'security'){
+    if (action === 'login_failed') return 'неудачный вход';
+    if (action === 'step_up') return 'пароль подтверждён';
+    if (action === 'step_up_failed') return 'неверный пароль при подтверждении';
+    if (action === 'session_revoke') return 'сессия снята';
+  }
+  if (cat === 'permission' && action === 'set') return 'права изменены';
+  if (cat === 'admin'){
+    if (action === 'add') return 'админ добавлен';
+    if (action === 'remove') return 'админ убран';
+  }
+  if (cat === 'config'){
+    if (action === 'set') return 'конфиг изменён';
+    if (action === 'reload') return 'конфиг перечитан';
+  }
+  if (cat === 'ban'){
+    if (action === 'ban') return 'забанен';
+    if (action === 'unban') return 'разбанен';
+  }
+  if (cat === 'report' && action === 'status') return 'статус жалобы';
+  if (cat === 'customid' && action === 'set') return 'кастомный ID';
+  if (cat === 'player' && action === 'kick') return 'кик';
+  if (cat === 'room' && action === 'close') return 'комната закрыта';
+  return (action || 'действие').replace(/_/g, ' ');
 }
 
-/* ── кастомизация: только цифры и английские буквы, проверка и на клиенте ── */
-function adminFilterCid(){
-  var input = $('adm-cid');
-  if (!input) return;
-  var clean = input.value.replace(/[^A-Za-z0-9]/g, '');
-  if (clean !== input.value) input.value = clean;
-}
+function adminJournalDetail(entry){
+  var cat = entry.category, action = entry.action;
+  var before = entry.before, after = entry.after;
 
-function adminSaveCid(clear){
-  var err = $('adm-cid-err');
-  var input = $('adm-cid');
-  if (err) err.textContent = '';
-  var value = clear ? '' : (input ? input.value.trim() : '');
-  if (!clear && !value){
-    if (err) err.textContent = 'введи новый ID (цифры и английские буквы)';
-    return;
+  if (cat === 'permission')
+    return 'права: ' + adminValText(before) + ' → ' + adminValText(after);
+
+  if (cat === 'admin'){
+    if (after && after.ids) return 'admin.ids: ' + adminIdsText(before && before.ids)
+      + ' → ' + adminIdsText(after.ids);
+    if (after && after.authVersion) return 'версия входа: ' + after.authVersion;
   }
 
-  return api('POST', 'api/admin/customid', { customId: value }).then(function(res){
+  if (cat === 'config' && after && after.key){
+    return after.key + ': ' + adminValText(before && before.value)
+      + ' → ' + adminValText(after.value);
+  }
+
+  if (cat === 'ban'){
+    if (action === 'ban' && after){
+      var ban = 'бан: ' + (after.duration || '—');
+      if (after.expires) ban += ' · до ' + fmtWhen(after.expires);
+      if (after.reason) ban += ' · «' + after.reason + '»';
+      return ban;
+    }
+    if (action === 'unban' && after)
+      return 'снято записей: ' + (after.removed === undefined ? '—' : after.removed);
+  }
+
+  if (cat === 'report' && after && after.reportId){
+    return 'жалоба ' + after.reportId + ': ' + adminValText(before && before.status)
+      + ' → ' + adminValText(after.status);
+  }
+
+  if (cat === 'customid'){
+    var from = before && before.value;
+    var to = after && after.value;
+    return 'значение: ' + (from ? '«' + from + '»' : 'сброс')
+      + ' → ' + (to ? '«' + to + '»' : 'сброс');
+  }
+
+  if (cat === 'player' && action === 'kick'){
+    return after && after.reason ? 'причина: ' + after.reason : '';
+  }
+
+  if (cat === 'room' && action === 'close' && after){
+    var room = 'комната #' + adminValText(after.number);
+    if (after.name) room += ' «' + after.name + '»';
+    if (after.reason) room += ' · причина: ' + after.reason;
+    return room;
+  }
+
+  if (cat === 'security') return entry.note || '';
+  if (cat === 'auth' && after && after.authVersion)
+    return 'версия входа: ' + after.authVersion;
+
+  if (before !== undefined || after !== undefined)
+    return adminValText(before) + ' → ' + adminValText(after);
+  return '';
+}
+
+function adminJournalItemHtml(entry, compact){
+  var actor = entry.actorId
+    ? nickLink(entry.actorId, entry.actorNick || ('ID ' + entry.actorId), false)
+    : esc(entry.actorNick || '—');
+  var target = entry.targetId
+    ? nickLink(entry.targetId, entry.targetNick || ('ID ' + entry.targetId), false)
+    : esc(entry.targetNick || '');
+
+  var title = esc(adminActionLabel(entry));
+  if (target) title += ' · ' + target;
+  if (entry.undoOf) title += ' <span class="so-jitem__undo">откат ' + esc(entry.undoOf) + '</span>';
+
+  var badges = '';
+  if (entry.result === 'fail'){
+    badges += '<span class="so-admst so-admst--warn">ОШИБКА</span>';
+  } else if (entry.reverted){
+    badges += '<span class="so-admst">ОТМЕНЕНО</span>';
+  } else if (entry.undoOf){
+    badges += '<span class="so-admst so-admst--ok">ОТКАТ</span>';
+  } else if (entry.reversible){
+    badges += '<span class="so-admst">ОБРАТИМО</span>';
+  }
+
+  /* Свёрнутая строка — только «что, кто, когда». Всё остальное раскрывается. */
+  var meta = esc(fmtWhen(entry.ts)) + ' · кто: ' + actor;
+  var bodyId = 'jbody-' + String(entry.id || '').replace(/[^A-Za-z0-9_-]/g, '');
+  var chev = compact ? '' : '<span class="so-jitem__chev" aria-hidden="true"></span>';
+
+  var head = '<div class="so-jitem__head"' +
+    (compact
+      ? ''
+      : ' role="button" tabindex="0" aria-expanded="false" aria-controls="' + esc(bodyId) + '"') +
+    '>' +
+      chev +
+      '<div class="so-jitem__main">' +
+        '<div class="so-jitem__title">' +
+          '<span class="so-jcat">' + esc(adminCatLabel(entry.category)) + '</span>' +
+          '<span>' + title + '</span>' +
+        '</div>' +
+        '<div class="so-jitem__meta">' + meta + '</div>' +
+      '</div>' +
+      '<div class="so-jitem__badges">' + badges + '</div>' +
+    '</div>';
+
+  if (compact)
+    return '<div class="so-jitem">' + head + '</div>';
+
+  var note = entry.note
+    ? '<p class="so-jitem__note">' + esc(entry.note) + '</p>'
+    : '';
+  var detail = adminJournalDetail(entry);
+  var data = detail
+    ? '<div class="so-jitem__data">' + esc(adminTrim(detail, 700)) + '</div>'
+    : '';
+
+  var acts = '<span class="so-jitem__id">' + esc(entry.id) + '</span>';
+  if (entry.actorIp) acts += '<span class="so-jitem__id">IP ' + esc(entry.actorIp) + '</span>';
+  if (entry.revertedBy)
+    acts += '<span class="so-note">снято записью ' + esc(entry.revertedBy) + '</span>';
+  if (entry.canUndo){
+    acts += '<button class="so-btn so-btn--sm so-btn--ghost so-jitem__undo-btn" type="button" ' +
+      'data-adm-undo="' + esc(entry.id) + '" data-adm-jcat="' + esc(entry.category) + '">ОТМЕНИТЬ</button>';
+  }
+
+  var body = '<div class="so-jitem__body" id="' + esc(bodyId) + '" hidden>' +
+      note + data +
+      '<div class="so-jitem__acts">' + acts + '</div>' +
+    '</div>';
+
+  return '<div class="so-jitem so-jitem--exp" data-adm-jrow="' + esc(entry.id) + '">' +
+      head + body +
+    '</div>';
+}
+
+function adminToggleJournalRow(row){
+  if (!row || row.getAttribute('data-adm-jrow') === null) return;
+  var head = row.querySelector('.so-jitem__head');
+  var body = row.querySelector('.so-jitem__body');
+  if (!head || !body) return;
+
+  var open = body.hidden;
+  body.hidden = !open;
+  row.classList.toggle('so-jitem--open', open);
+  head.setAttribute('aria-expanded', String(open));
+}
+
+function adminJournalQuery(){
+  var parts = ['limit=20'];
+  var cat = ($('adm-j-cat') || {}).value || '';
+  if (cat) parts.push('category=' + encodeURIComponent(cat));
+  var search = (($('adm-j-search') || {}).value || '').trim();
+  if (search) parts.push('search=' + encodeURIComponent(search));
+  var actor = (($('adm-j-actor') || {}).value || '').trim();
+  if (actor) parts.push('actor=' + encodeURIComponent(actor));
+  var target = (($('adm-j-target') || {}).value || '').trim();
+  if (target) parts.push('target=' + encodeURIComponent(target));
+  var rev = $('adm-j-rev');
+  if (rev && rev.checked) parts.push('reversible=1');
+  return parts.join('&');
+}
+
+function renderAdminJournalPager(page, hasNext){
+  var box = $('adm-j-pager');
+  if (!box) return;
+  box.innerHTML = '';
+  if (page <= 1 && !hasNext) return;
+
+  var prev = document.createElement('button');
+  prev.type = 'button';
+  prev.className = 'so-btn so-btn--sm so-btn--ghost';
+  prev.textContent = 'НАЗАД';
+  prev.disabled = page <= 1;
+  prev.addEventListener('click', function(){ loadAdminJournalPage(page - 1); });
+
+  var info = document.createElement('span');
+  info.className = 'so-pager__i';
+  info.textContent = 'стр. ' + page;
+
+  var next = document.createElement('button');
+  next.type = 'button';
+  next.className = 'so-btn so-btn--sm so-btn--ghost';
+  next.textContent = 'ВПЕРЁД';
+  next.disabled = !hasNext;
+  next.addEventListener('click', function(){ loadAdminJournalPage(page + 1); });
+
+  box.appendChild(prev);
+  box.appendChild(info);
+  box.appendChild(next);
+}
+
+/* Журнал листается курсором: страница 1 — самые новые записи, каждая следующая
+   помнит свой before-курсор. Назад — по сохранённому cursors[page-2]. */
+function loadAdminJournalPage(page){
+  var box = $('adm-j-list');
+  var err = $('adm-j-err');
+  if (!box) return Promise.resolve();
+
+  page = Math.max(1, page || 1);
+  var cursor = page === 1 ? null : adminJournalCursors[page - 2];
+  if (page > 1 && !cursor) return Promise.resolve();
+
+  var epoch = adminEpoch;
+  var query = adminJournalQuery();
+  if (cursor){
+    query += '&before=' + encodeURIComponent(cursor.before);
+    if (cursor.beforeTs)
+      query += '&beforeTs=' + encodeURIComponent(cursor.beforeTs);
+  }
+
+  if (err) err.textContent = '';
+  box.innerHTML = '<div class="so-repempty">Загружаю журнал…</div>';
+  var pager = $('adm-j-pager');
+  if (pager) pager.innerHTML = '';
+  adminSetText('adm-j-count', 'страница ' + page + ' · загружаю…');
+
+  return api('GET', 'api/admin/journal?' + query).then(function(res){
+    if (epoch !== adminEpoch) return;
     if (!res.ok || !res.data){
-      if (err) err.textContent = (res.data && res.data.message) || 'сервер не принял ID';
+      if (adminHandleAuthError(res)) return;
+      box.innerHTML = '';
+      if (err) err.textContent = adminApiMessage(res, 'журнал не загрузился');
+      adminSetText('adm-j-count', '');
       return;
     }
-    adminState = res.data;
-    renderAdminCidNow();
-    if (input) input.value = adminState.customId || '';
-    var who = $('adm-id');
-    if (who) who.textContent = idLine(adminState.customId, adminState.id);
-    /* Сайт везде показывает displayId: обновляем и панель, и профиль. */
-    loadMe();
+
+    var entries = res.data.entries || [];
+    var hasMore = res.data.hasMore === true && !!res.data.nextId;
+
+    if (page === 1)
+      adminJournalCursors = [];
+    if (hasMore){
+      adminJournalCursors[page - 1] = {
+        before: res.data.nextId,
+        beforeTs: res.data.nextTs || ''
+      };
+    } else {
+      adminJournalCursors.length = page - 1;
+    }
+    adminJournalPage = page;
+
+    if (!entries.length){
+      box.innerHTML = '<div class="so-repempty">По этим фильтрам записей нет.</div>';
+    } else {
+      var html = '';
+      for (var i = 0; i < entries.length; i++)
+        html += adminJournalItemHtml(entries[i], false);
+      box.innerHTML = html;
+    }
+
+    renderAdminJournalPager(page, hasMore);
+
+    var count = 'страница ' + page + ' · записей: ' + entries.length;
+    if (page > 1) count += ' · выше — более новые';
+    if (hasMore) count += ' · есть ещё';
+    adminSetText('adm-j-count', count);
+  }).catch(function(){
+    if (epoch !== adminEpoch) return;
+    box.innerHTML = '';
+    if (err) err.textContent = 'сервер не ответил';
+    adminSetText('adm-j-count', '');
   });
 }
 
-/* ── баны: 3 шага + живое превью по мере ввода ── */
+function loadAdminJournal(reset){
+  if (reset){
+    adminJournalPage = 1;
+    adminJournalCursors = [];
+  }
+  return loadAdminJournalPage(1);
+}
+
+function adminResetJournalFilters(){
+  var fields = ['adm-j-search', 'adm-j-actor', 'adm-j-target'];
+  for (var i = 0; i < fields.length; i++){
+    var field = $(fields[i]);
+    if (field) field.value = '';
+  }
+  var cat = $('adm-j-cat'); if (cat) cat.value = '';
+  var rev = $('adm-j-rev'); if (rev) rev.checked = false;
+  loadAdminJournal(true);
+}
+
+function adminUndoEntry(id, category){
+  if (!id) return;
+  var why = 'Откат перезаписывает данные сервера' +
+    (category ? ' (категория ' + category + ')' : '') + '. Подтверди пароль.';
+  return adminDanger('POST', 'api/admin/journal/undo', { id: id }, why).then(function(res){
+    if (!res) return;
+    if (!res.ok || !res.data){
+      if (adminHandleAuthError(res)) return;
+      adminToast(adminApiMessage(res, 'откат не удался'), true);
+      return;
+    }
+    adminToast(res.data.message || 'действие отменено');
+    loadAdminJournal(true);
+    loadAdminDashboard();
+  }).catch(function(){
+    adminToast('сервер не ответил', true);
+  });
+}
+
+/* ── игроки ───────────────────────────────────────────────────────────────── */
+
+function adminFindPlayer(id){
+  for (var i = 0; i < adminPlayersList.length; i++){
+    if (adminPlayersList[i].id === id) return adminPlayersList[i];
+  }
+  return null;
+}
+
+function loadAdminPlayers(){
+  var box = $('adm-p-list');
+  var err = $('adm-p-err');
+  var note = $('adm-p-note');
+  if (!box) return Promise.resolve();
+  if (err) err.textContent = '';
+  if (note) note.textContent = '';
+
+  var epoch = adminEpoch;
+  var q = (($('adm-p-q') || {}).value || '').trim();
+  box.innerHTML = '<div class="so-repempty">Ищу…</div>';
+
+  return api('GET', 'api/admin/players?limit=50&q=' + encodeURIComponent(q)).then(function(res){
+    if (epoch !== adminEpoch) return;
+    if (!res.ok || !res.data){
+      if (adminHandleAuthError(res)) return;
+      if (err) err.textContent = adminApiMessage(res, 'поиск не удался');
+      box.innerHTML = '';
+      return;
+    }
+
+    adminPlayersList = res.data.players || [];
+    if (!adminPlayersList.length){
+      box.innerHTML = '<div class="so-repempty">' +
+        (q ? 'Никого не нашли по «' + esc(q) + '».' : 'Сейчас на сервере никого нет.') +
+        '</div>';
+    } else {
+      var html = '';
+      for (var i = 0; i < adminPlayersList.length; i++)
+        html += adminPlayerHtml(adminPlayersList[i]);
+      box.innerHTML = html;
+    }
+
+    if (note){
+      note.textContent = 'найдено: ' + adminPlayersList.length +
+        (res.data.fullPrivacy
+          ? ' · IP и ключи устройств показаны полностью'
+          : ' · IP скрыт маской, полные данные видит мега-админ');
+    }
+  }).catch(function(){
+    if (epoch !== adminEpoch) return;
+    if (err) err.textContent = 'сервер не ответил';
+    box.innerHTML = '';
+  });
+}
+
+function adminPlayerHtml(p){
+  var selfId = (adminState && adminState.id) || 0;
+  var badges = '';
+  if (p.mega) badges = ' <span class="so-badge-adm">MEGA</span>';
+  else if (p.admin) badges = ' <span class="so-badge-adm">ADM</span>';
+
+  var line = esc(idLine(p.customId, p.id)) + ' · ' + esc(adminStatusText(p.status));
+  if (p.status === 'offline' && p.lastSeen) line += ' · был(а) ' + esc(fmtWhen(p.lastSeen));
+  if (p.banned) line += ' · <span style="color:#f0b9b9">забанен</span>';
+
+  var ips = (p.ips || []).join(', ') || '—';
+  var devices = (p.deviceKeys || []).join(', ');
+  var deviceLine = devices
+    ? devices
+    : (typeof p.devices === 'number' && p.devices > 0 ? ('устройств: ' + p.devices) : '—');
+  var aliases = (p.aliases || []).join(', ');
+
+  var canKick = p.status !== 'offline' && p.id !== selfId && !p.mega;
+  var canBan = adminHas('bans') && p.id !== selfId && !p.mega;
+
+  var acts = '';
+  if (canKick)
+    acts += '<button class="so-btn so-btn--sm so-btn--ghost" type="button" ' +
+      'data-adm-kick="' + p.id + '">КИК</button>';
+  if (canBan)
+    acts += '<button class="so-btn so-btn--sm so-btn--no" type="button" ' +
+      'data-adm-banplayer="' + p.id + '">БАН</button>';
+
+  return '<div class="so-admban so-admban--col">' +
+      '<div class="so-admban__head">' +
+        '<div style="min-width:0;flex:1">' +
+          '<div class="so-admban__n">' +
+            nickLink(p.id, p.nick || ('ID ' + p.id), p.admin === true, p.customId) + badges +
+          '</div>' +
+          '<div class="so-admban__m">' + line + '</div>' +
+          '<div class="so-admban__m">IP: ' + esc(ips) + ' · устройства: ' + esc(adminTrim(deviceLine, 160)) + '</div>' +
+          (aliases ? '<div class="so-admban__m">алиасы: ' + esc(adminTrim(aliases, 200)) + '</div>' : '') +
+          (p.note ? '<div class="so-admban__m">' + esc(p.note) + '</div>' : '') +
+        '</div>' +
+        '<span class="' + adminStatusClass(p.status) + '">' + esc(adminStatusText(p.status)) + '</span>' +
+      '</div>' +
+      (acts ? '<div class="so-admban__acts">' + acts + '</div>' : '') +
+    '</div>';
+}
+
+function adminKickPlayer(id){
+  var player = adminFindPlayer(id);
+  var nick = (player && player.nick) || ('ID ' + id);
+  adminAsk({
+    title: 'КИК ИГРОКА',
+    text: nick + ' будет отключён от сервера. Вернуться он сможет сам.',
+    placeholder: 'причина (можно оставить пустой)',
+    input: true,
+    ok: 'КИКНУТЬ',
+    danger: true
+  }).then(function(reason){
+    if (reason === null) return;
+    adminDanger('POST', 'api/admin/kick', { id: id, reason: reason.trim() },
+      'Кик игрока: его подключение будет разорвано. Подтверди пароль.').then(function(res){
+      if (!res) return;
+      if (!res.ok || !res.data){
+        if (adminHandleAuthError(res)) return;
+        adminToast(adminApiMessage(res, 'кик не удался'), true);
+        return;
+      }
+      adminToast(nick + ' отключён от сервера');
+      loadAdminPlayers();
+    }).catch(function(){ adminToast('сервер не ответил', true); });
+  });
+}
+
+function adminBanFromPlayer(id){
+  adminPane = 'bans';
+  showAdminPane('bans');
+  adminTarget = null;
+  var input = $('adm-bid');
+  if (input) input.value = String(id);
+  var prev = $('adm-bprev');
+  if (prev){ prev.hidden = true; prev.innerHTML = ''; }
+  adminBanStep(1);
+  adminLookupBan();
+}
+
+/* ── комнаты ──────────────────────────────────────────────────────────────── */
+
+function loadAdminRooms(){
+  var box = $('adm-r-list');
+  var err = $('adm-r-err');
+  if (!box) return Promise.resolve();
+  if (err) err.textContent = '';
+  var epoch = adminEpoch;
+  box.innerHTML = '<div class="so-repempty">Загружаю комнаты…</div>';
+
+  return api('GET', 'api/admin/rooms').then(function(res){
+    if (epoch !== adminEpoch) return;
+    if (!res.ok || !res.data){
+      if (adminHandleAuthError(res)) return;
+      if (err) err.textContent = adminApiMessage(res, 'комнаты не загрузились');
+      box.innerHTML = '';
+      return;
+    }
+    var rooms = res.data.rooms || [];
+    if (!rooms.length){
+      box.innerHTML = '<div class="so-repempty">Комнат сейчас нет.</div>';
+      return;
+    }
+    box.innerHTML = rooms.map(adminRoomHtml).join('');
+  }).catch(function(){
+    if (epoch !== adminEpoch) return;
+    if (err) err.textContent = 'сервер не ответил';
+    box.innerHTML = '';
+  });
+}
+
+function adminRoomHtml(r){
+  var live = r.live || [];
+  var players = [];
+  for (var i = 0; i < live.length; i++){
+    var p = live[i];
+    players.push(esc((p.team ? p.team + ' · ' : '') + (p.nick || ('ID ' + p.id))) +
+      (p.ping ? ' (' + p.ping + ' мс)' : ''));
+  }
+  var liveText = players.length ? players.join(' · ') : 'состав пуст';
+  var score = (r.scoreCt || 0) + ' : ' + (r.scoreTr || 0);
+
+  return '<div class="so-admban so-admban--col">' +
+      '<div class="so-admban__head">' +
+        '<div style="min-width:0;flex:1">' +
+          '<div class="so-admban__n">#' + esc(String(r.number)) +
+            ' ' + esc(r.name || '') +
+            (r.isMine ? ' <span class="so-admst so-admst--ok" style="margin-left:8px">МОЯ</span>' : '') +
+          '</div>' +
+          '<div class="so-admban__m">' + esc(r.modeName || r.mode || '—') +
+            ' · ' + esc(r.level || '—') +
+            ' · игроки ' + (r.players || 0) + ' / ' + (r.maxPlayers || 0) +
+            ' · счёт ' + esc(score) +
+            ' · раунд ' + (r.round || 0) +
+            ' · владелец ' + esc(r.ownerNick || '—') +
+          '</div>' +
+          '<div class="so-admban__m">' + esc(liveText) + '</div>' +
+          (r.joinCommand ? '<div class="so-admban__m">' + esc(r.joinCommand) + '</div>' : '') +
+        '</div>' +
+        '<span class="' + adminRoomStateClass(r.state) + '">' +
+          esc(adminRoomStateText(r.state)) + '</span>' +
+      '</div>' +
+      '<div class="so-admban__acts">' +
+        '<button class="so-btn so-btn--sm so-btn--no" type="button" ' +
+          'data-adm-room-close="' + r.number + '" data-adm-room-name="' + esc(r.name || '') + '">' +
+          'ЗАКРЫТЬ' +
+        '</button>' +
+      '</div>' +
+    '</div>';
+}
+
+function adminCloseRoom(number, name){
+  adminAsk({
+    title: 'ЗАКРЫТЬ КОМНАТУ #' + number,
+    text: name ? ('Комната «' + name + '» закроется, катка завершится, номер освободится.')
+      : 'Катка завершится, номер комнаты освободится.',
+    placeholder: 'причина (можно оставить пустой)',
+    input: true,
+    ok: 'ЗАКРЫТЬ',
+    danger: true
+  }).then(function(reason){
+    if (reason === null) return;
+    adminDanger('POST', 'api/admin/rooms/close', {
+      number: number, reason: reason.trim()
+    }, 'Закрытие комнаты: катка завершится. Подтверди пароль.').then(function(res){
+      if (!res) return;
+      if (!res.ok || !res.data){
+        if (adminHandleAuthError(res)) return;
+        adminToast(adminApiMessage(res, 'комната не закрылась'), true);
+        return;
+      }
+      adminToast('комната #' + number + ' закрыта');
+      loadAdminRooms();
+      loadAdminDashboard();
+    }).catch(function(){ adminToast('сервер не ответил', true); });
+  });
+}
+
+/* ── баны ─────────────────────────────────────────────────────────────────── */
+
+function renderAdminBanRange(){
+  var st = adminState || {};
+  var el = $('adm-brange');
+  var bans = st.bans || {};
+  if (el){
+    el.textContent = bans.enabled
+      ? 'Срок по настройкам сервера: от ' + bans.minMinutes + ' минут до ' + bans.maxDays + ' дней.'
+      : 'Баны на этом сервере выключены (admin.ban.enabled = false).';
+  }
+  var unit = $('adm-bunit');
+  var dur = $('adm-bdur');
+  if (unit && dur && bans.enabled && bans.minMinutes){
+    if (bans.minMinutes < 60) dur.min = bans.minMinutes;
+  }
+}
+
 function adminBanStep(n){
   for (var i = 1; i <= 3; i++){
     var box = $('adm-bstep' + i);
@@ -4198,13 +5673,15 @@ function adminBanStep(n){
 
 function renderAdminTarget(box, t){
   if (!box) return;
+  var letter = (t.nick || '?').charAt(0).toUpperCase() || '?';
   box.innerHTML =
     '<div class="so-admprev">' +
-      '<div style="min-width:0">' +
-        '<div class="so-admprev__n">' + nickLink(t.id, t.nick, false) + '</div>' +
+      '<span class="so-repfound__av" aria-hidden="true">' + esc(letter) + '</span>' +
+      '<div style="min-width:0;flex:1">' +
+        '<div class="so-admprev__n">' + nickLink(t.id, t.nick, false, t.customId) + '</div>' +
         '<div class="so-admprev__i">' + esc(idLine(t.customId, t.id)) +
           (t.status === 'offline' && t.lastSeen
-            ? ' · был в сети ' + esc(adminSeenText(t.lastSeen))
+            ? ' · был в сети ' + esc(fmtWhen(t.lastSeen))
             : '') +
         '</div>' +
       '</div>' +
@@ -4214,15 +5691,8 @@ function renderAdminTarget(box, t){
     (t.note ? '<p class="so-err" style="margin-top:10px">' + esc(t.note) + '</p>' : '');
 }
 
-function adminSeenText(iso){
-  var d = new Date(iso);
-  if (isNaN(d.getTime())) return '';
-  var pad = function(n){ return (n < 10 ? '0' : '') + n; };
-  return pad(d.getDate()) + '.' + pad(d.getMonth() + 1) + ' ' +
-         pad(d.getHours()) + ':' + pad(d.getMinutes());
-}
-
 function adminLookupBan(){
+  if (!adminHas('bans')) return;
   var input = $('adm-bid');
   var prev = $('adm-bprev');
   var err = $('adm-berr');
@@ -4243,17 +5713,20 @@ function adminLookupBan(){
     /* ответ мог прийти на старую строку — сверяем id */
     if (!input || input.value.trim() !== String(id)) return;
     if (res.status === 404){
-      if (err) err.textContent = (res.data && res.data.message) || ('никого с id ' + id + ' сервер не помнит');
+      if (err) err.textContent = adminApiMessage(res, 'никого с id ' + id + ' сервер не помнит');
       return;
     }
     if (!res.ok || !res.data || res.data.ok === false){
-      if (err) err.textContent = (res.data && res.data.message) || 'поиск не удался';
+      if (adminHandleAuthError(res)) return;
+      if (err) err.textContent = adminApiMessage(res, 'поиск не удался');
       return;
     }
     if (err) err.textContent = '';
     adminTarget = res.data;
     prev.hidden = false;
     renderAdminTarget(prev, res.data);
+  }).catch(function(){
+    if (err) err.textContent = 'сервер не ответил';
   });
 }
 
@@ -4277,22 +5750,6 @@ function adminBanBack(){
   adminBanStep(1);
 }
 
-function renderAdminBanRange(){
-  var st = adminState || {};
-  var el = $('adm-brange');
-  var bans = st.bans || {};
-  if (el){
-    el.textContent = bans.enabled
-      ? 'Срок по настройкам сервера: от ' + bans.minMinutes + ' минут до ' + bans.maxDays + ' дней.'
-      : 'Баны на этом сервере выключены (admin.ban.enabled = false).';
-  }
-  var unit = $('adm-bunit');
-  var dur = $('adm-bdur');
-  if (unit && dur && bans.enabled && bans.minMinutes){
-    if (bans.minMinutes < 60) dur.min = bans.minMinutes;
-  }
-}
-
 function adminBanGo(){
   var err = $('adm-ban-err');
   var reason = ($('adm-breason') || {}).value || '';
@@ -4306,28 +5763,33 @@ function adminBanGo(){
     return;
   }
 
-  return api('POST', 'api/admin/ban', {
+  var btn = $('adm-ban-go');
+  if (btn) btn.disabled = true;
+  return adminDanger('POST', 'api/admin/ban', {
     id: adminTarget.id,
     reason: reason.trim(),
     durationValue: num,
     durationUnit: unit
-  }).then(function(res){
+  }, 'Бан игрока: он потеряет доступ к серверу. Подтверди пароль.').then(function(res){
+    if (btn) btn.disabled = false;
+    if (!res) return;
     if (!res.ok || !res.data || res.data.ok === false){
-      if (err) err.textContent = (res.data && res.data.message) || 'сервер отклонил бан';
+      if (adminHandleAuthError(res)) return;
+      if (err) err.textContent = adminApiMessage(res, 'сервер отклонил бан');
       return;
     }
     adminTarget = null;
     var bid = $('adm-bid');
     if (bid) bid.value = '';
     var prev = $('adm-bprev');
-    if (prev) prev.hidden = true;
+    if (prev){ prev.hidden = true; prev.innerHTML = ''; }
     adminBanStep(1); /* сбрасывает шаги и прячет результат — рисуем его после */
     var done = $('adm-bdone');
     if (done){
       done.hidden = false;
       done.innerHTML =
         '<div class="so-admprev" style="border-color:rgba(87,217,138,.4)">' +
-          '<div style="min-width:0">' +
+          '<div style="min-width:0;flex:1">' +
             '<div class="so-admprev__n">' + esc(res.data.nick) + ' — забанен</div>' +
             '<div class="so-admprev__i">на ' + esc(res.data.duration) +
               ' · до ' + esc(res.data.expires) +
@@ -4336,7 +5798,12 @@ function adminBanGo(){
           '<span class="so-admst so-admst--ok">объявление увидят все</span>' +
         '</div>';
     }
+    adminToast(res.data.nick + ' забанен на ' + res.data.duration);
     loadAdminBans();
+    loadAdminDashboard();
+  }).catch(function(){
+    if (btn) btn.disabled = false;
+    if (err) err.textContent = 'сервер не ответил';
   });
 }
 
@@ -4344,16 +5811,26 @@ function loadAdminBans(){
   var box = $('adm-bans');
   var empty = $('adm-bans-empty');
   if (!box) return Promise.resolve();
+  if (!adminHas('bans')) return Promise.resolve();
 
+  var epoch = adminEpoch;
   return api('GET', 'api/admin/bans').then(function(res){
+    if (epoch !== adminEpoch) return;
     if (!res.ok || !res.data || !res.data.bans){
-      if (empty) empty.textContent = 'список банов недоступен';
+      if (adminHandleAuthError(res)) return;
+      if (empty){ empty.hidden = false; empty.textContent = adminApiMessage(res, 'список банов недоступен'); }
+      box.innerHTML = '';
       return;
     }
     var list = res.data.bans || [];
-    if (empty) empty.hidden = list.length > 0;
+    if (empty){
+      empty.hidden = list.length > 0;
+      if (!list.length) empty.textContent = 'Активных банов нет.';
+    }
     box.innerHTML = '';
-    list.forEach(function(b){
+
+    for (var i = 0; i < list.length; i++){
+      var b = list[i];
       var row = document.createElement('div');
       row.className = 'so-admban';
       row.innerHTML =
@@ -4363,19 +5840,708 @@ function loadAdminBans(){
             ' · на ' + esc(b.duration) + ' · осталось ' + esc(b.remaining) +
             '<br>кто: ' + esc(b.bannedBy) +
             (b.reason ? ' · причина: ' + esc(b.reason) : ' · причина: не указана') +
-            ' · до ' + esc(adminSeenText(b.expires)) + '</div>' +
+            ' · до ' + esc(fmtWhen(b.expires)) + '</div>' +
         '</div>' +
-        '<button class="so-btn so-btn--sm so-admban__x" type="button">РАЗБАНИТЬ</button>';
-      row.querySelector('button').addEventListener('click', function(){
-        api('POST', 'api/admin/unban', { id: b.id }).then(function(r2){
-          loadAdminBans();
-          if (adminTarget && adminTarget.id === b.id) adminLookupBan();
-        });
-      });
+        '<button class="so-btn so-btn--sm so-admban__x" type="button" ' +
+          'data-adm-unban="' + b.id + '" data-adm-unban-nick="' + esc(b.nick || '') + '">РАЗБАНИТЬ</button>';
       box.appendChild(row);
+    }
+  }).catch(function(){
+    if (epoch !== adminEpoch) return;
+    if (empty){ empty.hidden = false; empty.textContent = 'сервер не ответил'; }
+    box.innerHTML = '';
+  });
+}
+
+function adminUnbanPlayer(id, nick){
+  adminConfirm('РАЗБАНИТЬ',
+    'Снять все активные баны с ' + (nick || ('#id ' + id)) + '?',
+    'РАЗБАНИТЬ', false).then(function(ok){
+    if (ok === null) return;
+    adminDanger('POST', 'api/admin/unban', { id: id },
+      'Разбан снимает все активные баны. Подтверди пароль.').then(function(res){
+      if (!res) return;
+      if (!res.ok || !res.data){
+        if (adminHandleAuthError(res)) return;
+        adminToast(adminApiMessage(res, 'разбан не удался'), true);
+        return;
+      }
+      adminToast('баны сняты: ' + (res.data.removed || 0));
+      loadAdminBans();
+      if (adminTarget && adminTarget.id === id) adminLookupBan();
+      loadAdminDashboard();
+    }).catch(function(){ adminToast('сервер не ответил', true); });
+  });
+}
+
+/* ── жалобы ───────────────────────────────────────────────────────────────── */
+
+function loadAdminReports(page, filter){
+  var box = $('adm-rep-list');
+  var err = $('adm-rep-err');
+  var sum = $('adm-rep-sum');
+  var more = $('adm-rep-more');
+  if (!box) return Promise.resolve();
+  if (!adminHas('reports')) return Promise.resolve();
+  if (err) err.textContent = '';
+
+  adminReportsPage = Math.max(1, page || 1);
+  adminReportsFilter = filter || 'open';
+  var epoch = adminEpoch;
+
+  Array.prototype.forEach.call(
+    document.querySelectorAll('#adm-rep-filters [data-adm-rep-filter]'),
+    function(b){
+      b.setAttribute('aria-pressed',
+        String(b.getAttribute('data-adm-rep-filter') === adminReportsFilter));
+    });
+
+  box.innerHTML = '<div class="so-repempty">Загружаю…</div>';
+  if (more) more.hidden = true;
+
+  return api('GET', 'api/admin/reports?status=' +
+      encodeURIComponent(adminReportsFilter) +
+      '&page=' + encodeURIComponent(String(adminReportsPage))).then(function(res){
+    if (epoch !== adminEpoch) return;
+    if (!res.ok || !res.data){
+      if (adminHandleAuthError(res)) return;
+      if (err) err.textContent = adminApiMessage(res, 'жалобы не загрузились');
+      box.innerHTML = '';
+      return;
+    }
+
+    var s = res.data.summary || {};
+    if (sum){
+      sum.textContent = 'висящих: ' + (s.open || 0) +
+        ' · принятых: ' + (s.accepted || 0) +
+        ' · отклонённых: ' + (s.rejected || 0);
+    }
+
+    var items = res.data.items || [];
+    if (!items.length){
+      box.innerHTML = '<div class="so-repempty">В этом фильтре жалоб нет.</div>';
+      return;
+    }
+    box.innerHTML = items.map(function(r){ return reportItemHtml(r, true); }).join('');
+    var pages = res.data.pages || 0;
+    if (more){
+      more.hidden = adminReportsPage >= pages;
+      more.textContent = 'ЕЩЁ (стр. ' + adminReportsPage + ' из ' + pages + ')';
+    }
+  }).catch(function(){
+    if (epoch !== adminEpoch) return;
+    if (err) err.textContent = 'сервер не ответил';
+    box.innerHTML = '';
+  });
+}
+
+function adminModerateReport(id, status, btn){
+  if (!id || (status !== 'accepted' && status !== 'rejected')) return;
+  if (btn) btn.disabled = true;
+  adminDanger('POST', 'api/admin/reports/status', { id: id, status: status },
+    'Статус жалобы меняет решение по игроку. Подтверди пароль.').then(function(res){
+    if (!res){
+      if (btn) btn.disabled = false;
+      return;
+    }
+    if (!res.ok || !res.data){
+      if (adminHandleAuthError(res)) return;
+      adminToast(adminApiMessage(res, 'жалоба не обновлена'), true);
+      if (btn) btn.disabled = false;
+      return;
+    }
+    adminToast(status === 'accepted' ? 'жалоба принята' : 'жалоба отклонена');
+    loadAdminReports(adminReportsPage, adminReportsFilter);
+    loadAdminDashboard();
+  }).catch(function(){
+    if (btn) btn.disabled = false;
+    adminToast('сервер не ответил', true);
+  });
+}
+
+/* ── админы и права ───────────────────────────────────────────────────────── */
+
+function loadAdminAdmins(){
+  var box = $('adm-admins');
+  var err = $('adm-admins-err');
+  if (!box) return Promise.resolve();
+  if (!adminHas('admins')) return Promise.resolve();
+  if (err) err.textContent = '';
+  var epoch = adminEpoch;
+
+  return api('GET', 'api/admin/admins').then(function(res){
+    if (epoch !== adminEpoch) return;
+    if (!res.ok || !res.data){
+      if (adminHandleAuthError(res)) return;
+      if (err) err.textContent = adminApiMessage(res, 'список админов не загрузился');
+      return;
+    }
+    adminAdmins = res.data;
+    renderAdminAdmins();
+  }).catch(function(){
+    if (epoch !== adminEpoch) return;
+    if (err) err.textContent = 'сервер не ответил';
+  });
+}
+
+function renderAdminAdmins(){
+  var box = $('adm-admins');
+  if (!box) return;
+
+  var data = adminAdmins;
+  var canEdit = !!(data && data.mega);
+  var addCard = $('adm-add-card');
+  if (addCard) addCard.hidden = !canEdit;
+
+  if (!data || !data.admins || !data.admins.length){
+    box.innerHTML = '<p class="so-note">Админов нет: впиши id в admin.ids или admin.megaIds.</p>';
+    return;
+  }
+
+  var viewerId = (adminState && adminState.id) || 0;
+  var html = '';
+  for (var i = 0; i < data.admins.length; i++){
+    var a = data.admins[i];
+    var perms = a.permissions || [];
+    var mega = a.mega === true || a.role === 'mega';
+    var self = a.id === viewerId;
+
+    var checks = ADMIN_PERMS.map(function(p){
+      return '<label class="so-admperm"><input type="checkbox" data-adm-perm="' +
+        p[0] + '"' + (perms.indexOf(p[0]) >= 0 ? ' checked' : '') +
+        ((mega || !canEdit) ? ' disabled' : '') + '> ' + p[1] + '</label>';
+    }).join('');
+
+    var megaNote = mega
+      ? '<p class="so-note" style="margin-top:12px">MEGA: все права всегда. Список '
+        + 'мега-админов задаётся только в config.json → admin.megaIds.</p>'
+      : '';
+    var readNote = !canEdit
+      ? '<p class="so-note" style="margin-top:12px">Права меняет только мега-админ.</p>'
+      : '';
+
+    var buttons = '';
+    if (canEdit && !mega){
+      buttons += '<button type="button" class="so-btn so-btn--sm" data-adm-perm-save>СОХРАНИТЬ ПРАВА</button>';
+    }
+    if (canEdit && !self){
+      buttons += '<button type="button" class="so-btn so-btn--sm so-btn--ghost" ' +
+        'data-adm-password="' + a.id + '" data-adm-password-nick="' + esc(a.nick || '') + '">НОВЫЙ ПАРОЛЬ</button>';
+    }
+    if (canEdit && !mega && !self && a.live !== false){
+      buttons += '<button type="button" class="so-btn so-btn--sm so-btn--no" ' +
+        'data-adm-remove="' + a.id + '" data-adm-remove-nick="' + esc(a.nick || '') + '">УБРАТЬ</button>';
+    }
+
+    html += '<div class="so-admban so-admban--col" data-adm-id="' + a.id + '">' +
+      '<div class="so-admban__head">' +
+        '<div class="so-admban__n">' + esc(a.nick || ('id #' + a.id)) +
+          ' <span class="so-admcard__id">#' + a.id + '</span>' +
+          (mega ? ' <span class="so-badge-adm">MEGA</span>' : '') +
+          (self ? ' <span class="so-admst so-admst--ok">ЭТО ТЫ</span>' : '') +
+          (a.live === false ? ' <span class="so-admst so-admst--warn">не в admin.ids</span>' : '') +
+        '</div>' +
+        '<span class="so-admcard__id">v' + esc(String(a.authVersion)) + '</span>' +
+      '</div>' +
+      '<div class="so-admperms"><span class="so-admperm so-admperm--fixed">' +
+        'dashboard, journal — всегда</span>' + checks + '</div>' +
+      megaNote + readNote +
+      (buttons ? '<div class="so-admban__acts">' + buttons + '</div>' : '') +
+    '</div>';
+  }
+  box.innerHTML = html;
+}
+
+function adminSavePermissions(card){
+  var id = Number(card.getAttribute('data-adm-id'));
+  var list = [];
+  Array.prototype.forEach.call(card.querySelectorAll('[data-adm-perm]'), function(cb){
+    if (cb.checked) list.push(cb.getAttribute('data-adm-perm'));
+  });
+
+  var err = $('adm-admins-err');
+  if (err) err.textContent = '';
+
+  adminDanger('POST', 'api/admin/permissions', { id: id, permissions: list },
+    'Изменение прав админа #' + id + '. Подтверди пароль.').then(function(res){
+    if (!res) return;
+    if (!res.ok || !res.data){
+      if (adminHandleAuthError(res)) return;
+      if (err) err.textContent = adminApiMessage(res, 'права не изменились');
+      else adminToast(adminApiMessage(res, 'права не изменились'), true);
+      return;
+    }
+    adminAdmins = res.data;
+    renderAdminAdmins();
+    adminToast('права #' + id + ' обновлены');
+    loadAdminDashboard();
+  });
+}
+
+function adminAddGo(){
+  var input = $('adm-add-id');
+  var err = $('adm-add-err');
+  var done = $('adm-add-done');
+  var btn = $('adm-add-btn');
+  var raw = input ? input.value.trim() : '';
+  var id = parseInt(raw, 10);
+  if (err) err.textContent = '';
+  if (done){ done.hidden = true; done.innerHTML = ''; }
+
+  if (!/^\d+$/.test(raw) || id < 1 || id > 100000000){
+    if (err) err.textContent = 'id — число от 1 до 100000000';
+    return;
+  }
+
+  if (btn) btn.disabled = true;
+  adminDanger('POST', 'api/admin/add', { id: id },
+    'Добавление админа #' + id + ' в config.json. Подтверди пароль.').then(function(res){
+    if (btn) btn.disabled = false;
+    if (!res) return;
+    if (!res.ok || !res.data){
+      if (adminHandleAuthError(res)) return;
+      if (err) err.textContent = adminApiMessage(res, 'админ не добавлен');
+      return;
+    }
+    if (input) input.value = '';
+    if (done){
+      done.hidden = false;
+      done.innerHTML = '<div class="so-repitem__note">' +
+        'ID ' + esc(String(res.data.id)) +
+        (res.data.nick ? ' · ' + esc(res.data.nick) : '') +
+        ' добавлен в admin.ids. Пароль появится здесь: <b>' +
+        esc(res.data.passwordPath || '') + '</b>. Передай его лично.' +
+        '</div>';
+    }
+    adminToast('админ #' + id + ' добавлен');
+    loadAdminAdmins();
+    loadAdminConfig();
+    loadAdminDashboard();
+  });
+}
+
+function adminRemoveAdmin(id, nick){
+  adminConfirm('УБРАТЬ АДМИНА',
+    'Убрать ' + (nick || ('#' + id)) + ' из admin.ids? Панель сразу закроется для него, '
+      + 'пароль и права останутся на диске до следующей выдачи.',
+    'УБРАТЬ', true).then(function(ok){
+    if (ok === null) return;
+    adminDanger('POST', 'api/admin/remove', { id: id },
+      'Удаление админа #' + id + ' из config.json. Подтверди пароль.').then(function(res){
+      if (!res) return;
+      if (!res.ok || !res.data){
+        if (adminHandleAuthError(res)) return;
+        adminToast(adminApiMessage(res, 'админ не убран'), true);
+        return;
+      }
+      adminToast('админ #' + id + ' убран');
+      loadAdminAdmins();
+      loadAdminConfig();
+      loadAdminDashboard();
     });
   });
 }
+
+function adminRegeneratePassword(id, nick){
+  adminConfirm('НОВЫЙ ПАРОЛЬ',
+    'Сменить пароль ' + (nick || ('#' + id)) + '? Все его сессии панели сразу завершатся.',
+    'СМЕНИТЬ', true).then(function(ok){
+    if (ok === null) return;
+    adminDanger('POST', 'api/admin/password', { id: id },
+      'Смена пароля админа #' + id + '. Подтверди свой пароль.').then(function(res){
+      if (!res) return;
+      if (!res.ok || !res.data){
+        if (adminHandleAuthError(res)) return;
+        adminToast(adminApiMessage(res, 'пароль не изменён'), true);
+        return;
+      }
+      var box = $('adm-pwd');
+      adminSetText('adm-pwd-why',
+        'Админ ' + (nick || ('#' + id)) + ': передай пароль лично. Больше панель его не покажет.');
+      var value = $('adm-pwd-value');
+      if (value) value.value = res.data.password || '(смотри файл)';
+      adminSetText('adm-pwd-path', res.data.passwordPath
+        ? 'Файл: ' + res.data.passwordPath
+        : '');
+      if (box) box.hidden = false;
+      adminToast('пароль #' + id + ' изменён');
+      loadAdminAdmins();
+    });
+  });
+}
+
+/* ── конфиг ───────────────────────────────────────────────────────────────── */
+
+function loadAdminConfig(){
+  var err = $('adm-cfg-err');
+  var form = $('adm-cfg-form');
+  if (!form) return Promise.resolve();
+  if (!adminHas('config')) return Promise.resolve();
+  if (err) err.textContent = '';
+  var epoch = adminEpoch;
+
+  if (!adminCfg) form.innerHTML = '<div class="so-repempty">Загружаю конфиг…</div>';
+
+  return api('GET', 'api/admin/config').then(function(res){
+    if (epoch !== adminEpoch) return;
+    if (!res.ok || !res.data){
+      if (adminHandleAuthError(res)) return;
+      if (err) err.textContent = adminApiMessage(res, 'конфиг не загрузился');
+      form.innerHTML = '';
+      return;
+    }
+    adminCfg = res.data;
+    renderAdminConfig();
+  }).catch(function(){
+    if (epoch !== adminEpoch) return;
+    if (err) err.textContent = 'сервер не ответил';
+    form.innerHTML = '';
+  });
+}
+
+function renderAdminConfig(){
+  var data = adminCfg;
+  if (!data) return;
+  var form = $('adm-cfg-form');
+  if (!form) return;
+
+  var mega = !!(adminState && adminState.mega);
+  var canEdit = mega;
+
+  adminSetText('adm-cfg-path', 'Файл: ' + (data.path || 'config.json')
+    + (data.lastWrite ? ' · изменён ' + fmtWhen(data.lastWrite) : ''));
+  var issues = data.issues || [];
+  var issuesEl = $('adm-cfg-issues');
+  if (issuesEl){
+    issuesEl.textContent = issues.length ? ('Замечания: ' + issues.join(' · ')) : '';
+    issuesEl.hidden = !issues.length;
+  }
+  var note = $('adm-cfg-note');
+  if (note) note.hidden = mega;
+  var reload = $('adm-cfg-reload');
+  if (reload) reload.hidden = !mega;
+  adminSetText('adm-cfg-ids', adminIdsText(data.adminIds) || '—');
+  adminSetText('adm-cfg-megas', adminIdsText(data.megaIds) || '—');
+
+  var options = data.options || [];
+  if (!options.length){
+    form.innerHTML = '<div class="so-repempty">В этом конфиге нет разрешённых ключей.</div>';
+    return;
+  }
+
+  var groups = [];
+  var bySection = {};
+  for (var i = 0; i < options.length; i++){
+    var option = options[i];
+    var section = option.section || 'Прочее';
+    if (!bySection[section]){ bySection[section] = []; groups.push(section); }
+    bySection[section].push(option);
+  }
+
+  var html = '';
+  for (var g = 0; g < groups.length; g++){
+    var name = groups[g];
+    html += '<div class="so-cfgsec"><div class="so-card__t so-cfgsec__t">' + esc(name) + '</div>';
+    var list = bySection[name];
+    for (var j = 0; j < list.length; j++)
+      html += adminConfigRowHtml(list[j], canEdit);
+    html += '</div>';
+  }
+  form.innerHTML = html;
+}
+
+function adminConfigRowHtml(option, canEdit){
+  var value = option.value === undefined || option.value === null ? '' : String(option.value);
+  var control = '';
+  if (option.type === 'bool'){
+    control = '<select class="so-input so-input--slim so-input--select" data-adm-cfg-input' +
+      (canEdit ? '' : ' disabled') + '>' +
+      '<option value="true"' + (value === 'true' ? ' selected' : '') + '>включено</option>' +
+      '<option value="false"' + (value === 'false' ? ' selected' : '') + '>выключено</option>' +
+      '</select>';
+  } else if (option.choices && option.choices.length){
+    control = '<select class="so-input so-input--slim so-input--select" data-adm-cfg-input' +
+      (canEdit ? '' : ' disabled') + '>' +
+      option.choices.map(function(choice){
+        return '<option value="' + esc(choice) + '"' +
+          (choice === value ? ' selected' : '') + '>' + esc(choice) + '</option>';
+      }).join('') +
+      '</select>';
+  } else if (option.type === 'int'){
+    control = '<input class="so-input so-input--slim" type="number" step="1" data-adm-cfg-input' +
+      (option.min !== undefined ? ' min="' + option.min + '"' : '') +
+      (option.max !== undefined ? ' max="' + option.max + '"' : '') +
+      ' value="' + esc(value) + '"' + (canEdit ? '' : ' disabled') + '>';
+  } else {
+    control = '<input class="so-input so-input--slim" type="text" maxlength="220" data-adm-cfg-input' +
+      ' value="' + esc(value) + '"' + (canEdit ? '' : ' disabled') + '>';
+  }
+
+  var help = option.help
+    ? '<div class="so-cfghelp">' + esc(option.help) + '</div>'
+    : '';
+
+  return '<div class="so-cfgrow" data-adm-cfgkey="' + esc(option.key) + '" data-adm-cfgtype="' +
+      esc(option.type) + '">' +
+      '<div class="so-cfginfo">' +
+        '<div class="so-cfgname">' + esc(option.label || option.key) +
+          (option.restart ? ' <span class="so-cfgrestart">после рестарта</span>' : '') +
+        '</div>' +
+        '<div class="so-cfgkey">' + esc(option.key) + '</div>' +
+        help +
+      '</div>' +
+      '<div class="so-cfgctl">' + control +
+        (canEdit
+          ? '<button class="so-btn so-btn--sm so-btn--ghost" type="button" data-adm-cfg-save>ПРИМЕНИТЬ</button>'
+          : '') +
+      '</div>' +
+    '</div>';
+}
+
+function adminSaveConfigRow(row){
+  if (!adminCfg) return;
+  var key = row.getAttribute('data-adm-cfgkey');
+  var option = null;
+  for (var i = 0; i < adminCfg.options.length; i++){
+    if (adminCfg.options[i].key === key){ option = adminCfg.options[i]; break; }
+  }
+  if (!option) return;
+
+  var input = row.querySelector('[data-adm-cfg-input]');
+  if (!input) return;
+  var value = input.value;
+  if (option.type === 'bool') value = value === 'true';
+  else if (option.type === 'int'){
+    var number = parseInt(value, 10);
+    if (!isFinite(number)){
+      adminToast('«' + option.label + '»: нужно целое число', true);
+      return;
+    }
+    if (option.min !== undefined && number < option.min){
+      adminToast('«' + option.label + '»: минимум ' + option.min, true);
+      return;
+    }
+    if (option.max !== undefined && number > option.max){
+      adminToast('«' + option.label + '»: максимум ' + option.max, true);
+      return;
+    }
+    value = number;
+  } else {
+    value = String(value).trim();
+  }
+
+  var btn = row.querySelector('[data-adm-cfg-save]');
+  if (btn) btn.disabled = true;
+
+  adminDanger('POST', 'api/admin/config/set', { key: key, value: value },
+    'Изменение конфига: ' + key + '. Подтверди пароль.').then(function(res){
+    if (btn) btn.disabled = false;
+    if (!res) return;
+    if (!res.ok || !res.data){
+      if (adminHandleAuthError(res)) return;
+      adminToast(adminApiMessage(res, 'конфиг не изменён'), true);
+      return;
+    }
+    adminCfg = res.data;
+    renderAdminConfig();
+    adminToast('сохранено: ' + key);
+    loadAdminDashboard();
+  });
+}
+
+function adminReloadConfig(){
+  adminConfirm('ПЕРЕЧИТАТЬ КОНФИГ',
+    'Сервер заново прочитает config.json с диска. Несохранённые правки в панели пропадут.',
+    'ПЕРЕЧИТАТЬ', false).then(function(ok){
+    if (ok === null) return;
+    adminDanger('POST', 'api/admin/reload',
+      null, 'Перечитывание config.json меняет настройки сервера. Подтверди пароль.').then(function(res){
+      if (!res) return;
+      if (!res.ok || !res.data){
+        if (adminHandleAuthError(res)) return;
+        adminToast(adminApiMessage(res, 'конфиг не перечитан'), true);
+        return;
+      }
+      adminToast('конфиг перечитан');
+      loadAdminConfig();
+      loadAdminAdmins();
+    }).catch(function(){ adminToast('сервер не ответил', true); });
+  });
+}
+
+/* ── безопасность ─────────────────────────────────────────────────────────── */
+
+function loadAdminSecurity(){
+  var box = $('adm-sec-sessions');
+  var fails = $('adm-sec-fails');
+  var err = $('adm-sec-err');
+  if (!box) return Promise.resolve();
+  if (err) err.textContent = '';
+  var epoch = adminEpoch;
+  box.innerHTML = '<div class="so-repempty">Загружаю сессии…</div>';
+
+  return api('GET', 'api/admin/security').then(function(res){
+    if (epoch !== adminEpoch) return;
+    if (!res.ok || !res.data){
+      if (adminHandleAuthError(res)) return;
+      if (err) err.textContent = adminApiMessage(res, 'сессии не загрузились');
+      box.innerHTML = '';
+      return;
+    }
+    renderAdminSecurity(res.data);
+  }).catch(function(){
+    if (epoch !== adminEpoch) return;
+    if (err) err.textContent = 'сервер не ответил';
+    box.innerHTML = '';
+  });
+}
+
+function renderAdminSecurity(data){
+  adminSetText('adm-sec-count',
+    'активных сессий: ' + (data.activeSessions || 0) +
+    ' · админов: ' + (data.activeAdmins || 0) +
+    ' · твоих: ' + (data.ownSessions || 0) +
+    (data.hiddenSessions ? ' · скрыто чужих: ' + data.hiddenSessions : ''));
+
+  var stepText;
+  if (adminState && adminState.testNoPassword){
+    stepText = 'Тестовый режим: пароль для действий не требуется.';
+  } else if (data.stepUpUntil){
+    stepText = 'Подтверждение пароля действует до ' + fmtWhen(data.stepUpUntil) + '.';
+  } else {
+    stepText = 'Каждое изменение данных потребует пароль заново.';
+  }
+  adminSetText('adm-sec-stepup', stepText);
+
+  var box = $('adm-sec-sessions');
+  var sessions = data.sessions || [];
+  if (box){
+    if (!sessions.length){
+      box.innerHTML = '<div class="so-repempty">Живых сессий нет.</div>';
+    } else {
+      box.innerHTML = sessions.map(function(s){
+        var nick = nickLink(s.id, s.nick || ('ID ' + s.id), true);
+        var badges = '';
+        if (s.current) badges += ' <span class="so-admst so-admst--ok">ЭТА СЕССИЯ</span>';
+        if (s.stepUp) badges += ' <span class="so-admst">ПАРОЛЬ ПОДТВЕРЖДЁН</span>';
+        var act = s.current ? '' :
+          '<button class="so-btn so-btn--sm so-btn--no" type="button" ' +
+            'data-adm-session="' + esc(s.sessionId) + '" data-adm-session-nick="' +
+            esc(s.nick || '') + '">СНЯТЬ</button>';
+        return '<div class="so-admban so-admban--col">' +
+            '<div class="so-admban__head">' +
+              '<div style="min-width:0;flex:1">' +
+                '<div class="so-admban__n">' + nick + badges + '</div>' +
+                '<div class="so-admban__m">выдана ' + esc(fmtWhen(s.issued)) +
+                  ' · до ' + esc(fmtWhen(s.expires)) +
+                  (s.ip ? ' · IP ' + esc(s.ip) : '') + '</div>' +
+                (s.userAgent
+                  ? '<div class="so-admban__m so-sec-ua">' + esc(adminTrim(s.userAgent, 220)) + '</div>'
+                  : '') +
+              '</div>' +
+              (act ? '<div class="so-admban__acts">' + act + '</div>' : '') +
+            '</div>' +
+          '</div>';
+      }).join('');
+    }
+  }
+
+  var failsBox = $('adm-sec-fails');
+  if (failsBox){
+    var failures = data.failures || [];
+    if (!failures.length){
+      failsBox.innerHTML = '<div class="so-repempty">Неудачных входов за 7 дней нет.</div>';
+    } else {
+      failsBox.innerHTML = failures.map(function(f){
+        return '<div class="so-admban">' +
+            '<div style="min-width:0">' +
+              '<div class="so-admban__m">' + esc(fmtWhen(f.ts)) +
+                (f.attemptedId ? ' · id ' + esc(String(f.attemptedId)) : '') +
+                (f.ip ? ' · ' + esc(f.ip) : '') +
+                (f.note ? ' · ' + esc(f.note) : '') + '</div>' +
+            '</div>' +
+            '<span class="so-admst so-admst--warn">ОТКАЗ</span>' +
+          '</div>';
+      }).join('');
+    }
+  }
+}
+
+function adminRevokeSession(sessionId, nick){
+  adminConfirm('СНЯТЬ СЕССИЮ',
+    (nick ? nick + ' ' : 'Эта сессия ') + 'сразу выйдет из панели. Продолжить?',
+    'СНЯТЬ', true).then(function(ok){
+    if (ok === null) return;
+    adminDanger('POST', 'api/admin/sessions/revoke', { sessionId: sessionId },
+      'Снятие сессии выкинет админа из панели. Подтверди пароль.').then(function(res){
+      if (!res) return;
+      if (!res.ok || !res.data){
+        if (adminHandleAuthError(res)) return;
+        adminToast(adminApiMessage(res, 'сессия не снята'), true);
+        return;
+      }
+      adminToast('сессия снята');
+      loadAdminSecurity();
+      loadAdminDashboard();
+    }).catch(function(){ adminToast('сервер не ответил', true); });
+  });
+}
+
+/* ── профиль ──────────────────────────────────────────────────────────────── */
+
+function renderAdminCidNow(){
+  var st = adminState || {};
+  var el = $('adm-cid-now');
+  if (el) el.innerHTML = st.customId
+    ? 'Сейчас: <b>' + esc(st.customId) + '</b>'
+    : 'Сейчас: обычный числовой ID';
+}
+
+function renderAdminProfile(){
+  var st = adminState || {};
+  var cid = $('adm-cid');
+  if (cid) cid.value = st.customId || '';
+  renderAdminCidNow();
+}
+
+/* ── кастомизация: только цифры и английские буквы, проверка и на клиенте ── */
+function adminFilterCid(){
+  var input = $('adm-cid');
+  if (!input) return;
+  var clean = input.value.replace(/[^A-Za-z0-9]/g, '');
+  if (clean !== input.value) input.value = clean;
+}
+
+function adminSaveCid(clear){
+  var err = $('adm-cid-err');
+  var input = $('adm-cid');
+  if (err) err.textContent = '';
+  var value = clear ? '' : (input ? input.value.trim() : '');
+  if (!clear && !value){
+    if (err) err.textContent = 'введи новый ID (цифры и английские буквы)';
+    return;
+  }
+
+  return adminDanger('POST', 'api/admin/customid', { customId: value },
+    'Кастомный ID виден другим игрокам. Подтверди пароль.').then(function(res){
+    if (!res) return;
+    if (!res.ok || !res.data){
+      if (adminHandleAuthError(res)) return;
+      if (err) err.textContent = adminApiMessage(res, 'сервер не принял ID');
+      return;
+    }
+    adminState = res.data;
+    renderAdminProfile();
+    var who = $('adm-id');
+    if (who) who.textContent = idLine(adminState.customId, adminState.id);
+    adminToast(clear ? 'кастомный ID сброшен' : 'кастомный ID сохранён');
+    /* Сайт везде показывает displayId: обновляем и панель, и профиль. */
+    loadMe();
+  }).catch(function(){
+    if (err) err.textContent = 'сервер не ответил';
+  });
+}
+
 
 /* ═══════════ жалобы, публичные профили, администрация ═══════════ */
 /* Сервер — единственный источник правды: ID, ник, бейдж [ADM] и счётчики
@@ -4860,8 +7026,13 @@ function moderateReport(id, status, btn){
   if (!id || (status !== 'accepted' && status !== 'rejected')) return;
   if (btn) btn.disabled = true;
 
-  api('POST', 'api/admin/reports/status', { id: id, status: status })
+  adminDanger('POST', 'api/admin/reports/status', { id: id, status: status },
+    'Статус жалобы меняет решение по игроку. Подтверди пароль.')
     .then(function(res){
+      if (!res){
+        if (btn) btn.disabled = false;
+        return;
+      }
       if (!res.ok || !res.data || res.data.ok === false){
         var box = $('rp-admin-list');
         if (box){
@@ -5888,6 +8059,8 @@ function api(method, path, body){
     return Promise.resolve({ ok: false, status: 429, data: null, retryAfter: null, quiet: true });
   }
   var opts = { method: method, headers: {}, cache: 'no-store' };
+  if (method !== 'GET' && adminState && adminState.csrf)
+    opts.headers['X-CSRF-Token'] = adminState.csrf;
   if (body !== undefined){
     opts.headers['Content-Type'] = 'application/json';
     opts.body = JSON.stringify(body);
@@ -6078,7 +8251,8 @@ function init(){
     location.hash = '#/admin';
   });
 
-  /* админ панель: вход, вкладки, кастомизация, баны, права */
+  /* админ консоль: вход, разделы, журнал, игроки, комнаты, баны, жалобы,
+     админы, конфиг, безопасность и свой ID */
   $('adm-login').addEventListener('click', adminLogin);
   $('adm-login-id').addEventListener('keydown', function(e){
     if (e.key === 'Enter') adminLogin();
@@ -6087,41 +8261,78 @@ function init(){
     if (e.key === 'Enter') adminLogin();
   });
   $('adm-logout').addEventListener('click', adminLogout);
-  $('adm-tab-custom').addEventListener('click', function(){ switchAdminTab('custom'); });
-  $('adm-tab-bans').addEventListener('click', function(){ switchAdminTab('bans'); });
-  $('adm-tab-admins').addEventListener('click', function(){ switchAdminTab('admins'); });
-  $('adm-admins').addEventListener('click', function(e){
-    var card = e.target && e.target.closest ? e.target.closest('[data-adm-id]') : null;
-    if (!card) return;
+  $('adm-stepup-open').addEventListener('click', function(){
+    adminEnsureStepUp('Подтверди пароль: изменения данных сервера требуют свежего подтверждения.');
+  });
+  $('adm-stepup-go').addEventListener('click', adminStepUpGo);
+  $('adm-stepup-cancel').addEventListener('click', function(){ adminStepUpClose(false); });
+  $('adm-stepup-pass').addEventListener('keydown', function(e){
+    if (e.key === 'Enter') adminStepUpGo();
+  });
 
-    if (e.target.closest('[data-adm-perm-save]')){
-      adminSavePermissions(card);
+  $('adm-nav').addEventListener('click', function(e){
+    var b = e.target && e.target.closest ? e.target.closest('[data-adm-pane-btn]') : null;
+    if (b) showAdminPane(b.getAttribute('data-adm-pane-btn'));
+  });
+
+  $('adm-panel').addEventListener('click', function(e){
+    if (!e.target || !e.target.closest) return;
+    var goto = e.target.closest('[data-adm-goto]');
+    if (goto){ showAdminPane(goto.getAttribute('data-adm-goto')); return; }
+    var undo = e.target.closest('[data-adm-undo]');
+    if (undo){
+      adminUndoEntry(undo.getAttribute('data-adm-undo'),
+        undo.getAttribute('data-adm-jcat'));
       return;
     }
+    /* Свёрнутая запись журнала раскрывается кликом по шапке. Ссылки на игроков
+       и кнопки внутри шапки клик не перехватывают. */
+    var row = e.target.closest('[data-adm-jrow]');
+    if (row && e.target.closest('.so-jitem__head')
+        && !e.target.closest('a,button,input,select,textarea'))
+      adminToggleJournalRow(row);
+  });
 
-    var del = e.target.closest('[data-adm-mega-del]');
-    if (del){
-      adminSetMegaIp(card, 'remove', del.getAttribute('data-adm-mega-del'));
+  $('adm-dash-refresh').addEventListener('click', loadAdminDashboard);
+
+  $('adm-j-go').addEventListener('click', function(){ loadAdminJournal(true); });
+  $('adm-j-reset').addEventListener('click', adminResetJournalFilters);
+  $('adm-j-list').addEventListener('keydown', function(e){
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    var head = e.target && e.target.closest ? e.target.closest('.so-jitem__head[role="button"]') : null;
+    if (!head) return;
+    if (e.target.closest('a,button,input,select,textarea')) return;
+    e.preventDefault();
+    adminToggleJournalRow(head.closest('[data-adm-jrow]'));
+  });
+  var journalEnter = function(e){ if (e.key === 'Enter') loadAdminJournal(true); };
+  $('adm-j-search').addEventListener('keydown', journalEnter);
+  $('adm-j-actor').addEventListener('keydown', journalEnter);
+  $('adm-j-target').addEventListener('keydown', journalEnter);
+
+  $('adm-p-go').addEventListener('click', loadAdminPlayers);
+  $('adm-p-q').addEventListener('keydown', function(e){
+    if (e.key === 'Enter') loadAdminPlayers();
+  });
+  $('adm-p-list').addEventListener('click', function(e){
+    if (!e.target || !e.target.closest) return;
+    var kick = e.target.closest('[data-adm-kick]');
+    if (kick){
+      adminKickPlayer(Number(kick.getAttribute('data-adm-kick')));
       return;
     }
+    var ban = e.target.closest('[data-adm-banplayer]');
+    if (ban) adminBanFromPlayer(Number(ban.getAttribute('data-adm-banplayer')));
+  });
 
-    if (e.target.closest('[data-adm-mega-add]')){
-      var input = card.querySelector('[data-adm-mega-input]');
-      var ip = input ? input.value.trim() : '';
-      var err = $('adm-admins-err');
-      if (!ip){
-        if (err) err.textContent = 'введи IP, например 192.168.1.10';
-        return;
-      }
-      adminSetMegaIp(card, 'add', ip);
-    }
+  $('adm-r-refresh').addEventListener('click', loadAdminRooms);
+  $('adm-r-list').addEventListener('click', function(e){
+    var b = e.target && e.target.closest ? e.target.closest('[data-adm-room-close]') : null;
+    if (!b) return;
+    adminCloseRoom(Number(b.getAttribute('data-adm-room-close')),
+      b.getAttribute('data-adm-room-name') || '');
   });
-  $('adm-cid').addEventListener('input', adminFilterCid);
-  $('adm-cid').addEventListener('keydown', function(e){
-    if (e.key === 'Enter') adminSaveCid(false);
-  });
-  $('adm-cid-save').addEventListener('click', function(){ adminSaveCid(false); });
-  $('adm-cid-clear').addEventListener('click', function(){ adminSaveCid(true); });
+
   $('adm-bid').addEventListener('input', adminBidChanged);
   $('adm-bid').addEventListener('keydown', function(e){
     if (e.key === 'Enter') adminBanNext();
@@ -6130,6 +8341,102 @@ function init(){
   $('adm-byes').addEventListener('click', function(){ adminBanStep(3); });
   $('adm-bback').addEventListener('click', adminBanBack);
   $('adm-ban-go').addEventListener('click', adminBanGo);
+  $('adm-bans-refresh').addEventListener('click', loadAdminBans);
+  $('adm-bans').addEventListener('click', function(e){
+    var b = e.target && e.target.closest ? e.target.closest('[data-adm-unban]') : null;
+    if (!b) return;
+    adminUnbanPlayer(Number(b.getAttribute('data-adm-unban')),
+      b.getAttribute('data-adm-unban-nick') || '');
+  });
+
+  $('adm-rep-filters').addEventListener('click', function(e){
+    var b = e.target && e.target.closest ? e.target.closest('[data-adm-rep-filter]') : null;
+    if (!b) return;
+    loadAdminReports(1, b.getAttribute('data-adm-rep-filter'));
+  });
+  $('adm-rep-more').addEventListener('click', function(){
+    loadAdminReports(adminReportsPage + 1, adminReportsFilter);
+  });
+  $('adm-rep-list').addEventListener('click', function(e){
+    var b = e.target && e.target.closest
+      ? e.target.closest('[data-rep-id][data-rep-status]')
+      : null;
+    if (!b) return;
+    adminModerateReport(b.getAttribute('data-rep-id'),
+      b.getAttribute('data-rep-status'), b);
+  });
+
+  $('adm-admins-refresh').addEventListener('click', loadAdminAdmins);
+  $('adm-add-btn').addEventListener('click', adminAddGo);
+  $('adm-add-id').addEventListener('keydown', function(e){
+    if (e.key === 'Enter') adminAddGo();
+  });
+  $('adm-admins').addEventListener('click', function(e){
+    if (!e.target || !e.target.closest) return;
+    var card = e.target.closest('[data-adm-id]');
+    if (!card) return;
+
+    if (e.target.closest('[data-adm-perm-save]')){
+      adminSavePermissions(card);
+      return;
+    }
+    var pwd = e.target.closest('[data-adm-password]');
+    if (pwd){
+      adminRegeneratePassword(Number(pwd.getAttribute('data-adm-password')),
+        pwd.getAttribute('data-adm-password-nick') || '');
+      return;
+    }
+    var remove = e.target.closest('[data-adm-remove]');
+    if (remove){
+      adminRemoveAdmin(Number(remove.getAttribute('data-adm-remove')),
+        remove.getAttribute('data-adm-remove-nick') || '');
+    }
+  });
+
+  $('adm-cfg-reload').addEventListener('click', adminReloadConfig);
+  $('adm-cfg-form').addEventListener('click', function(e){
+    var b = e.target && e.target.closest ? e.target.closest('[data-adm-cfg-save]') : null;
+    if (!b) return;
+    var row = b.closest('.so-cfgrow');
+    if (row) adminSaveConfigRow(row);
+  });
+
+  $('adm-sec-refresh').addEventListener('click', loadAdminSecurity);
+  $('adm-sec-sessions').addEventListener('click', function(e){
+    var b = e.target && e.target.closest ? e.target.closest('[data-adm-session]') : null;
+    if (!b) return;
+    adminRevokeSession(b.getAttribute('data-adm-session'),
+      b.getAttribute('data-adm-session-nick') || '');
+  });
+
+  $('adm-cid').addEventListener('input', adminFilterCid);
+  $('adm-cid').addEventListener('keydown', function(e){
+    if (e.key === 'Enter') adminSaveCid(false);
+  });
+  $('adm-cid-save').addEventListener('click', function(){ adminSaveCid(false); });
+  $('adm-cid-clear').addEventListener('click', function(){ adminSaveCid(true); });
+
+  $('adm-ask-go').addEventListener('click', adminAskGo);
+  $('adm-ask-cancel').addEventListener('click', function(){ adminAskClose(null); });
+  $('adm-ask-input').addEventListener('keydown', function(e){
+    if (e.key === 'Enter') adminAskGo();
+  });
+  $('adm-ask').addEventListener('click', function(e){
+    if (e.target === $('adm-ask')) adminAskClose(null);
+  });
+  $('adm-stepup').addEventListener('click', function(e){
+    if (e.target === $('adm-stepup')) adminStepUpClose(false);
+  });
+  $('adm-pwd-close').addEventListener('click', function(){
+    $('adm-pwd').hidden = true;
+  });
+  document.addEventListener('keydown', function(e){
+    if (e.key !== 'Escape') return;
+    if (!$('adm-ask').hidden) adminAskClose(null);
+    if (!$('adm-stepup').hidden) adminStepUpClose(false);
+    if (!$('adm-pwd').hidden) $('adm-pwd').hidden = true;
+  });
+
   Array.prototype.forEach.call(
     document.querySelectorAll('[data-side-nav]'),
     function(a){ a.addEventListener('click', closeSide); });
@@ -6557,10 +8864,17 @@ if (typeof window !== 'undefined') {
     loadMatch: loadMatch, renderMatchPage: renderMatchPage,
     openSide: openSide, closeSide: closeSide,
     loadAdminState: loadAdminState, renderAdmin: renderAdmin,
-    adminLogin: adminLogin, adminLogout: adminLogout, switchAdminTab: switchAdminTab,
+    adminLogin: adminLogin, adminLogout: adminLogout,
+    showAdminPane: showAdminPane, loadAdminPane: loadAdminPane,
+    adminHas: adminHas, adminPaneAllowed: adminPaneAllowed,
+    loadAdminDashboard: loadAdminDashboard, loadAdminJournal: loadAdminJournal,
+    loadAdminPlayers: loadAdminPlayers, loadAdminRooms: loadAdminRooms,
+    loadAdminAdmins: loadAdminAdmins, loadAdminConfig: loadAdminConfig,
+    loadAdminSecurity: loadAdminSecurity, loadAdminReports: loadAdminReports,
     adminSaveCid: adminSaveCid, adminFilterCid: adminFilterCid,
     adminLookupBan: adminLookupBan, adminBanNext: adminBanNext, adminBanGo: adminBanGo,
     adminBanStep: adminBanStep, loadAdminBans: loadAdminBans,
+    adminEnsureStepUp: adminEnsureStepUp, adminDanger: adminDanger,
     endRoom: function(n){
       for (var i=0;i<rooms.length;i++) if (rooms[i].n === n) return endRoom(rooms[i]);
     },

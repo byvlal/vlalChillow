@@ -63,6 +63,7 @@ public sealed class WebPanelHost : IDisposable
 
     private GameNetHost? _host;
     private Task? _tickLoop;
+    private readonly DateTime _startedUtc = DateTime.UtcNow;
 
     /// <summary>Счётчик секундных тиков: статистика семплируется не каждый.</summary>
     private int _statsTick;
@@ -102,7 +103,7 @@ public sealed class WebPanelHost : IDisposable
         // тот же объект, поэтому смена пароля сразу видна обеим сторонам.
         var authDirectory = AdminStore.ResolveDirectory(ServerConfig.LastLoadedPath);
         _adminStore = adminStore ?? new AdminStore(authDirectory, Console.WriteLine);
-        _adminStore.Initialize(server.Admin.Ids, DateTime.UtcNow);
+        _adminStore.Initialize(server.Admin.Ids, server.Admin.MegaIds, DateTime.UtcNow);
         _sessions = new SiteSessions(Path.Combine(authDirectory, "site-sessions.json"));
         _adminSessions = new AdminSessions(
             Path.Combine(authDirectory, "sessions.json"), _adminStore);
@@ -187,6 +188,11 @@ public sealed class WebPanelHost : IDisposable
                 AdminStore = _adminStore,
                 AdminSessionStore = _adminSessions,
                 IsAdminLive = id => _host?.IsAdminLive(id) ?? _server.IsAdmin(id),
+                TestNoAdminPassword = () =>
+                    (_host?.CurrentConfig ?? _server).Test.NoAdminPassword,
+                TestAutoMegaAdmin = () =>
+                    (_host?.CurrentConfig ?? _server).Test.AutoMegaAdmin,
+                AccountExists = id => _host?.Accounts?.FindById(id) is not null,
 
                 // Кастомизация: только свой ID, проверяет хранилище (цифры+англ., уникальность).
                 CustomIdGet = id => _host?.CustomIdOf(id),
@@ -199,6 +205,20 @@ public sealed class WebPanelHost : IDisposable
                 WebUnban = id => _host?.TryWebUnban(id) ?? ("хост не подключён", 0),
                 ActiveBans = () => _host?.ActiveBanRecords() ?? Array.Empty<BanRecord>(),
                 BanSettings = () => _host?.BanRange ?? (false, 10, 14),
+
+                // ── Консоль: журнал, игроки, комнаты, конфиг, безопасность ──
+                StartedUtc = _startedUtc,
+                KnownPlayersCount = () => _host?.KnownPlayersCount ?? 0,
+                AdminServerState = BuildAdminServerState,
+                AdminSearchPlayers = (query, limit) =>
+                    _host?.SearchPlayersForAdmin(query, limit) ?? Array.Empty<AdminPlayerRow>(),
+                AdminKickPlayer = (id, reason) =>
+                    _host?.KickPlayerForAdmin(id, reason) ?? "игровой сервер ещё не поднялся",
+                AdminCloseRoom = CloseRoomAsAdmin,
+                AdminConfig = BuildAdminConfig,
+                AdminConfigSet = SetAdminConfigValue,
+                AdminSetIds = SetAdminIds,
+                AdminReloadConfig = ReloadConfigFromDisk,
             });
 
         _server_ = new WebPanelServer(
@@ -689,6 +709,255 @@ public sealed class WebPanelHost : IDisposable
     /// Завершить катку в комнате по просьбе владельца (кнопка «Завершить игру», #51).
     /// </summary>
     /// <returns>Текст ошибки или <c>null</c>, если завершение пошло.</returns>
+    /// <summary>Живое состояние сервера для дашборда консоли.</summary>
+    private AdminServerState BuildAdminServerState()
+    {
+        var config = _host?.CurrentConfig ?? _server;
+        var (lobby, match) = _host?.Presence ?? (0, 0);
+        var rooms = _rooms.Snapshot();
+        var listening = _host?.Match.IsListening == true;
+        var running = listening && _host?.Match.HasMatchPeers == true;
+
+        return new AdminServerState(
+            lobby,
+            match,
+            rooms.Count,
+            _rooms.MaxRooms,
+            running,
+            listening,
+            _host?.Match.ListenFailed == true,
+            config.MatchStart.Mode,
+            _host?.SelectedLevels ?? Array.Empty<string>());
+    }
+
+    /// <summary>
+    /// Принудительно закрыть комнату из консоли: катка завершается, сокеты 7777
+    /// отключаются, номер сразу освобождается. Не ждём TTL.
+    /// </summary>
+    private string? CloseRoomAsAdmin(int number, string reason)
+    {
+        RoomDescriptor? room = null;
+        foreach (var candidate in _rooms.Snapshot())
+        {
+            if (candidate.Number != number)
+                continue;
+            room = candidate;
+            break;
+        }
+
+        if (room is null)
+            return $"комнаты #{number} уже нет — обнови страницу";
+
+        var host = _host;
+        if (host is not null)
+        {
+            // Закрывает и катку, и реестр, и бронь. Для комнаты, которая ещё не
+            // стартовала, TryCloseRoom вернёт false — тогда снимаем запись сами.
+            host.Match.TryCloseRoom(room.PasswordKey);
+            host.Match.PendingRooms.Release(room.PasswordKey);
+        }
+
+        _rooms.TryGet(number, out _);
+        if (_rooms.Snapshot().Any(r => r.Number == number))
+            _rooms.TryRemove(number, out _);
+
+        Console.WriteLine(
+            $"[admin] комната #{number} «{room.Name}» закрыта принудительно" +
+            (string.IsNullOrWhiteSpace(reason) ? "" : $": {reason}"));
+        return null;
+    }
+
+    // ── Безопасный редактор config.json ───────────────────────────────────────
+
+    /// <summary>
+    /// Снимок только тех ключей, которые панель имеет право менять. Всё остальное
+    /// (пароли, пути, порты, сеть, прокси) остаётся за владельцем файла.
+    /// </summary>
+    private AdminConfigSnapshot BuildAdminConfig()
+    {
+        var path = ServerConfig.LastLoadedPath;
+        DateTime? lastWrite = null;
+        var issues = new List<string>();
+        ServerConfig config;
+
+        try
+        {
+            if (File.Exists(path))
+                lastWrite = File.GetLastWriteTimeUtc(path);
+        }
+        catch
+        {
+            // Время файла — украшение, не повод падать.
+        }
+
+        if (!ServerConfig.TryLoad(path, out var fresh, out var error))
+        {
+            issues.Add(error);
+            fresh = _host?.CurrentConfig ?? _server;
+        }
+
+        config = fresh;
+        foreach (var issue in config.Issues)
+            issues.Add($"{issue.Key}: {issue.Detail} → применено «{issue.Applied}»");
+
+        var mega = new HashSet<int>(config.Admin.MegaIds);
+        var ids = config.Admin.Ids
+            .Where(id => !mega.Contains(id))
+            .Distinct()
+            .OrderBy(id => id)
+            .ToList();
+
+        var options = new List<AdminConfigOption>
+        {
+            Str("server.welcomeMessage", "Приветствие в чате", "Лобби",
+                config.Server.WelcomeMessage, "Пусто — приветствие по умолчанию."),
+            Int("server.maxMembers", "Максимум игроков", "Лобби",
+                config.Server.MaxMembers, 1, 64),
+            Bool("names.enforce", "Проверка ников", "Ники",
+                config.Names.Enforce),
+            Int("names.maxLength", "Максимум символов в нике", "Ники",
+                config.Names.MaxLength, 1, 32),
+            Int("names.kickDelaySec", "Кик за плохой ник, сек", "Ники",
+                config.Names.KickDelaySec, 1, 300),
+            Choice("matchStart.mode", "Как начинается матч", "Матч",
+                config.MatchStart.Mode, new[] { "manual", "auto", "ready" }),
+            Int("timings.warmup", "WarmUp, сек", "Матч",
+                config.Timings.Warmup, 0, 120),
+            Int("timings.preStart", "PreStart, сек", "Матч",
+                config.Timings.PreStart, 0, 120),
+            Int("timings.prep", "Закупка, сек", "Матч",
+                config.Timings.Prep, 1, 120),
+            Int("timings.roundTime", "Раунд, сек", "Матч",
+                config.Timings.RoundTime, 10, 600),
+            Int("timings.roundEndPause", "Пауза после раунда, сек", "Матч",
+                config.Timings.RoundEndPause, 0, 60),
+            Int("timings.bombFuse", "Фитиль бомбы, сек", "Матч",
+                config.Timings.BombFuse, 5, 180),
+            Int("timings.totalRounds", "Раундов в матче", "Матч",
+                config.Timings.TotalRounds, 1, 30),
+            Int("timings.winsNeeded", "Побед до (0 — по режиму)", "Матч",
+                config.Timings.WinsNeeded, 0, 30),
+            Bool("admin.ban.enabled", "Баны включены", "Баны",
+                config.Admin.Ban.Enabled),
+            Bool("admin.ban.adminOnly", "Баны только админам", "Баны",
+                config.Admin.Ban.AdminOnly),
+            Int("admin.ban.minMinutes", "Минимальный бан, минут", "Баны",
+                config.Admin.Ban.MinMinutes, 1, 10080),
+            Int("admin.ban.maxDays", "Максимальный бан, дней", "Баны",
+                config.Admin.Ban.MaxDays, 1, 365),
+            Bool("admin.ban.bindAliases", "Учить ники и IP при бане", "Баны",
+                config.Admin.Ban.BindAliases),
+            Bool("admin.ban.byDevice", "Банить по устройству", "Баны",
+                config.Admin.Ban.ByDevice),
+            Bool("admin.ban.notifyEveryone", "Объявлять баны всем", "Баны",
+                config.Admin.Ban.NotifyEveryone),
+            Bool("admin.ban.exposeIds", "Показывать ID в катке", "Баны",
+                config.Admin.Ban.ExposeIds),
+            Int("web.maxRooms", "Максимум комнат", "Панель",
+                config.Web.MaxRooms, 1, 1024, restart: true),
+            Int("web.emptyRoomTtlSec", "Пустая комната живёт, сек", "Панель",
+                config.Web.EmptyRoomTtlSec, 30, 86400),
+            Bool("debug.matchChat", "Отладка матча в чат", "Отладка",
+                config.Debug.MatchChat),
+            Bool("debug.health", "Строка [health]", "Отладка",
+                config.Debug.Health),
+            Bool("debug.verbose", "Подробный лог пакетов", "Отладка",
+                config.Debug.Verbose, restart: true),
+        };
+
+        return new AdminConfigSnapshot(
+            path, options, ids, config.Admin.MegaIds.OrderBy(id => id).ToList(),
+            issues, lastWrite);
+    }
+
+    private static AdminConfigOption Str(
+        string key, string label, string section, string? value, string? help = null) =>
+        new(key, label, AdminConfigValueKind.String, value ?? "", section, Help: help);
+
+    private static AdminConfigOption Bool(
+        string key, string label, string section, bool value, bool restart = false) =>
+        new(key, label, AdminConfigValueKind.Bool, value ? "true" : "false", section,
+            RestartRequired: restart);
+
+    private static AdminConfigOption Int(
+        string key, string label, string section, int value, int min, int max,
+        bool restart = false) =>
+        new(key, label, AdminConfigValueKind.Int,
+            value.ToString(System.Globalization.CultureInfo.InvariantCulture), section,
+            min, max, RestartRequired: restart);
+
+    private static AdminConfigOption Choice(
+        string key, string label, string section, string value, IReadOnlyList<string> choices) =>
+        new(key, label, AdminConfigValueKind.String, value, section, Choices: choices);
+
+    /// <summary>
+    /// Записать разрешённый ключ. Ключ и тип ещё раз сверяются с белым списком:
+    /// запрос из панели — не повод доверять ему путь в JSON.
+    /// </summary>
+    private string? SetAdminConfigValue(
+        string key, AdminConfigValueKind kind, string value)
+    {
+        // Тестовые флаги — только вручную в файле. Даже если кто-то добавит их в
+        // белый список, этот запрет должен остаться.
+        if (key.StartsWith("test.", StringComparison.OrdinalIgnoreCase)
+            || key.Equals("test", StringComparison.OrdinalIgnoreCase))
+            return "тестовые ключи меняются только вручную в config.json";
+
+        var snapshot = BuildAdminConfig();
+        var option = snapshot.Options.FirstOrDefault(o =>
+            string.Equals(o.Key, key, StringComparison.Ordinal));
+        if (option is null)
+            return "этот ключ не разрешён в панели";
+        if (option.Kind != kind)
+            return "тип значения не совпадает с ключом";
+
+        var path = key.Split('.');
+        if (path.Length < 2 || path.Any(part =>
+                part.Length == 0 || !part.All(ch => char.IsLetterOrDigit(ch) || ch == '_')))
+            return "некорректный путь ключа";
+
+        var scalar = kind switch
+        {
+            AdminConfigValueKind.Bool => ConfigMigration.ScalarKind.Bool,
+            AdminConfigValueKind.Int => ConfigMigration.ScalarKind.Int,
+            _ => ConfigMigration.ScalarKind.String,
+        };
+
+        if (!ConfigMigration.TrySetScalar(
+                ServerConfig.LastLoadedPath, path, scalar, value, out var error))
+            return error;
+
+        return ReloadConfigFromDisk();
+    }
+
+    /// <summary>
+    /// Записать <c>admin.ids</c> (без мега-админов: они остаются только в
+    /// <c>admin.megaIds</c>) и сразу применить к живому серверу.
+    /// </summary>
+    private string? SetAdminIds(IReadOnlyList<int> ids)
+    {
+        var snapshot = BuildAdminConfig();
+        if (ids.Count == 0 && snapshot.MegaIds.Count == 0)
+            return "нельзя оставить сервер без админов";
+
+        if (!ConfigMigration.TrySetAdminIds(
+                ServerConfig.LastLoadedPath, ids, out var error))
+            return error;
+
+        return ReloadConfigFromDisk();
+    }
+
+    /// <summary>Перечитать config.json в живом игровом хосте (панель читает файл сама).</summary>
+    private string? ReloadConfigFromDisk()
+    {
+        var host = _host;
+        if (host is null)
+            return "игровой сервер ещё не поднялся — настройка сохранена, но применится после старта";
+
+        host.ReloadConfig(_ => { });
+        return null;
+    }
+
     private string? EndRoomByOwner(int number, int playerId)
     {
         var ownerId = _rooms.OwnerIdOf(number);
