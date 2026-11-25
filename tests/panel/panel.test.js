@@ -499,8 +499,11 @@ function toPage(list) {
   await P.adminLogin();
   check('вход без сессии сайта: панель открыта', $('adm-panel').hidden === false);
   check('вход: пароль стёрт из поля', $('adm-password').value === '');
-  check('вход: панель без прав не показывает чужие вкладки',
-    $('adm-tab-custom').hidden === true && $('adm-tab-bans').hidden === true &&
+  check('вход: панель без прав не показывает чужие разделы',
+    !$('adm-nav').querySelector('[data-adm-pane-btn="bans"]') &&
+    !$('adm-nav').querySelector('[data-adm-pane-btn="players"]') &&
+    !$('adm-nav').querySelector('[data-adm-pane-btn="admins"]') &&
+    !$('adm-nav').querySelector('[data-adm-pane-btn="config"]') &&
     $('adm-noperms').hidden === false);
 
   adminState = { ok: true, admin: true, authed: true, id: 999, nick: 'влал', customId: null,
@@ -513,15 +516,22 @@ function toPage(list) {
     $('adm-nick').textContent);
   check('админ: диапазон сроков из сервера',
     $('adm-brange').textContent.indexOf('10') >= 0, $('adm-brange').textContent);
-  check('админ без customization: вкладка скрыта', $('adm-tab-custom').hidden === true);
-  check('админ с bans: вкладка видна', $('adm-tab-bans').hidden === false);
-  check('обычный админ не видит вкладку прав', $('adm-tab-admins').hidden === true);
+  check('админ без customization: раздела профиля нет',
+    !$('adm-nav').querySelector('[data-adm-pane-btn="profile"]'));
+  check('админ с bans: разделы банов и игроков видны',
+    !!$('adm-nav').querySelector('[data-adm-pane-btn="bans"]') &&
+    !!$('adm-nav').querySelector('[data-adm-pane-btn="players"]'));
+  check('обычный админ не видит раздел админов',
+    !$('adm-nav').querySelector('[data-adm-pane-btn="admins"]'));
 
   adminState = { ok: true, admin: true, authed: true, id: 999, nick: 'влал', customId: null,
                  mega: true, permissions: ['dashboard', 'journal', 'bans', 'customization'],
                  bans: { enabled: true, minMinutes: 10, maxDays: 14 } };
   await P.loadAdminState();
-  check('мега: вкладка прав видна', $('adm-tab-admins').hidden === false);
+  check('мега: раздел админов виден',
+    !!$('adm-nav').querySelector('[data-adm-pane-btn="admins"]'));
+  check('мега: раздел профиля виден',
+    !!$('adm-nav').querySelector('[data-adm-pane-btn="profile"]'));
 
   report();
 

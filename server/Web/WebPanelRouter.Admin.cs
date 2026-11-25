@@ -1,3 +1,4 @@
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using StandChillow.LanServer.Auth;
@@ -26,6 +27,28 @@ public sealed partial class WebPanelRouter
 {
     private readonly AdminLoginLimiter _adminLoginLimiter = new();
 
+    /// <summary>Тестовый режим: пароль админам не нужен.</summary>
+    private bool NoAdminPassword => _options.TestNoAdminPassword?.Invoke() == true;
+
+    /// <summary>Тестовый режим: аккаунту без админки выдаётся мега-админка.</summary>
+    private bool AutoMegaAdmin => _options.TestAutoMegaAdmin?.Invoke() == true;
+
+    /// <summary>
+    /// Найти админ-сессию по двум кукам: токену сессии и токену устройства. Вторая
+    /// кука привязывает сессию к браузеру: скопированная админ-кука без неё не работает.
+    /// </summary>
+    private AdminSession? FindAdminSession(WebRequestContext request, DateTime now)
+    {
+        var store = _options.AdminSessionStore;
+        if (store is null)
+            return null;
+
+        return store.Find(
+            AdminCookie.ReadToken(request.Headers),
+            AdminCookie.ReadDeviceToken(request.Headers),
+            now);
+    }
+
     /// <summary>Затвор админ-эндпоинта: кука → живой админ → право.</summary>
     private WebResponse? AdminGate(
         WebRequestContext request, out AdminSession admin, string permission)
@@ -38,8 +61,7 @@ public sealed partial class WebPanelRouter
             return ApiError(503, "admin_disabled", "админ панель не настроена на этом сервере");
 
         var now = DateTime.UtcNow;
-        var session = _options.AdminSessionStore.Find(
-            AdminCookie.ReadToken(request.Headers), now);
+        var session = FindAdminSession(request, now);
         if (session is null)
             return ApiError(401, "no_admin_auth", "войди в админ панель: id и личный пароль");
 
@@ -75,8 +97,7 @@ public sealed partial class WebPanelRouter
             || _options.IsAdminLive is null)
             return ApiError(503, "admin_disabled", "админ панель не настроена на этом сервере");
 
-        var session = _options.AdminSessionStore.Find(
-            AdminCookie.ReadToken(request.Headers), DateTime.UtcNow);
+        var session = FindAdminSession(request, DateTime.UtcNow);
         if (session is null)
             return ApiError(401, "no_admin_auth", "войди в админ панель: id и личный пароль");
 
@@ -118,6 +139,87 @@ public sealed partial class WebPanelRouter
         return null;
     }
 
+    /// <summary>
+    /// Единый затвор подтверждения паролем для всех изменяющих админ-запросов.
+    /// Проверяет живую сессию, привязку к устройству и свежий step-up. В тестовом
+    /// режиме <c>test.noAdminPassword</c> подтверждение не требуется, но вход,
+    /// CSRF, права и запреты остаются на месте.
+    /// </summary>
+    private WebResponse? AdminMutationGate(WebRequestContext request)
+    {
+        if (AdminGate(request, out var admin, AdminPermissions.Dashboard) is { } denied)
+            return denied;
+
+        if (NoAdminPassword)
+            return null;
+
+        if (admin.StepUpUntilUtc is { } until && until > DateTime.UtcNow)
+            return null;
+
+        return ApiError(403, "step_up_required",
+            "подтверди пароль заново: это действие меняет данные сервера");
+    }
+
+    /// <summary>
+    /// Защита изменяющих запросов: сессия есть, но токен не тот — 403. Без сессии
+    /// пропускаем дальше: обработчик сам ответит 401, а не подскажет, что кука жива.
+    /// </summary>
+    private WebResponse? AdminCsrfGate(WebRequestContext request)
+    {
+        var sessions = _options.AdminSessionStore;
+        if (sessions is null)
+            return null;
+
+        var session = FindAdminSession(request, DateTime.UtcNow);
+        if (session is null)
+            return null;
+
+        if (!OriginAllowed(request))
+            return ApiError(403, "bad_origin", "запрос пришёл с чужого сайта");
+
+        var token = HeaderOf(request, "X-CSRF-Token");
+        if (string.IsNullOrEmpty(token)
+            || !CryptographicOperations.FixedTimeEquals(
+                Encoding.UTF8.GetBytes(token), Encoding.UTF8.GetBytes(session.CsrfToken)))
+            return ApiError(403, "bad_csrf",
+                "нет или неверный CSRF-токен — обнови страницу и войди заново");
+
+        return null;
+    }
+
+    /// <summary>Origin/Referer, если он есть, обязан указывать на этот же хост.</summary>
+    private static bool OriginAllowed(WebRequestContext request)
+    {
+        var origin = HeaderOf(request, "Origin");
+        if (origin.Length == 0)
+            return true; // не браузерный запрос: токен уже проверен
+        if (string.Equals(origin, "null", StringComparison.OrdinalIgnoreCase))
+            return false;
+        if (!Uri.TryCreate(origin, UriKind.Absolute, out var uri))
+            return false;
+
+        var host = HeaderOf(request, "X-Forwarded-Host");
+        if (host.Length == 0)
+            host = HeaderOf(request, "Host");
+        if (host.Length == 0)
+            return false;
+
+        var colon = host.LastIndexOf(':');
+        if (colon > 0 && host.IndexOf(']', colon) < 0)
+            host = host[..colon];
+        return string.Equals(uri.Host, host.Trim('[', ']'), StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static string HeaderOf(WebRequestContext request, string name)
+    {
+        foreach (var (key, value) in request.Headers)
+        {
+            if (string.Equals(key, name, StringComparison.OrdinalIgnoreCase))
+                return value ?? "";
+        }
+        return "";
+    }
+
     // ── Состояние ───────────────────────────────────────────────────────────────
 
     /// <summary>Состояние админ-панели. Без входа — 401, без права — 403, данных нет.</summary>
@@ -130,11 +232,22 @@ public sealed partial class WebPanelRouter
         if (record is null)
             return ApiError(403, "not_admin", "для этого id нет записи админа");
 
-        return AdminStateJson(record);
+        // Заход в панель продлевает сессию: активный админ не должен заново вводить
+        // пароль каждые 30 дней. Куки перевыставляются с полным сроком.
+        _options.AdminSessionStore?.Renew(admin.TokenHash, DateTime.UtcNow);
+        var response = AdminStateJson(record, admin);
+        var token = AdminCookie.ReadToken(request.Headers);
+        var device = AdminCookie.ReadDeviceToken(request.Headers);
+        return token is { Length: > 0 } && device is { Length: > 0 }
+            ? WithCookies(
+                response,
+                AdminCookie.Build(token, _options.CookiePath, _options.SecureCookies),
+                AdminCookie.BuildDevice(device, _options.CookiePath, _options.SecureCookies))
+            : response;
     }
 
     /// <summary>JSON состояния вошедшего админа: без записи сюда не попадают.</summary>
-    private WebResponse AdminStateJson(AdminRecord record)
+    private WebResponse AdminStateJson(AdminRecord record, AdminSession? session = null)
     {
         using var stream = new MemoryStream();
         using (var writer = new Utf8JsonWriter(stream, JsonText.WriterOptions))
@@ -152,7 +265,16 @@ public sealed partial class WebPanelRouter
             writer.WriteString("nick", record.Nick ?? "");
             writer.WriteString("role", mega ? "mega" : "admin");
             writer.WriteBoolean("mega", mega);
+            writer.WriteBoolean("testNoPassword", NoAdminPassword);
+            writer.WriteBoolean("testAutoMega", AutoMegaAdmin);
             writer.WriteString("customId", _options.CustomIdGet?.Invoke(record.Id));
+            if (session is not null)
+            {
+                writer.WriteString("csrf", session.CsrfToken);
+                var stepUp = session.StepUpUntilUtc is { } until && until > DateTime.UtcNow;
+                writer.WriteBoolean("stepUp", stepUp);
+                writer.WriteString("stepUpUntil", stepUp ? session.StepUpUntilUtc!.Value.ToString("O") : "");
+            }
 
             writer.WriteStartArray("permissions");
             foreach (var permission in permissions)
@@ -174,6 +296,26 @@ public sealed partial class WebPanelRouter
 
     // ── Вход / выход ────────────────────────────────────────────────────────────
 
+    /// <summary>
+    /// Подсказка для экрана входа: включены ли тестовые флаги. Ничего, кроме двух
+    /// булевых значений, не отдаём — иначе анонимный посетитель узнал бы состав
+    /// админов или настройки сервера.
+    /// </summary>
+    private WebResponse AdminLoginInfo()
+    {
+        using var stream = new MemoryStream();
+        using (var writer = new Utf8JsonWriter(stream, JsonText.WriterOptions))
+        {
+            writer.WriteStartObject();
+            writer.WriteBoolean("ok", true);
+            writer.WriteBoolean("testNoPassword", NoAdminPassword);
+            writer.WriteBoolean("testAutoMega", AutoMegaAdmin);
+            writer.WriteEndObject();
+        }
+
+        return WebResponse.Json(Encoding.UTF8.GetString(stream.ToArray()));
+    }
+
     /// <summary>Вход в админ панель по id и личному паролю. Сессия сайта не нужна.</summary>
     private WebResponse AdminLogin(WebRequestContext request)
     {
@@ -194,7 +336,12 @@ public sealed partial class WebPanelRouter
 
         if (parsed is null || parsed.Id <= 0)
             return ApiError(400, "bad_id", "id — число больше нуля");
-        if (string.IsNullOrWhiteSpace(parsed.Password))
+
+        // В обычном режиме пароль обязателен всегда. Тестовый флаг снимает только
+        // это требование; id всё равно обязан быть живым админом или аккаунтом,
+        // которому тестовый режим выдаёт мега-права.
+        var passwordless = NoAdminPassword;
+        if (string.IsNullOrWhiteSpace(parsed.Password) && !passwordless)
             return ApiError(400, "empty_password", "введи личный пароль из auth/<id>/password.txt");
 
         var now = DateTime.UtcNow;
@@ -207,44 +354,99 @@ public sealed partial class WebPanelRouter
                 $"слишком много попыток — подожди {wait} секунд");
         }
 
-        var record = _options.AdminStore.Verify(parsed.Id, parsed.Password, now);
-        if (record is null || !_options.IsAdminLive(record.Id))
+        var ip = request.RemoteAddress?.ToString() ?? "";
+        AdminRecord? record;
+        var testMegaGranted = false;
+
+        if (passwordless)
+        {
+            record = _options.AdminStore.Find(parsed.Id);
+
+            // Тестовая автовыдача: только существующему аккаунту и только если
+            // админки у него нет. Запись, оставшаяся от прежнего конфига, не
+            // считается «нет админки» — её владелец мог снять намеренно.
+            if ((record is null || record.AddedBy == "test-auto")
+                && AutoMegaAdmin
+                && _options.AccountExists?.Invoke(parsed.Id) == true)
+            {
+                testMegaGranted = _options.AdminStore.GrantRuntimeMega(
+                    parsed.Id, record?.Nick ?? "", now,
+                    new AdminJournalContext(
+                        parsed.Id, record?.Nick ?? "", ip, "admin", parsed.Id,
+                        record?.Nick ?? "",
+                        Note: "тестовый режим: вход без пароля, автовыдача мега-админки"));
+                record = _options.AdminStore.Find(parsed.Id);
+            }
+
+            if (record is not null && !_options.IsAdminLive(record.Id))
+                record = null;
+        }
+        else
+        {
+            record = _options.AdminStore.Verify(parsed.Id, parsed.Password, now);
+            if (record is not null && !_options.IsAdminLive(record.Id))
+                record = null;
+        }
+
+        if (record is null)
         {
             _adminLoginLimiter.Fail(request.RemoteAddress, now);
             Console.WriteLine(
                 $"[web] вход отклонён: id #{parsed.Id} с {request.RemoteAddress} " +
                 "(неверный пароль или id не админ)");
+            _options.AdminStore.Journal(
+                "security", "login_failed", parsed.Id, parsed.Id,
+                context: new AdminJournalContext(
+                    parsed.Id, "", ip,
+                    "admin", parsed.Id, "", Result: "fail",
+                    Note: passwordless
+                        ? "тестовый режим: id не админ и не аккаунт"
+                        : "неверный id или пароль"));
             // Один и тот же ответ: не подсказываем, существует ли id.
             return ApiError(401, "bad_credentials", "id или пароль не подходят");
         }
 
         _adminLoginLimiter.Reset(request.RemoteAddress);
         var adminSession = _options.AdminSessionStore.Create(
-            record.Id, record.Nick, record.AuthVersion, now);
+            record.Id, record.Nick, record.AuthVersion, now, ip,
+            HeaderOf(request, "User-Agent"));
         if (adminSession is null)
             return ApiError(503, "too_many_sessions",
                 "на сервере кончились админ-сессии — попробуй позже");
 
-        _options.AdminStore.Journal("auth", "login", record.Id, record.Id);
+        var loginNote = passwordless
+            ? (testMegaGranted
+                ? "тестовый режим: вход без пароля, выдана мега-админка"
+                : "тестовый режим: вход без пароля")
+            : null;
+        _options.AdminStore.Journal(
+            "auth", "login", record.Id, record.Id,
+            context: new AdminJournalContext(
+                record.Id, record.Nick, ip,
+                "admin", record.Id, record.Nick, Note: loginNote));
         Console.WriteLine(
             $"[web] админ-вход: #{record.Id} с {request.RemoteAddress} " +
-            $"(мега: {_options.AdminStore.IsMega(record.Id)})");
+            $"(мега: {_options.AdminStore.IsMega(record.Id)}" +
+            (passwordless ? ", ТЕСТ: без пароля" : "") + ")");
 
-        return WithCookie(
-            AdminStateJson(record),
-            AdminCookie.Build(adminSession.Token, _options.CookiePath, _options.SecureCookies));
+        return WithCookies(
+            AdminStateJson(record, adminSession),
+            AdminCookie.Build(adminSession.Token, _options.CookiePath, _options.SecureCookies),
+            AdminCookie.BuildDevice(
+                adminSession.DeviceToken, _options.CookiePath, _options.SecureCookies));
     }
 
-    /// <summary>Выход из админ панели: гасим конкретную админ-куку.</summary>
+    /// <summary>Выход из админ панели: гасим админ-куку и куку устройства.</summary>
     private WebResponse AdminLogout(WebRequestContext request)
     {
         var token = AdminCookie.ReadToken(request.Headers);
         if (token is { Length: > 0 })
             _options.AdminSessionStore?.Drop(token);
 
-        return WithCookie(
+        return WithCookies(
             WebResponse.Json("{\"ok\":true}"),
-            AdminCookie.BuildExpired(_options.CookiePath, _options.SecureCookies));
+            AdminCookie.BuildExpired(_options.CookiePath, _options.SecureCookies),
+            AdminCookie.BuildDeviceExpired(_options.CookiePath, _options.SecureCookies));
     }
 
     // ── Админы и права (только мега) ────────────────────────────────────────────
@@ -300,7 +502,7 @@ public sealed partial class WebPanelRouter
     /// <summary>Выдать/отнять операционные права. Только мега-админ.</summary>
     private WebResponse AdminSetPermissions(WebRequestContext request)
     {
-        if (MegaGate(request, out var admin) is { } denied)
+        if (MegaStepUpGate(request, out var admin) is { } denied)
             return denied;
 
         AdminPermissionsRequest? parsed;
@@ -316,10 +518,14 @@ public sealed partial class WebPanelRouter
         if (parsed is null || parsed.Id <= 0)
             return ApiError(400, "bad_id", "id — число больше нуля");
 
+        var target = _options.AdminStore?.Find(parsed.Id);
+        var context = new AdminJournalContext(
+            admin.PlayerId, admin.Nick, request.RemoteAddress?.ToString() ?? "",
+            "admin", parsed.Id, target?.Nick ?? "", Reversible: true);
         string? error = null;
         if (_options.AdminStore?.SetPermissions(
                 admin.PlayerId, parsed.Id, parsed.Permissions, DateTime.UtcNow,
-                out error) != true)
+                out error, context) != true)
             return ApiError(400, "permissions_refused", error ?? "права не изменены");
 
         Console.WriteLine(
@@ -353,9 +559,16 @@ public sealed partial class WebPanelRouter
         if (value.Length > CustomIdStore.MaxLength)
             return ApiError(400, "bad_custom_id", $"максимум {CustomIdStore.MaxLength} символов");
 
+        var before = _options.CustomIdGet?.Invoke(admin.PlayerId) ?? "";
         var error = _options.CustomIdSet(admin.PlayerId, value.Length == 0 ? null : value);
         if (error is not null)
             return ApiError(400, "bad_custom_id", error);
+
+        _options.AdminStore?.Journal("customid", "set", admin.PlayerId, admin.PlayerId,
+            before: new { value = before }, after: new { value },
+            context: new AdminJournalContext(
+                admin.PlayerId, admin.Nick, request.RemoteAddress?.ToString() ?? "",
+                "admin", admin.PlayerId, admin.Nick, Reversible: true));
 
         var action = value.Length == 0 ? "сбросил" : "поставил";
         Console.WriteLine($"[web] кастомный ID: #{admin.PlayerId} {action} «{value}»");
@@ -363,7 +576,7 @@ public sealed partial class WebPanelRouter
         var record = _options.AdminStore?.Find(admin.PlayerId);
         if (record is null)
             return ApiError(403, "not_admin", "для этого id нет записи админа");
-        return AdminStateJson(record);
+        return AdminStateJson(record, admin);
     }
 
     // ── Баны ────────────────────────────────────────────────────────────────────
@@ -484,6 +697,10 @@ public sealed partial class WebPanelRouter
 
         if (parsed is null || parsed.Id <= 0)
             return ApiError(400, "bad_id", "id — число больше нуля");
+        if (parsed.Id == admin.PlayerId)
+            return ApiError(400, "self_ban", "себя забанить нельзя");
+        if (_options.AdminStore?.IsMega(parsed.Id) == true)
+            return ApiError(403, "target_mega", "мега-админа забанить нельзя");
 
         var value = parsed.DurationValue;
         var unit = (parsed.DurationUnit ?? "").Trim().ToLowerInvariant();
@@ -499,7 +716,22 @@ public sealed partial class WebPanelRouter
             return ApiError(400, "ban_refused", error ?? "бан не удался");
 
         _options.AdminStore?.Journal("ban", "ban", admin.PlayerId, parsed.Id,
-            after: new { duration = BanDuration.FormatShort(record.Duration), reason });
+            before: new { banned = false },
+            after: new
+            {
+                banned = true,
+                banId = record.BanId,
+                nick = record.DisplayNick,
+                duration = BanDuration.FormatShort(record.Duration),
+                expires = record.ExpiresUtc.ToString("O"),
+                reason,
+                ips = record.Ips,
+                devices = record.Devices,
+            },
+            context: new AdminJournalContext(
+                admin.PlayerId, admin.Nick, request.RemoteAddress?.ToString() ?? "",
+                "player", parsed.Id, record.DisplayNick,
+                Reversible: true, Note: reason));
 
         Console.WriteLine(
             $"[web] бан из панели: '{record.DisplayNick}' на {BanDuration.FormatShort(record.Duration)} " +
@@ -548,7 +780,11 @@ public sealed partial class WebPanelRouter
             return ApiError(404, "not_found", error);
 
         _options.AdminStore?.Journal("ban", "unban", admin.PlayerId, parsed.Id,
-            after: new { removed });
+            before: new { banned = true },
+            after: new { banned = false, removed },
+            context: new AdminJournalContext(
+                admin.PlayerId, admin.Nick, request.RemoteAddress?.ToString() ?? "",
+                "player", parsed.Id, ""));
         return WebResponse.Json($"{{\"ok\":true,\"removed\":{removed}}}");
     }
 

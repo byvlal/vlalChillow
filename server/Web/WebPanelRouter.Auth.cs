@@ -92,11 +92,20 @@ public sealed partial class WebPanelRouter
 
     private WebResponse WhoAmI(WebRequestContext request)
     {
-        var session = SessionOf(request);
+        var token = SiteCookie.ReadToken(request.Headers);
+        var session = _options.Sessions?.Renew(token, DateTime.UtcNow);
         if (session is null)
             return ApiError(401, "no_auth", "нужно ввести код из лобби");
 
-        return BannedRefusal(session) ?? WebResponse.Json(BuildProfileJson(session));
+        // Бан гасит сессию и куку не продлевает.
+        if (BannedRefusal(session) is { } banned)
+            return banned;
+
+        var response = WebResponse.Json(BuildProfileJson(session));
+        return token is { Length: > 0 }
+            ? WithCookie(response, SiteCookie.Build(
+                token, _options.CookiePath, _options.SecureCookies))
+            : response;
     }
 
     /// <summary>
@@ -179,6 +188,21 @@ public sealed partial class WebPanelRouter
     private static WebResponse WithCookie(WebResponse response, (string Name, string Value) cookie)
     {
         var headers = new List<(string, string)>(response.ExtraHeaders) { cookie };
+        return new WebResponse(
+            response.Status,
+            response.ContentType,
+            response.Body,
+            response.RetryAfterSec,
+            headers);
+    }
+
+    private static WebResponse WithCookies(
+        WebResponse response, params (string Name, string Value)[] cookies)
+    {
+        var headers = new List<(string, string)>(response.ExtraHeaders);
+        foreach (var cookie in cookies)
+            headers.Add(cookie);
+
         return new WebResponse(
             response.Status,
             response.ContentType,

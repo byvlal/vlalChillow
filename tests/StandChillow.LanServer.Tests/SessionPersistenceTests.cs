@@ -37,12 +37,43 @@ public sealed class SessionPersistenceTests : IDisposable
         var session = sessions.Create(PlayerId, "влал", 1, Now)!;
 
         var reloaded = new AdminSessions(path, _store);
-        var found = reloaded.Find(session.Token, Now.AddDays(1));
+        var found = reloaded.Find(session.Token, session.DeviceToken, Now.AddDays(1));
 
         Assert.NotNull(found);
         Assert.Equal(PlayerId, found!.PlayerId);
         Assert.Equal("влал", found.Nick);
         Assert.Equal(1, found.AuthVersion);
+    }
+
+    [Fact]
+    public void AdminSession_RequiresTheSameDeviceCookie()
+    {
+        var sessions = new AdminSessions(Path.Combine(_dir, "sessions.json"), _store);
+        var session = sessions.Create(PlayerId, "влал", 1, Now)!;
+
+        Assert.Null(sessions.Find(session.Token, "чужое-устройство", Now));
+        Assert.Null(sessions.Find(session.Token, null, Now));
+        Assert.Null(sessions.Find(null, session.DeviceToken, Now));
+        Assert.NotNull(sessions.Find(session.Token, session.DeviceToken, Now));
+    }
+
+    [Fact]
+    public void AdminSession_HasThirtyDayTtlAndSlidesOnRenew()
+    {
+        Assert.Equal(30, AdminSessions.TtlDays);
+
+        var path = Path.Combine(_dir, "sessions.json");
+        var sessions = new AdminSessions(path, _store);
+        var session = sessions.Create(PlayerId, "влал", 1, Now)!;
+
+        var renewed = sessions.Renew(session.TokenHash, Now.AddDays(20));
+        Assert.NotNull(renewed);
+        Assert.Equal(Now.AddDays(50), renewed!.ExpiresUtc);
+        Assert.NotNull(sessions.Find(session.Token, session.DeviceToken, Now.AddDays(45)));
+
+        // Отдельная сессия: проверка истечения не должна убивать продлённую.
+        var expiring = sessions.Create(PlayerId, "влал", 1, Now)!;
+        Assert.Null(sessions.Find(expiring.Token, expiring.DeviceToken, Now.AddDays(31)));
     }
 
     [Fact]
@@ -65,8 +96,8 @@ public sealed class SessionPersistenceTests : IDisposable
         var sessions = new AdminSessions(path, _store, TimeSpan.FromMinutes(5));
         var session = sessions.Create(PlayerId, "влал", 1, Now)!;
 
-        Assert.NotNull(sessions.Find(session.Token, Now.AddMinutes(4)));
-        Assert.Null(sessions.Find(session.Token, Now.AddMinutes(6)));
+        Assert.NotNull(sessions.Find(session.Token, session.DeviceToken, Now.AddMinutes(4)));
+        Assert.Null(sessions.Find(session.Token, session.DeviceToken, Now.AddMinutes(6)));
         Assert.Equal(0, sessions.Count);
     }
 
@@ -79,7 +110,7 @@ public sealed class SessionPersistenceTests : IDisposable
 
         _store.RegeneratePassword(null, PlayerId, Now.AddMinutes(1), out _, out _);
 
-        Assert.Null(sessions.Find(session.Token, Now.AddMinutes(2)));
+        Assert.Null(sessions.Find(session.Token, session.DeviceToken, Now.AddMinutes(2)));
     }
 
     [Fact]
@@ -90,8 +121,8 @@ public sealed class SessionPersistenceTests : IDisposable
         var second = sessions.Create(PlayerId, "влал", 1, Now)!;
 
         Assert.Equal(2, sessions.DropByPlayer(PlayerId));
-        Assert.Null(sessions.Find(first.Token, Now));
-        Assert.Null(sessions.Find(second.Token, Now));
+        Assert.Null(sessions.Find(first.Token, first.DeviceToken, Now));
+        Assert.Null(sessions.Find(second.Token, second.DeviceToken, Now));
     }
 
     [Fact]
@@ -110,7 +141,12 @@ public sealed class SessionPersistenceTests : IDisposable
 
         Assert.NotNull(found);
         Assert.Equal(PlayerId, found!.PlayerId);
-        Assert.Equal(Now.AddDays(1), found.LastSeenUtc);
+        // Find больше не пишет LastSeen: сессию продлевает только Renew.
+        Assert.Equal(Now, found.LastSeenUtc);
+
+        var renewed = reloaded.Renew(session.Token, Now.AddDays(1))!;
+        Assert.Equal(Now.AddDays(1), renewed.LastSeenUtc);
+        Assert.Equal(Now.AddDays(31), renewed.ExpiresUtc);
     }
 
     [Fact]

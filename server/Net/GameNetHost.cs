@@ -747,7 +747,12 @@ public sealed partial class GameNetHost : IDisposable
         var self = result.Player!;
         var account = _accounts?.GetOrCreate(self.Name, DateTime.UtcNow);
         if (account is not null)
+        {
             self.PublicId = account.Id;
+            // Тестовый режим: аккаунту без админки выдаётся мега-админка. Только
+            // после успешного входа и только для настоящего id аккаунта.
+            TryAutoMega(account.Id, self.Name, DateTime.UtcNow);
+        }
 
         // Только реальный успешный вход: ник, адрес, аккаунт и (если уже известен) userId.
         // Забаненный сюда не доходит — он уходит в теневой лобби выше.

@@ -509,19 +509,19 @@ public sealed partial class GameNetHost
         if (ServerIdentity.IsServerNick(nick))
             return true;
 
-        if (_config.IsAdmin(LegacyNickHash.ForNick(nick)))
+        if (IsAdminId(LegacyNickHash.ForNick(nick)))
             return true;
 
         var accounts = _accounts;
         if (accounts is null)
             return false;
 
-        if (accounts.FindByNick(nick) is { } owner && _config.IsAdmin(owner.Id))
+        if (accounts.FindByNick(nick) is { } owner && IsAdminId(owner.Id))
             return true;
 
         foreach (var account in accounts.FindAccountsByNick(nick))
         {
-            if (_config.IsAdmin(account.Id))
+            if (IsAdminId(account.Id))
                 return true;
         }
 

@@ -187,4 +187,81 @@ public sealed class ConfigMigrationTests : IDisposable
         Assert.True(ServerConfig.TryLoad(path, out var cfg, out var error), error);
         Assert.True(cfg.IsMegaId(1_000_000));
     }
+
+    [Fact]
+    public void TestSection_IsAddedAtTheBottom_WithBothFlagsOff()
+    {
+        const string source = """
+        {
+          // шапка
+          "web": { "port": 8080 },
+          "admin": {
+            "ids": [ 500000 ],
+            "megaIds": [ 1000000 ]
+          }
+        }
+        """;
+        var path = Write(source);
+
+        Assert.True(ConfigMigration.EnsureTestSection(path, out var message));
+        Assert.Contains("test", message);
+
+        var text = File.ReadAllText(path);
+        Assert.Contains("\"test\": {", text);
+        Assert.Contains("\"noAdminPassword\": false", text);
+        Assert.Contains("\"autoMegaAdmin\": false", text);
+        Assert.Contains("ЗАПРЕЩЕНО ВКЛЮЧАТЬ", text);
+        Assert.Contains("// шапка", text);
+        Assert.Contains("\"port\": 8080", text);
+        Assert.Contains("\"ids\": [ 500000 ]", text);
+        Assert.True(text.TrimEnd().EndsWith('}'));
+
+        Assert.True(ServerConfig.TryLoad(path, out var cfg, out var error), error);
+        Assert.False(cfg.Test.NoAdminPassword);
+        Assert.False(cfg.Test.AutoMegaAdmin);
+        Assert.True(cfg.IsMegaId(1_000_000));
+        Assert.True(cfg.IsAdmin(500000));
+    }
+
+    [Fact]
+    public void ExplicitTestSection_IsNeverTouched_AndFlagsAreRead()
+    {
+        const string source = """
+        {
+          "test": {
+            "noAdminPassword": true,
+            "autoMegaAdmin": true
+          },
+          "admin": { "ids": [ 500000 ], "megaIds": [ 1000000 ] }
+        }
+        """;
+        var path = Write(source);
+
+        Assert.False(ConfigMigration.EnsureTestSection(path, out _));
+        Assert.Equal(source, File.ReadAllText(path));
+
+        Assert.True(ServerConfig.TryLoad(path, out var cfg, out var error), error);
+        Assert.True(cfg.Test.NoAdminPassword);
+        Assert.True(cfg.Test.AutoMegaAdmin);
+    }
+
+    [Fact]
+    public void TestSectionMigration_IsIdempotent_AndLeavesBrokenJsonAlone()
+    {
+        var path = Write("""
+        {
+          "admin": { "ids": [ 500000 ], "megaIds": [ 1000000 ] }
+        }
+        """);
+
+        Assert.True(ConfigMigration.EnsureTestSection(path, out _));
+        var once = File.ReadAllText(path);
+        Assert.False(ConfigMigration.EnsureTestSection(path, out _));
+        Assert.Equal(once, File.ReadAllText(path));
+
+        const string broken = """{ "test": { "noAdminPassword": true """;
+        File.WriteAllText(path, broken);
+        Assert.False(ConfigMigration.EnsureTestSection(path, out _));
+        Assert.Equal(broken, File.ReadAllText(path));
+    }
 }

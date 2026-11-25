@@ -82,6 +82,40 @@ public sealed class AdminConfig
 }
 
 /// <summary>
+/// Тестовый режим: только для отдельного тестового сервера. Оба флага по умолчанию
+/// <c>false</c> и меняются только вручную в <c>config.json</c>; панель их не редактирует.
+/// </summary>
+/// <remarks>
+/// <para>
+/// <see cref="NoAdminPassword"/> отключает личный пароль админов: вход в панель по id,
+/// шаг подтверждения не спрашивается, админ-команды в игре работают без пароля.
+/// </para>
+/// <para>
+/// <see cref="AutoMegaAdmin"/> выдаёт мега-админку аккаунту, у которого её нет, при входе
+/// в игру или в панель. Выдача живёт в памяти и не пишется в <c>config.json</c>.
+/// </para>
+/// <para>
+/// Включать это на боевом сервере запрещено: любой игрок получит мега-права и сможет
+/// снести конфиг, баны, админов и комнаты. Сервер обязан оставаться на <c>false</c>,
+/// пока владелец сам не включит флаги на тестовой машине.
+/// </para>
+/// </remarks>
+public sealed class TestConfig
+{
+    /// <summary>
+    /// true — админам и мега-админам не нужен личный пароль: ни при входе в панель,
+    /// ни для подтверждения опасных действий, ни для команд в игре.
+    /// </summary>
+    public bool NoAdminPassword { get; set; }
+
+    /// <summary>
+    /// true — аккаунту без админки при входе в игру или панель выдаётся мега-админка.
+    /// Выдача хранится только в памяти процесса и повторяется после перезапуска.
+    /// </summary>
+    public bool AutoMegaAdmin { get; set; }
+}
+
+/// <summary>
 /// Баны. По умолчанию <c>/ban</c>, <c>/unban</c> и <c>/bans</c> — только для админов
 /// (независимо от <see cref="AdminConfig.AdminOnlyCommands"/>), админа забанить нельзя.
 /// </summary>
@@ -566,6 +600,12 @@ public sealed class ServerConfig
     public WebConfig Web { get; set; } = new();
 
     /// <summary>
+    /// Тестовые флаги. Читаются только из <c>config.json</c>; по умолчанию выключены.
+    /// Панель их не показывает в редакторе и не может изменить.
+    /// </summary>
+    public TestConfig Test { get; set; } = new();
+
+    /// <summary>
     /// Замечание к конфигу: какое значение недопустимо и что применилось вместо него.
     /// </summary>
     /// <remarks>
@@ -677,6 +717,11 @@ public sealed class ServerConfig
             if (ConfigMigration.EnsureMegaSection(path, out var migration))
                 Console.WriteLine($"[config] миграция: {migration} ({path})");
 
+            // Тестовые флаги появляются внизу файла выключенными. Существующую
+            // секцию test миграция не трогает: владелец мог уже выставить значения.
+            if (ConfigMigration.EnsureTestSection(path, out var testMigration))
+                Console.WriteLine($"[config] миграция: {testMigration} ({path})");
+
             var parsed = JsonSerializer.Deserialize<ServerConfig>(
                 File.ReadAllText(path), JsonOptions);
             if (parsed is null)
@@ -736,6 +781,7 @@ public sealed class ServerConfig
         Debug ??= new DebugConfig();
         Web ??= new WebConfig();
         Web.Limits ??= new WebLimitsConfig();
+        Test ??= new TestConfig();
         Names ??= new NamesConfig();
 
         // Опечатки в именах ключей — до всего остального: из-за них «настроил, а не работает».
@@ -1529,6 +1575,25 @@ public sealed class ServerConfig
       "maxConnectionsPerIp": 8,  // одновременных сокетов с одного клиента (страница шлёт 5)
       "maxConnectionsTotal": 256 // одновременных сокетов на весь сайт (наплыв людей)
     }
+  },
+
+  // ===== ТЕСТОВЫЙ РЕЖИМ =====
+  // !!! ЗАПРЕЩЕНО ВКЛЮЧАТЬ НА БОЕВОМ СЕРВЕРЕ !!!
+  // Эти два флага существуют только для отдельного тестового сервера.
+  // Включишь на боевом — сервер можно снести на воздух: любой игрок получит
+  // мега-админку, доступ к конфигу, банам, админам и откату действий.
+  // Оба флага по умолчанию false. Панель их не редактирует: только вручную здесь.
+  "test": {
+    // true — админам и мега-админам не нужен личный пароль:
+    // вход в панель по id, подтверждение пароля не спрашивается,
+    // в игре админ-команды работают без пароля.
+    // НИКОГДА не включать на боевом сервере.
+    "noAdminPassword": false,
+
+    // true — аккаунту без админки при входе в игру или панель выдаётся МЕГА-админка.
+    // Выдача живёт до перезапуска и в config.json не пишется.
+    // НИКОГДА не включать на боевом сервере.
+    "autoMegaAdmin": false
   }
 }
 """;

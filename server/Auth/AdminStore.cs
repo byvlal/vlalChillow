@@ -28,13 +28,16 @@ namespace StandChillow.LanServer.Auth;
 /// одновременно, а файл переписывается атомарно (временный + rename).
 /// </para>
 /// </remarks>
-public sealed class AdminStore
+public sealed partial class AdminStore
 {
     public const string DirectoryName = "auth";
     public const string RecordsFileName = "admins.json";
     public const string JournalFileName = "journal.jsonl";
     public const string ReadmeFileName = "README.md";
     public const string PasswordFileName = "password.txt";
+
+    /// <summary>Отметка записи, созданной тестовой автовыдачей мега-прав.</summary>
+    private const string RuntimeMegaMarker = "test-auto";
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -68,6 +71,12 @@ public sealed class AdminStore
     private readonly Action<string>? _log;
     private readonly Dictionary<int, AdminRecord> _byId = new();
     private readonly HashSet<int> _megaIds = new();
+
+    /// <summary>
+    /// Мега-права, выданные в рантайме тестовым режимом. В <c>config.json</c> и
+    /// <c>admins.json</c> они не попадают; после перезапуска выдаются заново.
+    /// </summary>
+    private readonly HashSet<int> _runtimeMega = new();
 
     public AdminStore(string directory, Action<string>? log = null)
     {
@@ -119,6 +128,19 @@ public sealed class AdminStore
         {
             EnsureDirectory(_directory, DirectoryMode);
             LoadLocked();
+
+            // Записи, созданные тестовой автовыдачей, не должны переживать
+            // перезапуск: сервер снова выдаст мега-права при входе, а мусорные
+            // «админы» из прошлого запуска останутся только в журнале.
+            var stale = _byId.Values
+                .Where(record => record.AddedBy == RuntimeMegaMarker)
+                .Select(record => record.Id)
+                .ToList();
+            foreach (var id in stale)
+                _byId.Remove(id);
+            if (stale.Count > 0)
+                SaveLocked();
+
             SyncLocked(adminIds, megaIds, nowUtc);
             WriteReadmeLocked();
             RetireLegacyAuthFileLocked();
@@ -199,13 +221,83 @@ public sealed class AdminStore
     }
 
     /// <summary>
-    /// Мега-права: id входит в <c>admin.megaIds</c> и для него создана запись. IP и
-    /// адрес запроса не участвуют — мега работает откуда угодно.
+    /// Мега-права: id входит в <c>admin.megaIds</c> и для него создана запись либо
+    /// права выданы тестовым режимом в этом процессе. IP и адрес запроса не участвуют.
     /// </summary>
     public bool IsMega(int id)
     {
         lock (_gate)
-            return _byId.ContainsKey(id) && _megaIds.Contains(id);
+            return (_byId.ContainsKey(id) && _megaIds.Contains(id))
+                   || _runtimeMega.Contains(id);
+    }
+
+    /// <summary>Мега-права, выданные тестовым режимом (не из конфига).</summary>
+    public bool IsRuntimeMega(int id)
+    {
+        lock (_gate)
+            return _runtimeMega.Contains(id);
+    }
+
+    /// <summary>
+    /// Выдать мега-права в рантайме (тестовый режим). Создаёт запись админа без
+    /// пароля, чтобы затворы нашли её; в <c>config.json</c> ничего не пишется.
+    /// Повторная выдача идемпотентна.
+    /// </summary>
+    public bool GrantRuntimeMega(
+        int id, string nick, DateTime nowUtc, AdminJournalContext? context = null)
+    {
+        if (id <= 0)
+            return false;
+
+        lock (_gate)
+        {
+            var changed = _runtimeMega.Add(id);
+            if (!_byId.TryGetValue(id, out var record))
+            {
+                record = new AdminRecord
+                {
+                    Id = id,
+                    Nick = nick ?? "",
+                    Role = "mega",
+                    Permissions = AdminPermissions.All.ToList(),
+                    AddedBy = RuntimeMegaMarker,
+                    AuthVersion = 1,
+                    CreatedUtc = nowUtc,
+                    UpdatedUtc = nowUtc,
+                };
+                _byId[id] = record;
+                changed = true;
+            }
+            else
+            {
+                if (record.Role != "mega")
+                {
+                    record.Role = "mega";
+                    changed = true;
+                }
+                if (record.UpdatedUtc < nowUtc)
+                {
+                    record.UpdatedUtc = nowUtc;
+                    changed = true;
+                }
+            }
+
+            if (!changed)
+                return true;
+
+            SaveLocked();
+            JournalLocked(new
+            {
+                category = "security",
+                action = "test_auto_mega",
+                actorId = id,
+                targetId = id,
+                nick,
+            }, nowUtc, context ?? new AdminJournalContext(
+                id, nick ?? "", TargetType: "admin", TargetId: id, TargetNick: nick ?? "",
+                Note: "тестовый режим: автовыдача мега-админки"));
+            return true;
+        }
     }
 
     /// <summary>Права с учётом мега-обхода. Неотнимаемые есть всегда.</summary>
@@ -216,7 +308,7 @@ public sealed class AdminStore
             if (!_byId.TryGetValue(id, out var record))
                 return Array.Empty<string>();
 
-            if (_megaIds.Contains(id))
+            if (_megaIds.Contains(id) || _runtimeMega.Contains(id))
                 return AdminPermissions.All.ToList();
 
             return AdminPermissions.Normalize(record.Permissions);
@@ -233,7 +325,7 @@ public sealed class AdminStore
         {
             if (!_byId.TryGetValue(id, out var record))
                 return false;
-            if (_megaIds.Contains(id))
+            if (_megaIds.Contains(id) || _runtimeMega.Contains(id))
                 return true;
             return AdminPermissions.Normalize(record.Permissions)
                 .Contains(permission, StringComparer.Ordinal);
@@ -249,7 +341,8 @@ public sealed class AdminStore
         int targetId,
         IEnumerable<string>? permissions,
         DateTime nowUtc,
-        out string? error)
+        out string? error,
+        AdminJournalContext? context = null)
     {
         error = null;
         lock (_gate)
@@ -274,7 +367,8 @@ public sealed class AdminStore
                 targetId,
                 before,
                 after,
-            }, nowUtc);
+            }, nowUtc, context ?? new AdminJournalContext(
+                actorId, TargetType: "admin", TargetId: targetId, Reversible: true));
             return true;
         }
     }
@@ -288,7 +382,8 @@ public sealed class AdminStore
         int targetId,
         DateTime nowUtc,
         out string passwordPath,
-        out string? error)
+        out string? error,
+        AdminJournalContext? context = null)
     {
         passwordPath = "";
         error = null;
@@ -309,14 +404,15 @@ public sealed class AdminStore
                 actorId,
                 targetId,
                 authVersion = record.AuthVersion,
-            }, nowUtc);
+            }, nowUtc, context ?? new AdminJournalContext(
+                actorId, TargetType: "admin", TargetId: targetId));
             return true;
         }
     }
 
     /// <summary>Новый пароль всем записям. Возвращает пары id → путь к файлу.</summary>
     public IReadOnlyList<(int Id, string Path)> RegenerateAllPasswords(
-        int? actorId, DateTime nowUtc)
+        int? actorId, DateTime nowUtc, AdminJournalContext? context = null)
     {
         lock (_gate)
         {
@@ -331,7 +427,8 @@ public sealed class AdminStore
                 action = "password_regen_all",
                 actorId,
                 count = result.Count,
-            }, nowUtc);
+            }, nowUtc, context ?? new AdminJournalContext(
+                actorId, TargetType: "admin", Note: $"всего {result.Count}"));
             return result;
         }
     }
@@ -341,11 +438,18 @@ public sealed class AdminStore
         Path.Combine(_directory, id.ToString(CultureInfo.InvariantCulture), PasswordFileName);
 
     /// <summary>Дописать запись в журнал (JSONL, по одной строке).</summary>
-    public void Journal(string category, string action, int? actorId, int? targetId,
-        object? before = null, object? after = null)
+    /// <returns>Id записи или <c>null</c>, если журнал недоступен.</returns>
+    public string? Journal(
+        string category, string action, int? actorId, int? targetId,
+        object? before = null, object? after = null,
+        AdminJournalContext? context = null)
     {
         lock (_gate)
-            JournalLocked(new { category, action, actorId, targetId, before, after }, DateTime.UtcNow);
+            return JournalLocked(
+                new { category, action, actorId, targetId, before, after },
+                DateTime.UtcNow,
+                context ?? new AdminJournalContext(
+                    actorId, TargetType: "player", TargetId: targetId));
     }
 
     // ── внутренности (вызываются под lock) ───────────────────────────────────
@@ -402,7 +506,9 @@ public sealed class AdminStore
         // Роль — информационная, но список и журнал должны показывать правду.
         foreach (var record in _byId.Values)
         {
-            var role = mega.Contains(record.Id) ? "mega" : "admin";
+            var role = mega.Contains(record.Id) || _runtimeMega.Contains(record.Id)
+                ? "mega"
+                : "admin";
             if (record.Role != role)
             {
                 record.Role = role;
@@ -542,37 +648,9 @@ public sealed class AdminStore
         TrySetMode(RecordsPath, SecretFileMode);
     }
 
-    private void JournalLocked(object entry, DateTime nowUtc)
-    {
-        try
-        {
-            EnsureDirectory(_directory, DirectoryMode);
-            var payload = new Dictionary<string, object?>
-            {
-                ["id"] = "J-" + Guid.NewGuid().ToString("N")[..12].ToUpperInvariant(),
-                ["ts"] = nowUtc.ToString("O"),
-            };
-
-            // JsonElement из анонимного объекта: дописываем поля в тот же объект.
-            // Значения оставляем узлами: списки прав должны лежать массивами, а не
-            // строкой — по журналу потом строится откат.
-            var node = JsonSerializer.SerializeToNode(entry, JournalJsonOptions)?.AsObject();
-            if (node is not null)
-            {
-                foreach (var property in node)
-                    payload[property.Key] = property.Value;
-            }
-
-            var line = JsonSerializer.Serialize(payload, JournalJsonOptions) + "\n";
-            var path = Path.Combine(_directory, JournalFileName);
-            File.AppendAllText(path, line, new UTF8Encoding(false));
-            TrySetMode(path, SecretFileMode);
-        }
-        catch (Exception ex)
-        {
-            Log($"[auth] журнал не записан: {ex.Message}");
-        }
-    }
+    private string? JournalLocked(
+        object entry, DateTime nowUtc, AdminJournalContext? context = null) =>
+        AppendJournal(entry, nowUtc, context);
 
     private void WriteReadmeLocked()
     {

@@ -168,6 +168,28 @@ public sealed class AdminStoreTests : IDisposable
     }
 
     [Fact]
+    public void RuntimeMega_IsInMemoryOnly_AndStartupPrunesTheRecord()
+    {
+        const int PlayerId = 2000;
+
+        Assert.True(_store.GrantRuntimeMega(PlayerId, "тест", Now));
+        Assert.True(_store.IsRuntimeMega(PlayerId));
+        Assert.True(_store.IsMega(PlayerId));
+        Assert.True(_store.HasPermission(PlayerId, "rollback"));
+        Assert.Equal("mega", _store.Find(PlayerId)!.Role);
+
+        var journal = _store.ReadJournal(new AdminJournalQuery { Category = "security" });
+        Assert.Contains(journal.Entries, entry => entry.Action == "test_auto_mega");
+
+        var restarted = new AdminStore(_store.Directory);
+        restarted.Initialize(new[] { AdminId, SecondId }, new[] { MegaId }, Now.AddMinutes(1));
+
+        Assert.False(restarted.IsRuntimeMega(PlayerId));
+        Assert.False(restarted.IsMega(PlayerId));
+        Assert.Null(restarted.Find(PlayerId));
+    }
+
+    [Fact]
     public void OldAdminsJsonWithMegaIps_LoadsAndRoleComesFromConfig()
     {
         var path = _store.RecordsPath;
