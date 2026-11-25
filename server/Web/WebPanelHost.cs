@@ -194,6 +194,16 @@ public sealed class WebPanelHost : IDisposable
                     (_host?.CurrentConfig ?? _server).Test.AutoMegaAdmin,
                 AccountExists = id => _host?.Accounts?.FindById(id) is not null,
 
+                // Тестовый автовход: кого пускать без экрана входа. Порядок конфига
+                // решает, кто именно: первый мега → первый админ → первый аккаунт.
+                MegaIds = () => (_host?.CurrentConfig ?? _server).Admin.MegaIds,
+                AdminIds = () => (_host?.CurrentConfig ?? _server).Admin.Ids,
+                FirstAccount = () =>
+                {
+                    var account = _host?.Accounts?.Export().FirstOrDefault();
+                    return account is null ? null : (account.Id, account.Nick ?? "");
+                },
+
                 // Кастомизация: только свой ID, проверяет хранилище (цифры+англ., уникальность).
                 CustomIdGet = id => _host?.CustomIdOf(id),
                 CustomIdSet = (id, value) => _host is null ? "хост не подключён" : _host.SetCustomId(id, value),
@@ -545,6 +555,7 @@ public sealed class WebPanelHost : IDisposable
     private string BuildStatusJson()
     {
         var host = _host;
+        var config = host?.CurrentConfig ?? _server;
         var lobby = host?.JoinedCount ?? 0;
         var match = host?.Match.HumanActorCount ?? 0;
         var rooms = _rooms.Snapshot();
@@ -567,6 +578,19 @@ public sealed class WebPanelHost : IDisposable
             writer.WriteString("mode", host?.Session.GameModeId ?? "");
             writer.WriteString("levels", string.Join(", ", host?.Session.SelectedLevels
                 ?? new List<string>()));
+
+            // Доступ извне: сайт показывает рекомендуемый адрес, если владелец
+            // настроил playit/туннель. Локальные порты остаются рядом — для
+            // «напрямую» и для честной подписи «сервер слушает 7778».
+            writer.WriteString("publicAddress", host?.PublicAddress
+                ?? config.PublicAccess.Address ?? string.Empty);
+            writer.WriteNumber("publicLobbyPort", host?.AdvertisedLobbyPort
+                ?? config.PublicAccess.LobbyPortOr(config.Server.LobbyPort));
+            writer.WriteNumber("publicMatchPort", host?.AdvertisedMatchPort
+                ?? config.PublicAccess.MatchPortOr(GameMatchHost.DefaultMatchPort));
+            writer.WriteNumber("localLobbyPort", config.Server.LobbyPort);
+            writer.WriteNumber("localMatchPort", GameMatchHost.DefaultMatchPort);
+
             writer.WriteString("serverUtc", DateTime.UtcNow.ToString("O"));
             writer.WriteEndObject();
         }

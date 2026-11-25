@@ -106,6 +106,12 @@ public sealed class TestConfig
     /// true — админам и мега-админам не нужен личный пароль: ни при входе в панель,
     /// ни для подтверждения опасных действий, ни для команд в игре.
     /// </summary>
+    /// <remarks>
+    /// Веб-панель при этом не показывает экран входа: сервер сам открывает сессию
+    /// под первым живым id из <c>admin.megaIds</c> (иначе из <c>admin.ids</c>, иначе —
+    /// при <see cref="AutoMegaAdmin"/> — под первым аккаунтом). Выключили флаг —
+    /// все сессии, выданные автовходом, снимаются на первом же запросе.
+    /// </remarks>
     public bool NoAdminPassword { get; set; }
 
     /// <summary>
@@ -272,6 +278,55 @@ public sealed class NetworkConfig
     /// Нужен, когда играете через Hamachi/Radmin и авто берёт не тот адрес.
     /// </summary>
     public string? AdvertiseIp { get; set; }
+}
+
+/// <summary>
+/// Доступ извне: playit.gg, туннели, проброс портов. Сервер продолжает слушать
+/// свои порты; меняется только то, что он называет игрокам снаружи.
+/// </summary>
+/// <remarks>
+/// <para>
+/// Без этой секции адрес матча в <c>op9</c> — LAN-адрес и порт <c>7777</c>. Через
+/// туннель клиент получает локальный адрес, до которого снаружи не достать
+/// (<c>ConnectionFailed</c>). Здесь владелец пишет внешний IPv4 и внешние порты,
+/// которые сервис пересылает на локальные.
+/// </para>
+/// <para>
+/// Пустой <see cref="Address"/> выключает подмену целиком: порты без адреса
+/// игнорируются, чтобы опечатка не отправила игроков в никуда.
+/// </para>
+/// </remarks>
+public sealed class PublicAccessConfig
+{
+    /// <summary>Внешний IPv4-адрес; <c>null</c>/"" — подмена выключена.</summary>
+    public string? Address { get; set; }
+
+    /// <summary>Внешний UDP-порт лобби (туннель → <c>server.lobbyPort</c>); 0 — не подменять.</summary>
+    public int LobbyPort { get; set; }
+
+    /// <summary>Внешний UDP-порт матча (туннель → 7777); 0 — не подменять.</summary>
+    public int MatchPort { get; set; }
+
+    /// <summary>Опечатки внутри секции — попадают в лог, а не игнорируются молча.</summary>
+    [JsonExtensionData]
+    public Dictionary<string, JsonElement>? UnknownKeys { get; set; }
+
+    /// <summary>Разобранный внешний IPv4; <c>null</c> — подмена выключена.</summary>
+    [JsonIgnore]
+    public IPAddress? AddressIp =>
+        IPAddress.TryParse(Address, out var ip)
+        && ip.AddressFamily == AddressFamily.InterNetwork
+            ? ip
+            : null;
+
+    /// <summary>Адрес матча для op9: внешний, если задан, иначе <paramref name="fallback"/>.</summary>
+    public IPAddress MatchIpOr(IPAddress fallback) => AddressIp ?? fallback;
+
+    /// <summary>Порт матча для op9: внешний, если задан, иначе <paramref name="fallback"/>.</summary>
+    public int MatchPortOr(int fallback) => MatchPort > 0 ? MatchPort : fallback;
+
+    /// <summary>Порт лобби для сайта: внешний, если задан, иначе <paramref name="fallback"/>.</summary>
+    public int LobbyPortOr(int fallback) => LobbyPort > 0 ? LobbyPort : fallback;
 }
 
 /// <summary>
@@ -568,8 +623,14 @@ public sealed class ServerConfig
     /// <summary>Лобби: приветствие, лимит игроков.</summary>
     public ServerSectionConfig Server { get; set; } = new();
 
-    /// <summary>Сеть: адрес прослушивания, VPN-адаптеры, адрес в op9.</summary>
+    /// <summary>Сеть: адрес прослушивания, VPN-адаптеры.</summary>
     public NetworkConfig Network { get; set; } = new();
+
+    /// <summary>
+    /// Доступ извне: что писать игрокам в <c>op9</c> и на сайте вместо локальных
+    /// адреса и портов (playit.gg, туннели, проброс портов).
+    /// </summary>
+    public PublicAccessConfig PublicAccess { get; set; } = new();
 
     /// <summary>Ники: белый список символов, длина, кик нарушителя.</summary>
     public NamesConfig Names { get; set; } = new();
@@ -722,6 +783,11 @@ public sealed class ServerConfig
             if (ConfigMigration.EnsureTestSection(path, out var testMigration))
                 Console.WriteLine($"[config] миграция: {testMigration} ({path})");
 
+            // Внешний доступ (playit/туннели): секция появляется выключенной, а
+            // устаревший network.advertiseIp переезжает в publicAccess.address.
+            if (ConfigMigration.EnsurePublicAccessSection(path, out var accessMigration))
+                Console.WriteLine($"[config] миграция: {accessMigration} ({path})");
+
             var parsed = JsonSerializer.Deserialize<ServerConfig>(
                 File.ReadAllText(path), JsonOptions);
             if (parsed is null)
@@ -754,6 +820,7 @@ public sealed class ServerConfig
         Launch.Args ??= new List<string>();
         Server ??= new ServerSectionConfig();
         Network ??= new NetworkConfig();
+        PublicAccess ??= new PublicAccessConfig();
         Admin ??= new AdminConfig();
         Admin.Ids ??= new List<int>();
         Admin.MegaIds ??= new List<int>();
@@ -863,19 +930,58 @@ public sealed class ServerConfig
         else
             Network.BindAddress = bind;
 
+        // Старый ключ network.advertiseIp переехал в publicAccess.address. Если файл
+        // не мигрировал (нет прав, ручная правка) — переносим значение в памяти,
+        // чтобы адрес матча не потерялся, и говорим об этом в логе.
         if (!string.IsNullOrWhiteSpace(Network.AdvertiseIp))
         {
-            var advertise = Network.AdvertiseIp.Trim();
-            if (IPAddress.TryParse(advertise, out _))
+            var legacy = Network.AdvertiseIp.Trim();
+            if (string.IsNullOrWhiteSpace(PublicAccess.Address))
             {
-                Network.AdvertiseIp = advertise;
+                PublicAccess.Address = legacy;
+                Report("network.advertiseIp", legacy, "publicAccess.address",
+                    "ключ устарел — значение перенесено");
             }
             else
             {
-                Report("network.advertiseIp", Network.AdvertiseIp, "(авто)",
-                    "не IP-адрес — адрес матча выбирается автоматически", requiresRestart: true);
-                Network.AdvertiseIp = null;
+                Report("network.advertiseIp", legacy, "проигнорирован",
+                    "ключ устарел; уже задан publicAccess.address");
             }
+
+            Network.AdvertiseIp = null;
+        }
+
+        var external = (PublicAccess.Address ?? string.Empty).Trim();
+        if (external.Length == 0)
+        {
+            PublicAccess.Address = null;
+
+            // Порты без адреса не применяем: иначе опечатка отправит игроков
+            // на внешний порт с локальным адресом.
+            if (PublicAccess.LobbyPort != 0 || PublicAccess.MatchPort != 0)
+            {
+                Report("publicAccess.address", "(пусто)", "(подмена выключена)",
+                    "порты заданы без внешнего IPv4-адреса");
+                PublicAccess.LobbyPort = 0;
+                PublicAccess.MatchPort = 0;
+            }
+        }
+        else if (!IPAddress.TryParse(external, out var externalIp)
+                 || externalIp.AddressFamily != AddressFamily.InterNetwork)
+        {
+            Report("publicAccess.address", PublicAccess.Address, "(подмена выключена)",
+                "нужен IPv4-адрес");
+            PublicAccess.Address = null;
+            PublicAccess.LobbyPort = 0;
+            PublicAccess.MatchPort = 0;
+        }
+        else
+        {
+            PublicAccess.Address = external;
+            PublicAccess.LobbyPort = CheckExternalPort(
+                PublicAccess.LobbyPort, "publicAccess.lobbyPort");
+            PublicAccess.MatchPort = CheckExternalPort(
+                PublicAccess.MatchPort, "publicAccess.matchPort");
         }
 
         Timings.Warmup = Check(Timings.Warmup, 0, 120, 3, "timings.warmup");
@@ -974,6 +1080,33 @@ public sealed class ServerConfig
                     "неизвестный ключ внутри names — сервер его не читает",
                     "проигнорирован"));
         }
+
+        if (PublicAccess?.UnknownKeys is { Count: > 0 })
+        {
+            foreach (var key in PublicAccess.UnknownKeys.Keys)
+                _issues.Add(new ConfigIssue(
+                    "publicAccess." + key,
+                    "неизвестный ключ внутри publicAccess — сервер его не читает",
+                    "проигнорирован"));
+        }
+    }
+
+    /// <summary>
+    /// Внешний порт: 0 — не подменять, 1..65535 — допустимый порт. Остальное —
+    /// выключаем подмену с записью, а не отправляем игроков на битый порт.
+    /// </summary>
+    private int CheckExternalPort(int value, string key)
+    {
+        if (value == 0)
+            return 0;
+        if (value is >= 1 and <= 65535)
+            return value;
+
+        _issues.Add(new ConfigIssue(
+            key,
+            $"{value} вне диапазона 0..65535 (0 — не подменять)",
+            "0"));
+        return 0;
     }
 
     /// <summary>
@@ -1433,11 +1566,22 @@ public sealed class ServerConfig
 
     // true — не трогать VPN/виртуальные адаптеры (Wi-Fi/Ethernet)
     // false — слушать везде: VPN, Hamachi, Radmin, ZeroTier
-    "ignoreVpn": true,
+    "ignoreVpn": true
+  },
 
-    // IP для op9 (адрес матча). null — авто.
-    // Задай вручную, если играете через Hamachi/Radmin.
-    "advertiseIp": null,
+  // ===== ДОСТУП ИЗВНЕ =====
+  // playit.gg, туннели, проброс портов. Сервер слушает свои порты как обычно;
+  // здесь — адрес и порты, которые видят игроки снаружи.
+  // Пусто/null/0 — не подменять (обычный LAN-режим).
+  "publicAccess": {
+    // Внешний IPv4-адрес, который выдал сервис (например, playit.gg).
+    "address": null,
+
+    // Внешний UDP-порт лобби: туннель ведёт с него на server.lobbyPort (7778).
+    "lobbyPort": 0,
+
+    // Внешний UDP-порт матча: туннель ведёт с него на 7777.
+    "matchPort": 0
   },
 
   // ===== АДМИНЫ =====
@@ -1585,8 +1729,8 @@ public sealed class ServerConfig
   // Оба флага по умолчанию false. Панель их не редактирует: только вручную здесь.
   "test": {
     // true — админам и мега-админам не нужен личный пароль:
-    // вход в панель по id, подтверждение пароля не спрашивается,
-    // в игре админ-команды работают без пароля.
+    // вход в панель без экрана (сервер сам входит под первым админом),
+    // подтверждение пароля не спрашивается, в игре админ-команды работают без пароля.
     // НИКОГДА не включать на боевом сервере.
     "noAdminPassword": false,
 

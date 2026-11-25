@@ -43,10 +43,20 @@ public sealed partial class WebPanelRouter
         if (store is null)
             return null;
 
-        return store.Find(
+        var session = store.Find(
             AdminCookie.ReadToken(request.Headers),
             AdminCookie.ReadDeviceToken(request.Headers),
             now);
+
+        // Тестовый автовход живёт ровно пока включён test.noAdminPassword.
+        // Выключили флаг — сессия снимается на первом же запросе, а не через 30 дней.
+        if (session is { TestAuto: true } && !NoAdminPassword)
+        {
+            store.DropBySessionId(session.SessionId, session.PlayerId);
+            return null;
+        }
+
+        return session;
     }
 
     /// <summary>Затвор админ-эндпоинта: кука → живой админ → право.</summary>
@@ -267,6 +277,7 @@ public sealed partial class WebPanelRouter
             writer.WriteBoolean("mega", mega);
             writer.WriteBoolean("testNoPassword", NoAdminPassword);
             writer.WriteBoolean("testAutoMega", AutoMegaAdmin);
+            writer.WriteBoolean("testAutoLogin", session?.TestAuto == true);
             writer.WriteString("customId", _options.CustomIdGet?.Invoke(record.Id));
             if (session is not null)
             {
@@ -365,16 +376,12 @@ public sealed partial class WebPanelRouter
             // Тестовая автовыдача: только существующему аккаунту и только если
             // админки у него нет. Запись, оставшаяся от прежнего конфига, не
             // считается «нет админки» — её владелец мог снять намеренно.
-            if ((record is null || record.AddedBy == "test-auto")
-                && AutoMegaAdmin
+            if ((record is null || AdminStore.IsTestAutoRecord(record))
                 && _options.AccountExists?.Invoke(parsed.Id) == true)
             {
-                testMegaGranted = _options.AdminStore.GrantRuntimeMega(
-                    parsed.Id, record?.Nick ?? "", now,
-                    new AdminJournalContext(
-                        parsed.Id, record?.Nick ?? "", ip, "admin", parsed.Id,
-                        record?.Nick ?? "",
-                        Note: "тестовый режим: вход без пароля, автовыдача мега-админки"));
+                testMegaGranted = TryGrantTestMega(
+                    parsed.Id, record, "", ip, now,
+                    "тестовый режим: вход без пароля, автовыдача мега-админки");
                 record = _options.AdminStore.Find(parsed.Id);
             }
 
@@ -434,6 +441,177 @@ public sealed partial class WebPanelRouter
             AdminCookie.Build(adminSession.Token, _options.CookiePath, _options.SecureCookies),
             AdminCookie.BuildDevice(
                 adminSession.DeviceToken, _options.CookiePath, _options.SecureCookies));
+    }
+
+    /// <summary>
+    /// Тестовый автовход: экран «id + пароль» пропускается, сервер сам выбирает
+    /// админа и открывает обычную сессию — те же куки, CSRF и журнал, что при входе.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Работает только при <c>test.noAdminPassword = true</c>. Выключили флаг —
+    /// эндпоинт отвечает 403, а уже выданные тестовые сессии снимаются в
+    /// <see cref="FindAdminSession"/>.
+    /// </para>
+    /// <para>
+    /// Кого пускаем: первый живой id из <c>admin.megaIds</c> (порядок конфига),
+    /// иначе первый из <c>admin.ids</c>, иначе — при <c>test.autoMegaAdmin</c> —
+    /// самый первый аккаунт с мега-правами в памяти. Права не раздаются всем:
+    /// обычный админ остаётся обычным, забаненный кандидат пропускается.
+    /// </para>
+    /// </remarks>
+    private WebResponse AdminTestLogin(WebRequestContext request)
+    {
+        if (_options.AdminSessionStore is null
+            || _options.AdminStore is null
+            || _options.IsAdminLive is null)
+            return ApiError(503, "admin_disabled", "админ панель не настроена на этом сервере");
+
+        if (!NoAdminPassword)
+            return ApiError(403, "test_disabled",
+                "тестовый режим выключен: вход только по id и личному паролю");
+
+        // Автовход меняет состояние браузера. Чужой сайт не должен уметь подсунуть
+        // свою сессию: Origin, если он есть, обязан указывать на этот же хост.
+        if (!OriginAllowed(request))
+            return ApiError(403, "bad_origin", "запрос пришёл с чужого сайта");
+
+        var now = DateTime.UtcNow;
+        var ip = request.RemoteAddress?.ToString() ?? "";
+
+        // Уже вошли — новую сессию не плодим.
+        var existing = FindAdminSession(request, now);
+        if (existing is not null
+            && _options.AdminStore.Find(existing.PlayerId) is { } existingRecord)
+            return AdminStateJson(existingRecord, existing);
+
+        if (!TryPickTestAdmin(out var id, out var nick, out var reason))
+        {
+            Console.WriteLine(
+                $"[web] тестовый автовход невозможен: {reason} ({request.RemoteAddress})");
+            return ApiError(409, "no_test_admin", reason);
+        }
+
+        if (_options.IsBanned?.Invoke(id) == true)
+            return ApiError(403, "banned", "аккаунт забанен");
+
+        var record = _options.AdminStore.Find(id);
+        if (record is null || AdminStore.IsTestAutoRecord(record))
+        {
+            TryGrantTestMega(id, record, nick, ip, now,
+                "тестовый режим: автовход без экрана входа, выдана мега-админка");
+            record = _options.AdminStore.Find(id);
+        }
+
+        if (record is null || !_options.IsAdminLive(record.Id))
+            return ApiError(409, "no_test_admin",
+                $"id #{id} не админ: впиши его в admin.ids или включи test.autoMegaAdmin");
+
+        var session = _options.AdminSessionStore.Create(
+            record.Id, record.Nick ?? "", record.AuthVersion, now, ip,
+            HeaderOf(request, "User-Agent"), testAuto: true);
+        if (session is null)
+            return ApiError(503, "too_many_sessions",
+                "на сервере кончились админ-сессии — попробуй позже");
+
+        _options.AdminStore.Journal(
+            "auth", "login", record.Id, record.Id,
+            context: new AdminJournalContext(
+                record.Id, record.Nick ?? "", ip,
+                "admin", record.Id, record.Nick ?? "",
+                Note: "тестовый режим: автовход без экрана входа"));
+        Console.WriteLine(
+            $"[web] тестовый автовход: #{record.Id} с {request.RemoteAddress} " +
+            $"(мега: {_options.AdminStore.IsMega(record.Id)})");
+
+        return WithCookies(
+            AdminStateJson(record, session),
+            AdminCookie.Build(session.Token, _options.CookiePath, _options.SecureCookies),
+            AdminCookie.BuildDevice(
+                session.DeviceToken, _options.CookiePath, _options.SecureCookies));
+    }
+
+    /// <summary>
+    /// Кандидат тестового автовхода: живой админ из конфига, а если админов нет —
+    /// первый аккаунт при <c>test.autoMegaAdmin</c>.
+    /// </summary>
+    private bool TryPickTestAdmin(out int id, out string nick, out string reason)
+    {
+        var sawBanned = false;
+
+        foreach (var candidate in _options.MegaIds?.Invoke() ?? Array.Empty<int>())
+        {
+            if (IsTestCandidate(candidate, out var banned))
+            {
+                id = candidate;
+                nick = _options.AdminStore?.Find(candidate)?.Nick ?? "";
+                reason = "";
+                return true;
+            }
+            sawBanned |= banned;
+        }
+
+        foreach (var candidate in _options.AdminIds?.Invoke() ?? Array.Empty<int>())
+        {
+            if (IsTestCandidate(candidate, out var banned))
+            {
+                id = candidate;
+                nick = _options.AdminStore?.Find(candidate)?.Nick ?? "";
+                reason = "";
+                return true;
+            }
+            sawBanned |= banned;
+        }
+
+        if (AutoMegaAdmin
+            && _options.FirstAccount?.Invoke() is { } account
+            && _options.AccountExists?.Invoke(account.Id) == true)
+        {
+            id = account.Id;
+            nick = account.Nick;
+            reason = "";
+            return true;
+        }
+
+        id = 0;
+        nick = "";
+        reason = sawBanned
+            ? "все админы из admin.ids забанены — автовход некуда"
+            : "в admin.ids нет ни одного живого админа — впиши свой id в config.json " +
+              "(admin.megaIds) или включи test.autoMegaAdmin";
+        return false;
+    }
+
+    /// <summary>Живой админ с записью, которого не забанили.</summary>
+    private bool IsTestCandidate(int id, out bool banned)
+    {
+        banned = _options.IsBanned?.Invoke(id) == true;
+        return !banned
+               && id > 0
+               && _options.IsAdminLive?.Invoke(id) == true
+               && _options.AdminStore?.Find(id) is not null;
+    }
+
+    /// <summary>
+    /// Тестовая автовыдача мега-прав: только существующему аккаунту и только если
+    /// админки у него нет (или она выдана этим же тестовым режимом). Запись,
+    /// которую владелец вписал сам, тестовый режим не трогает.
+    /// </summary>
+    private bool TryGrantTestMega(
+        int id, AdminRecord? record, string nick, string ip, DateTime nowUtc, string note)
+    {
+        if (!AutoMegaAdmin || _options.AdminStore is null)
+            return false;
+        if (record is not null && !AdminStore.IsTestAutoRecord(record))
+            return false;
+        if (_options.AccountExists?.Invoke(id) != true)
+            return false;
+
+        var display = string.IsNullOrWhiteSpace(record?.Nick) ? nick : record!.Nick;
+        return _options.AdminStore.GrantRuntimeMega(
+            id, display, nowUtc,
+            new AdminJournalContext(
+                id, display, ip, "admin", id, display, Note: note));
     }
 
     /// <summary>Выход из админ панели: гасим админ-куку и куку устройства.</summary>

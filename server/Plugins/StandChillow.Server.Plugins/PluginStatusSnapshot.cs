@@ -14,6 +14,10 @@ public sealed class PluginStatusSnapshot
     public string LobbyId { get; set; } = "";
     public bool MatchStarted { get; set; }
     public string AdvertiseIp { get; set; } = "";
+    /// <summary>Порт матча, который сервер называет клиентам (внешний при publicAccess).</summary>
+    public int AdvertiseMatchPort { get; set; } = 7777;
+    /// <summary>Порт лобби для сайта (внешний при publicAccess).</summary>
+    public int AdvertiseLobbyPort { get; set; } = 7778;
     public PluginPortsSnapshot Ports { get; set; } = new();
     public PluginModeSnapshot Mode { get; set; } = new();
     public string Map { get; set; } = "";

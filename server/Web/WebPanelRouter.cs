@@ -125,7 +125,7 @@ public sealed partial class WebPanelRouter
         // сессии ещё нет, её выдаёт сам /api/admin/login.
         if (request.Method == "POST"
             && path.StartsWith("/api/admin/", StringComparison.Ordinal)
-            && path != "/api/admin/login"
+            && path is not ("/api/admin/login" or "/api/admin/test-login")
             && AdminCsrfGate(request) is { } csrfDenied)
             return csrfDenied;
 
@@ -135,7 +135,8 @@ public sealed partial class WebPanelRouter
         // появиться без пароля. Тестовый test.noAdminPassword отключает только её.
         if (request.Method == "POST"
             && path.StartsWith("/api/admin/", StringComparison.Ordinal)
-            && path is not ("/api/admin/login" or "/api/admin/logout" or "/api/admin/stepup")
+            && path is not ("/api/admin/login" or "/api/admin/logout" or "/api/admin/stepup"
+                or "/api/admin/test-login")
             && AdminMutationGate(request) is { } mutationDenied)
             return mutationDenied;
 
@@ -151,6 +152,9 @@ public sealed partial class WebPanelRouter
 
         if (request.Method == "POST" && path == "/api/admin/login")
             return AdminLogin(request);
+
+        if (request.Method == "POST" && path == "/api/admin/test-login")
+            return AdminTestLogin(request);
 
         if (request.Method == "POST" && path == "/api/admin/logout")
             return AdminLogout(request);
@@ -277,6 +281,7 @@ public sealed partial class WebPanelRouter
 
         if (path is "/api/auth" or "/api/logout" or "/api/reports"
             or "/api/admin/login" or "/api/admin/logout"
+            or "/api/admin/test-login"
             or "/api/admin/customid" or "/api/admin/ban" or "/api/admin/unban"
             or "/api/admin/permissions"
             or "/api/admin/stepup" or "/api/admin/journal/undo"
@@ -791,6 +796,26 @@ public sealed class WebPanelRouterOptions
     /// <c>config.json</c> на каждый запрос.
     /// </summary>
     public Func<bool>? TestAutoMegaAdmin { get; init; }
+
+    /// <summary>
+    /// Живой <c>admin.megaIds</c> в порядке конфига. Первый подходящий id становится
+    /// тестовым админом, под которым панель входит без экрана входа.
+    /// <c>null</c> — кандидатов нет.
+    /// </summary>
+    public Func<IReadOnlyList<int>>? MegaIds { get; init; }
+
+    /// <summary>
+    /// Живой <c>admin.ids</c>: запасные кандидаты тестового автовхода, если мега-админов
+    /// нет. Права выбранного id не меняются — обычный админ остаётся обычным.
+    /// </summary>
+    public Func<IReadOnlyList<int>>? AdminIds { get; init; }
+
+    /// <summary>
+    /// Самый первый аккаунт (минимальный id). Последний кандидат тестового автовхода:
+    /// когда в конфиге нет ни одного админа, а <c>test.autoMegaAdmin</c> включён,
+    /// автовход выдаёт этому аккаунту мега-права в памяти.
+    /// </summary>
+    public Func<(int Id, string Nick)?>? FirstAccount { get; init; }
 
     /// <summary>
     /// Существует ли аккаунт с таким id. Нужен тестовой автовыдаче: нельзя выдать

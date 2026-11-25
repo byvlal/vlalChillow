@@ -33,7 +33,9 @@ internal static class StatusSnapshotBuilder
             ServerName = session.LobbyName,
             LobbyId = session.LobbyId,
             MatchStarted = game.MatchStarted,
-            AdvertiseIp = game.AdvertiseLanIp.ToString(),
+            AdvertiseIp = game.AdvertisedMatchIp.ToString(),
+            AdvertiseMatchPort = game.AdvertisedMatchPort,
+            AdvertiseLobbyPort = game.AdvertisedLobbyPort,
             Ports = new PluginPortsSnapshot
             {
                 Discovery = LanDiscoveryHost.DiscoveryPort,

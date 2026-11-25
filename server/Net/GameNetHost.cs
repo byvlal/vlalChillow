@@ -252,7 +252,8 @@ public sealed partial class GameNetHost : IDisposable
             $"host-player='{LobbySession.ServerPlayerName}' mode={_session.GameModeId} " +
             $"levels=[{string.Join(", ", _session.SelectedLevels)}] auth={LobbyAuth.AuthHash[..8]}…");
         Console.WriteLine(
-            $"[lobby] op9 will advertise {_advertiseLanIp}:{GameMatchHost.DefaultMatchPort} (LAN NIC, not VPN)");
+            $"[lobby] op9 will advertise {AdvertisedMatchIp}:{AdvertisedMatchPort}" +
+            (ExternalAccess.AddressIp is null ? " (LAN NIC, not VPN)" : " (publicAccess)"));
         if (lanEndpoints is { Count: > 0 })
             Console.WriteLine($"[net] LAN join targets: {string.Join(", ", lanEndpoints.Select(e => $"{e.Address}:{port}"))}");
 
@@ -291,6 +292,27 @@ public sealed partial class GameNetHost : IDisposable
     public LobbySession Session => _session;
     public GameMatchHost Match => _match;
     public IPAddress AdvertiseLanIp => _advertiseLanIp;
+
+    /// <summary>
+    /// Адрес матча для клиентов: внешний из <c>publicAccess.address</c>, иначе LAN.
+    /// Читается на каждый op9/JoinResponse, поэтому правка конфига применяется сразу.
+    /// </summary>
+    public IPAddress AdvertisedMatchIp => ExternalAccess.MatchIpOr(_advertiseLanIp);
+
+    /// <summary>Порт матча для клиентов: внешний из <c>publicAccess.matchPort</c>, иначе 7777.</summary>
+    public int AdvertisedMatchPort =>
+        ExternalAccess.MatchPortOr(GameMatchHost.DefaultMatchPort);
+
+    /// <summary>Порт лобби для сайта: внешний из <c>publicAccess.lobbyPort</c>, иначе локальный.</summary>
+    public int AdvertisedLobbyPort =>
+        ExternalAccess.LobbyPortOr(_config.Server.LobbyPort);
+
+    /// <summary>Внешний IPv4 для подписи на сайте; пусто — подмена выключена.</summary>
+    public string PublicAddress => ExternalAccess.Address ?? string.Empty;
+
+    private PublicAccessConfig ExternalAccess =>
+        _config.PublicAccess ??= new PublicAccessConfig();
+
     public bool MatchStarted => _matchStarted;
 
     /// <summary>
@@ -397,14 +419,14 @@ public sealed partial class GameNetHost : IDisposable
         var searchingPkt = LobbyCodec.BuildCustomProperty(
             LobbyPropKeys.SearchingStarted, LobbyVariant.FromBool(true));
         var hostingPkt = LobbyCodec.BuildGameHostingState(
-            _advertiseLanIp.ToString(), (ushort)GameMatchHost.DefaultMatchPort);
+            AdvertisedMatchIp.ToString(), (ushort)AdvertisedMatchPort);
 
         Send(target.Peer, modePkt);
         Send(target.Peer, searchingPkt);
         Send(target.Peer, hostingPkt);
 
         Console.WriteLine(
-            $"[lobby] '{target.Name}' → op9 {_advertiseLanIp}:{GameMatchHost.DefaultMatchPort} " +
+            $"[lobby] '{target.Name}' → op9 {AdvertisedMatchIp}:{AdvertisedMatchPort} " +
             "(по своей брони, остальные остаются в лобби)");
         return true;
     }
@@ -470,7 +492,7 @@ public sealed partial class GameNetHost : IDisposable
             $"[lobby] MATCH IN PROGRESS ({reason}{(rematch ? ", rematch" : "")}): " +
             $"mode={_session.GameModeId} " +
             $"levels=[{string.Join(", ", _session.SelectedLevels)}] → " +
-            $"op9 {_advertiseLanIp}:{GameMatchHost.DefaultMatchPort} " +
+            $"op9 {AdvertisedMatchIp}:{AdvertisedMatchPort} " +
             $"(только приглашённым: {invitedByNick.Count}, остальные остаются в лобби)");
         BroadcastServerChat(
             $"матч идёт: {_session.GameModeId} / {string.Join(", ", _session.SelectedLevels)} → " +
@@ -534,7 +556,7 @@ public sealed partial class GameNetHost : IDisposable
         var searchingPkt = LobbyCodec.BuildCustomProperty(
             LobbyPropKeys.SearchingStarted, LobbyVariant.FromBool(true));
         var hostingPkt = LobbyCodec.BuildGameHostingState(
-            _advertiseLanIp.ToString(), (ushort)GameMatchHost.DefaultMatchPort);
+            AdvertisedMatchIp.ToString(), (ushort)AdvertisedMatchPort);
 
         if (onlyPeer is not null)
         {
@@ -718,12 +740,14 @@ public sealed partial class GameNetHost : IDisposable
         // RoomNotFound — со стороны это выглядело как «зашёл в лобби и меня закинуло».
         var invited = _match.IsListening
             && _match.PendingRooms.HasReservation(req.Profile.Name);
+        var invitedIp = AdvertisedMatchIp.ToString();
+        var invitedPort = (ushort)AdvertisedMatchPort;
 
         var result = _session.HandleJoinRequest(
             peer,
             req,
-            matchHostingIp: invited ? _advertiseLanIp.ToString() : null,
-            matchHostingPort: invited ? (ushort)GameMatchHost.DefaultMatchPort : (ushort)0);
+            matchHostingIp: invited ? invitedIp : null,
+            matchHostingPort: invited ? invitedPort : (ushort)0);
         if (!result.Success)
         {
             Console.WriteLine($"[lobby] join REJECT {result.FailReason}: {result.Detail}");
@@ -736,7 +760,7 @@ public sealed partial class GameNetHost : IDisposable
             $"[lobby] join OK → {result.Player!.Name} id={result.Player.ServerMemberId} " +
             $"serverId=#{result.Player.PublicId}" +
             (invited
-                ? $" приглашён hasHosting={_advertiseLanIp}:{GameMatchHost.DefaultMatchPort}"
+                ? $" приглашён hasHosting={invitedIp}:{invitedPort}"
                 : " в лобби hasHosting=0 (брони нет — в катку не зовём)"));
         Send(peer, result.ResponseBytes!);
 
@@ -1109,7 +1133,9 @@ public sealed partial class GameNetHost : IDisposable
                  $"captures={(CaptureSink.Enabled ? "да" : "нет")} health={(Diag.StatsEnabled ? "да" : "нет")}");
         feedback($"  сеть: bind={_config.Network.BindAddress} " +
                  $"ignoreVpn={(_config.Network.IgnoreVpn ? "да" : "нет")} " +
-                 $"advertiseIp={_config.Network.AdvertiseIp ?? "авто"}");
+                 $"внешний доступ={(string.IsNullOrWhiteSpace(ExternalAccess.Address)
+                     ? "выкл"
+                     : $"{ExternalAccess.Address}, лобби {AdvertisedLobbyPort}, матч {AdvertisedMatchPort}")}");
         feedback($"  лобби: порт={_config.Server.LobbyPort} maxMembers={_config.Server.MaxMembers}");
     }
 

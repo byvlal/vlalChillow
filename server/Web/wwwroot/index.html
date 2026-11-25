@@ -877,6 +877,13 @@ html[data-title="3"] .so-hero h1 .t3{display:inline}
 .so-facts__k{font-family:var(--so-display);font-size:22px;letter-spacing:.06em;color:var(--so-text)}
 .so-facts__d{color:var(--so-muted);font-size:14px;line-height:1.5}
 .so-facts__v{font-family:var(--so-display);font-size:22px;color:var(--so-acc);letter-spacing:.08em;white-space:nowrap}
+/* Внешний доступ (playit/туннель): рекомендуемый адрес и прямой вариант рядом. */
+[data-pa-note]{display:block;margin-top:8px;font-size:13px;line-height:1.55;color:var(--so-muted);letter-spacing:.01em;white-space:normal}
+[data-pa-note][hidden]{display:none}
+[data-pa-note] b{color:var(--so-acc);font-weight:500}
+.pa-rec{display:inline-block;margin-right:6px;padding:2px 7px;border:1px solid var(--so-acc);border-radius:999px;
+  font-family:var(--so-display);font-size:11px;letter-spacing:.08em;color:var(--so-acc);vertical-align:1px}
+[data-pa-fact-wrap]{display:flex;flex-direction:column;align-items:flex-end}
 
 /* шаги «как начать» */
 .so-steps{margin-top:44px;border-top:1px solid var(--so-line)}
@@ -2302,14 +2309,15 @@ img.so-pubav{object-fit:cover;}
     <div class="so-manifesto">
       <p>Не официальный матчмейкинг и не аренда чужого хостинга. <b>Один ПК в квартире</b>,
          который держит комнаты для друзей — с тем же StandChillow, что у тебя на телефоне.</p>
-      <p>Подключение — по <b>IP и порту 7778</b>: работает и из домашней сети, и извне.
-         Ввёл адрес в лобби, взял код в чате — и уже стоишь в очереди на катку.</p>
+      <p>Подключение — по <b>IP и порту <span data-pa-port>7778</span></b>: работает и из домашней сети, и извне.
+         Ввёл адрес в лобби, взял код в чате — и уже стоишь в очереди на катку.
+         <span data-pa-note hidden></span></p>
     </div>
     <div class="so-facts">
       <div class="so-facts__row">
         <span class="so-facts__k">ВХОД</span>
         <span class="so-facts__d">в лобби игры вводишь адрес сервера — свежий IP всегда в Telegram</span>
-        <span class="so-facts__v">IP : 7778</span>
+        <span class="so-facts__v" data-pa-fact-wrap><span data-pa-fact>IP : 7778</span><span data-pa-note hidden></span></span>
       </div>
       <div class="so-facts__row">
         <span class="so-facts__k">КОМНАТЫ</span>
@@ -2365,8 +2373,10 @@ img.so-pubav{object-fit:cover;}
         <span class="so-step__n">04</span>
         <div>
           <div class="so-step__t">ВПИШИ АДРЕС И ПОРТ</div>
-          <p class="so-step__d">Например <b>1.2.3.4 : 7778</b>. Порт всегда <b>7778</b>.
-             Актуальный IP — в <a href="https://t.me/senatorbiop/328" target="_blank" rel="noopener">этом посте</a> в Telegram.</p>
+          <p class="so-step__d">Например <b>1.2.3.4 : <span data-pa-port>7778</span></b>. Снаружи порт
+             <b><span data-pa-port>7778</span></b>, из домашней сети — <b><span data-pa-local-port>7778</span></b>.
+             Актуальный IP — в <a href="https://t.me/senatorbiop/328" target="_blank" rel="noopener">этом посте</a> в Telegram.
+             <span data-pa-note hidden></span></p>
         </div>
         <a class="so-step__a" href="https://t.me/vlalikoffcChillow" target="_blank" rel="noopener">В ТЕЛЕГРАМ →</a>
       </div>
@@ -2573,16 +2583,19 @@ img.so-pubav{object-fit:cover;}
         <span class="so-doc__n">04</span>
         <div>
           <div class="so-doc__t">ВПИШИ АДРЕС И ПОРТ</div>
-          <p class="so-doc__d">В поле вводи <b>IP сервера</b>, рядом — порт. Порт всегда один:
-             <b>7778</b>. Выглядит это так: <b>1.2.3.4 : 7778</b>.
+          <p class="so-doc__d">В поле вводи <b>IP сервера</b>, рядом — порт. Снаружи —
+             <b><span data-pa-port>7778</span></b>, из домашней сети —
+             <b><span data-pa-local-port>7778</span></b>. Выглядит это так:
+             <b>1.2.3.4 : <span data-pa-port>7778</span></b>.
              Актуальный IP всегда в этом посте в Telegram:
-             <a href="https://t.me/senatorbiop/328" target="_blank" rel="noopener">https://t.me/senatorbiop/328</a>.</p>
+             <a href="https://t.me/senatorbiop/328" target="_blank" rel="noopener">https://t.me/senatorbiop/328</a>.
+             <span data-pa-note hidden></span></p>
         </div>
       </div>
       <figure class="so-doc__fig">
         <img src="media/doc-45.jpg" width="1280" height="582" loading="lazy"
              alt="Поле IP и порта 7778 и кнопка Подключиться">
-        <figcaption>Адрес и порт 7778. Справа — кнопка «Подключиться», она нужна на шаге 05.</figcaption>
+        <figcaption>Адрес и порт <span data-pa-port>7778</span>. Справа — кнопка «Подключиться», она нужна на шаге 05.</figcaption>
       </figure>
     </article>
 
@@ -2712,9 +2725,11 @@ img.so-pubav{object-fit:cover;}
     <div class="so-trouble">
       <div class="so-trouble__row">
         <div class="so-trouble__q">Игра не подключается</div>
-        <div class="so-trouble__a">Перепроверь <b>порт 7778</b> и адрес без пробелов.
+        <div class="so-trouble__a">Перепроверь <b>порт <span data-pa-port>7778</span></b> и адрес без пробелов.
+            Из домашней сети — <b><span data-pa-local-port>7778</span></b>.
             IP может смениться после перезапуска сервера — свежий всегда
-            <a href="https://t.me/vlalikoffcChillow" target="_blank" rel="noopener">в Telegram</a>.</div>
+            <a href="https://t.me/vlalikoffcChillow" target="_blank" rel="noopener">в Telegram</a>.
+            <span data-pa-note hidden></span></div>
       </div>
       <div class="so-trouble__row">
         <div class="so-trouble__q">Код не подходит</div>
@@ -4322,6 +4337,7 @@ var adminReportsFilter = 'open';
 var adminStepUpPending = null;
 var adminAskPending = null;
 var adminEpoch = 0;         /* ответы прошлой сессии не должны попасть в DOM */
+var adminTestLoginDone = false; /* тестовый автовход — один раз за загрузку страницы */
 
 var ADMIN_PERMS = [
   ['bans', 'баны'],
@@ -4494,13 +4510,37 @@ function loadAdminLoginInfo(){
 
 function loadAdminState(){
   var epoch = ++adminEpoch;
-  loadAdminLoginInfo();
-  return api('GET', 'api/admin').then(function(res){
+  return loadAdminLoginInfo().then(function(){
+    return api('GET', 'api/admin');
+  }).then(function(res){
     if (epoch !== adminEpoch) return adminState;
     if (res.ok && res.data && res.data.authed){
       adminState = res.data;
       renderAdmin();
       return adminState;
+    }
+
+    /* Тестовый режим: экран входа не нужен — сервер сам открывает сессию
+       выбранному тестовому админу. Пробуем один раз за загрузку страницы:
+       после «ВЫЙТИ» автовход не должен возвращать обратно. */
+    if (res.status === 401
+        && adminLoginInfo && adminLoginInfo.testNoPassword
+        && !adminTestLoginDone){
+      adminTestLoginDone = true;
+      return api('POST', 'api/admin/test-login').then(function(auto){
+        if (epoch !== adminEpoch) return adminState;
+        if (auto.ok && auto.data && auto.data.authed){
+          adminState = auto.data;
+          adminPane = '';
+          renderAdmin();
+          return adminState;
+        }
+        adminState = { admin: false, authed: false };
+        renderAdmin();
+        var autoErr = $('adm-auth-err');
+        if (autoErr) autoErr.textContent = adminApiMessage(auto, 'тестовый автовход не удался');
+        return adminState;
+      });
     }
 
     /* 401 — просто не вошёл; 403 — сессию отозвали/забанили, скажем почему.
@@ -4753,12 +4793,16 @@ function renderAdminTestBanner(){
   var lines = [];
   if (info.testNoPassword){
     lines.push('<b>noAdminPassword</b>: вход в панель, подтверждение паролем и ' +
-      'команды в игре работают без личного пароля.' +
-      (signedIn ? '' : '<br>Вход: введи id, а поле пароля оставь пустым.'));
+      'команды в игре работают без личного пароля. Экран входа пропускается — ' +
+      'сервер сам входит под первым админом из config.json.' +
+      (signedIn ? '' : '<br>Если автовход не сработал: введи id, пароль оставь пустым.'));
   }
   if (info.testAutoMega){
     lines.push('<b>autoMegaAdmin</b>: аккаунт без админки получает MEGA при входе ' +
       'в игру или панель.');
+  }
+  if (st.testAutoLogin){
+    lines.push('Этот вход выдан автоматически: пароль не проверялся.');
   }
   box.innerHTML =
     '<div class="so-testmode__t">ТЕСТОВЫЙ РЕЖИМ — НЕ БОЕВОЙ СЕРВЕР</div>' +
@@ -8585,8 +8629,46 @@ function renderHomeNow(){
 }
 
 /* Строка «СЕРВЕР В СЕТИ» в hero: честно, если игровой порт не слушается. */
+/* Внешний доступ (playit.gg, туннели). Если владелец задал publicAccess,
+   показываем рекомендуемый внешний адрес и оставляем прямой вариант: инструкция
+   не должна врать ни дома, ни снаружи. Без секции всё остаётся как было. */
+function applyPublicAccess(st){
+  if (!st) return;
+  var address = String(st.publicAddress || '').trim();
+  var localPort = st.localLobbyPort || 7778;
+  var externalPort = st.publicLobbyPort || localPort;
+  var configured = address.length > 0;
+
+  var i;
+  var ports = document.querySelectorAll('[data-pa-port]');
+  for (i = 0; i < ports.length; i++)
+    ports[i].textContent = String(configured ? externalPort : localPort);
+
+  var locals = document.querySelectorAll('[data-pa-local-port]');
+  for (i = 0; i < locals.length; i++)
+    locals[i].textContent = String(localPort);
+
+  var fact = document.querySelector('[data-pa-fact]');
+  if (fact)
+    fact.textContent = configured ? address + ' : ' + externalPort : 'IP : ' + localPort;
+
+  var notes = document.querySelectorAll('[data-pa-note]');
+  for (i = 0; i < notes.length; i++){
+    if (!configured){
+      notes[i].hidden = true;
+      notes[i].innerHTML = '';
+      continue;
+    }
+    notes[i].innerHTML = '<span class="pa-rec">РЕКОМЕНДУЕТСЯ</span>' +
+      '<b>' + escHtml(address) + ' : ' + externalPort + '</b> через туннель. ' +
+      'Напрямую: <b>' + escHtml(address) + ' : ' + localPort + '</b>.';
+    notes[i].hidden = false;
+  }
+}
+
 function renderHomeStatus(res){
   if (!res || !res.data) return;
+  applyPublicAccess(res.data);
   var down = res.data.gameListening === false;
   ['so-dot', 'so-dot-hero', 'so-dot-docs', 'so-dot-play', 'so-dot-profile',
    'so-dot-room'].forEach(function(id){

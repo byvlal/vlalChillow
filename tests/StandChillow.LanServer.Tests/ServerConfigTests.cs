@@ -427,6 +427,18 @@ public sealed class ServerConfigTests
         var cfg = new ServerConfig { Network = new NetworkConfig { AdvertiseIp = "не-айпи" } };
         cfg.Normalize();
         Assert.Null(cfg.Network.AdvertiseIp);
+        Assert.Null(cfg.PublicAccess.Address);
+    }
+
+    [Fact]
+    public void PublicAccessConfig_DefaultsAreOff()
+    {
+        var access = new PublicAccessConfig();
+
+        Assert.Null(access.Address);
+        Assert.Equal(0, access.LobbyPort);
+        Assert.Equal(0, access.MatchPort);
+        Assert.Null(access.AddressIp);
     }
 
     [Fact]

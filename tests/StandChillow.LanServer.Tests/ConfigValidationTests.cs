@@ -145,7 +145,9 @@ public sealed class ConfigValidationTests
         var cfg = Validate(c => c.Network.AdvertiseIp = "999.1.1.1");
 
         Assert.Null(cfg.Network.AdvertiseIp);
-        Assert.Equal("(авто)", Single(cfg, "network.advertiseIp").Applied);
+        Assert.Null(cfg.PublicAccess.Address);
+        Assert.Equal("publicAccess.address", Single(cfg, "network.advertiseIp").Applied);
+        Assert.Equal("(подмена выключена)", Single(cfg, "publicAccess.address").Applied);
     }
 
     [Fact]
@@ -158,8 +160,102 @@ public sealed class ConfigValidationTests
         });
 
         Assert.Equal("192.168.1.65", cfg.Network.BindAddress);
-        Assert.Equal("192.168.1.65", cfg.Network.AdvertiseIp);
+        Assert.Null(cfg.Network.AdvertiseIp);
+        Assert.Equal("192.168.1.65", cfg.PublicAccess.Address);
+        Assert.Equal("publicAccess.address", Single(cfg, "network.advertiseIp").Applied);
+    }
+
+    [Fact]
+    public void PublicAccess_ValidValuesAreKept()
+    {
+        var cfg = Validate(c => c.PublicAccess = new PublicAccessConfig
+        {
+            Address = "209.25.141.16",
+            LobbyPort = 6606,
+            MatchPort = 6605,
+        });
+
+        Assert.Equal("209.25.141.16", cfg.PublicAccess.Address);
+        Assert.Equal(6606, cfg.PublicAccess.LobbyPort);
+        Assert.Equal(6605, cfg.PublicAccess.MatchPort);
+        Assert.Equal("209.25.141.16", cfg.PublicAccess.AddressIp?.ToString());
         Assert.Empty(cfg.Issues);
+    }
+
+    [Fact]
+    public void PublicAccess_NonIpv4IsDisabled()
+    {
+        var cfg = Validate(c => c.PublicAccess = new PublicAccessConfig
+        {
+            Address = "playit.gg",
+            LobbyPort = 6606,
+            MatchPort = 6605,
+        });
+
+        Assert.Null(cfg.PublicAccess.Address);
+        Assert.Equal(0, cfg.PublicAccess.LobbyPort);
+        Assert.Equal(0, cfg.PublicAccess.MatchPort);
+        Assert.Equal("(подмена выключена)", Single(cfg, "publicAccess.address").Applied);
+    }
+
+    [Fact]
+    public void PublicAccess_PortsWithoutAddressAreDisabled()
+    {
+        var cfg = Validate(c => c.PublicAccess = new PublicAccessConfig
+        {
+            Address = " ",
+            LobbyPort = 6606,
+            MatchPort = 6605,
+        });
+
+        Assert.Null(cfg.PublicAccess.Address);
+        Assert.Equal(0, cfg.PublicAccess.LobbyPort);
+        Assert.Equal(0, cfg.PublicAccess.MatchPort);
+        Assert.Equal("(подмена выключена)", Single(cfg, "publicAccess.address").Applied);
+    }
+
+    [Fact]
+    public void PublicAccess_BadPortsAreZeroed()
+    {
+        var cfg = Validate(c => c.PublicAccess = new PublicAccessConfig
+        {
+            Address = "209.25.141.16",
+            LobbyPort = -1,
+            MatchPort = 70000,
+        });
+
+        Assert.Equal("209.25.141.16", cfg.PublicAccess.Address);
+        Assert.Equal(0, cfg.PublicAccess.LobbyPort);
+        Assert.Equal(0, cfg.PublicAccess.MatchPort);
+        Assert.Equal("0", Single(cfg, "publicAccess.lobbyPort").Applied);
+        Assert.Equal("0", Single(cfg, "publicAccess.matchPort").Applied);
+    }
+
+    [Fact]
+    public void PublicAccess_OverridesOnlyWhatIsSet()
+    {
+        var cfg = Validate(c => c.PublicAccess = new PublicAccessConfig
+        {
+            Address = "209.25.141.16",
+            MatchPort = 6605,
+        });
+        var lan = System.Net.IPAddress.Parse("192.168.1.85");
+
+        Assert.Equal("209.25.141.16", cfg.PublicAccess.MatchIpOr(lan).ToString());
+        Assert.Equal(6605, cfg.PublicAccess.MatchPortOr(7777));
+        Assert.Equal(7778, cfg.PublicAccess.LobbyPortOr(7778));
+    }
+
+    [Fact]
+    public void PublicAccess_EmptyFallsBackToLan()
+    {
+        var cfg = Validate(_ => { });
+        var lan = System.Net.IPAddress.Parse("192.168.1.85");
+
+        Assert.Null(cfg.PublicAccess.AddressIp);
+        Assert.Equal("192.168.1.85", cfg.PublicAccess.MatchIpOr(lan).ToString());
+        Assert.Equal(7777, cfg.PublicAccess.MatchPortOr(7777));
+        Assert.Equal(7778, cfg.PublicAccess.LobbyPortOr(7778));
     }
 
     [Theory]

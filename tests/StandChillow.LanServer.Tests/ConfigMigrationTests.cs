@@ -264,4 +264,116 @@ public sealed class ConfigMigrationTests : IDisposable
         Assert.False(ConfigMigration.EnsureTestSection(path, out _));
         Assert.Equal(broken, File.ReadAllText(path));
     }
+
+    // ── внешний доступ (playit/туннели) ─────────────────────────────────────
+
+    [Fact]
+    public void PublicAccessSection_IsAddedAndLegacyAdvertiseIpMovesIntoIt()
+    {
+        const string source = """
+        {
+          // шапка
+          "network": {
+            // адрес матча
+            "advertiseIp": "203.0.113.5"
+          },
+          "admin": { "ids": [ 500000 ], "megaIds": [ 1000000 ] }
+        }
+        """;
+        var path = Write(source);
+
+        Assert.True(ConfigMigration.EnsurePublicAccessSection(path, out var message));
+        Assert.Contains("publicAccess", message);
+
+        var text = File.ReadAllText(path);
+        Assert.Contains("\"publicAccess\": {", text);
+        Assert.Contains("\"address\": \"203.0.113.5\"", text);
+        Assert.Contains("\"lobbyPort\": 0", text);
+        Assert.Contains("\"matchPort\": 0", text);
+        Assert.Contains("\"advertiseIp\": null", text);
+        Assert.Contains("// шапка", text);
+        Assert.Contains("// адрес матча", text);
+
+        Assert.True(ServerConfig.TryLoad(path, out var cfg, out var error), error);
+        Assert.Equal("203.0.113.5", cfg.PublicAccess.Address);
+        Assert.Null(cfg.Network.AdvertiseIp);
+
+        // Повторный запуск ничего не меняет.
+        var once = File.ReadAllText(path);
+        Assert.False(ConfigMigration.EnsurePublicAccessSection(path, out _));
+        Assert.Equal(once, File.ReadAllText(path));
+    }
+
+    [Fact]
+    public void PublicAccessSection_WithoutLegacy_IsAddedDisabled()
+    {
+        var path = Write("""
+        {
+          "admin": { "ids": [ 500000 ], "megaIds": [ 1000000 ] }
+        }
+        """);
+
+        Assert.True(ConfigMigration.EnsurePublicAccessSection(path, out _));
+
+        var text = File.ReadAllText(path);
+        Assert.Contains("\"address\": null", text);
+        Assert.True(ServerConfig.TryLoad(path, out var cfg, out var error), error);
+        Assert.Null(cfg.PublicAccess.Address);
+    }
+
+    [Fact]
+    public void ExistingPublicAccess_FillsEmptyAddressFromLegacy_AndKeepsPorts()
+    {
+        var path = Write("""
+        {
+          "network": { "advertiseIp": "203.0.113.5" },
+          "publicAccess": {
+            "address": null,
+            "lobbyPort": 6606,
+            "matchPort": 6605
+          }
+        }
+        """);
+
+        Assert.True(ConfigMigration.EnsurePublicAccessSection(path, out _));
+
+        var text = File.ReadAllText(path);
+        Assert.Contains("\"address\": \"203.0.113.5\"", text);
+        Assert.Contains("\"advertiseIp\": null", text);
+        Assert.Contains("\"lobbyPort\": 6606", text);
+        Assert.Contains("\"matchPort\": 6605", text);
+
+        Assert.True(ServerConfig.TryLoad(path, out var cfg, out var error), error);
+        Assert.Equal("203.0.113.5", cfg.PublicAccess.Address);
+        Assert.Equal(6606, cfg.PublicAccess.LobbyPort);
+        Assert.Equal(6605, cfg.PublicAccess.MatchPort);
+    }
+
+    [Fact]
+    public void ExistingPublicAccessWithAddress_KeepsIt_AndOnlyNullsLegacy()
+    {
+        var path = Write("""
+        {
+          "network": { "advertiseIp": "203.0.113.5" },
+          "publicAccess": { "address": "198.51.100.7" }
+        }
+        """);
+
+        Assert.True(ConfigMigration.EnsurePublicAccessSection(path, out _));
+
+        var text = File.ReadAllText(path);
+        Assert.Contains("\"address\": \"198.51.100.7\"", text);
+        Assert.Contains("\"advertiseIp\": null", text);
+        Assert.DoesNotContain("203.0.113.5", text);
+    }
+
+    [Fact]
+    public void PublicAccessSection_LeavesBrokenJsonAlone()
+    {
+        const string broken = """{ "publicAccess": { "address": 1 """;
+        var path = Write(broken);
+
+        Assert.False(ConfigMigration.EnsurePublicAccessSection(path, out _));
+        Assert.Equal(broken, File.ReadAllText(path));
+    }
 }
