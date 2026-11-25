@@ -68,6 +68,23 @@ public sealed class ConfigUnknownKeysTests : IDisposable
     }
 
     [Fact]
+    public void MisspelledKeyInsidePublicAccessIsReported()
+    {
+        var cfg = Load("""
+        {
+          "publicAccess": {
+            "address": "203.0.113.5",
+            "lobbyPorts": 6606
+          }
+        }
+        """);
+
+        Assert.Equal("203.0.113.5", cfg.PublicAccess.Address);
+        var issue = Assert.Single(cfg.Issues.Where(i => i.Key == "publicAccess.lobbyPorts"));
+        Assert.Contains("publicAccess", issue.Detail);
+    }
+
+    [Fact]
     public void StockTemplateHasNoUnknownKeys()
     {
         var cfg = Load(ServerConfig.Template);

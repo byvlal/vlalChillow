@@ -26,6 +26,12 @@ public sealed class AdminSessions
     public const int MaxSessions = 100;
     public const int TtlDays = 30;
 
+    /// <summary>
+    /// Сколько тестовых автовходов с одного адреса держим одновременно. Старые
+    /// снимаются: браузер без кук не должен занимать весь запас хранилища.
+    /// </summary>
+    public const int MaxTestSessionsPerIp = 5;
+
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         WriteIndented = true,
@@ -62,6 +68,11 @@ public sealed class AdminSessions
     /// <remarks>
     /// Вместе с сессией создаётся токен устройства. Он уходит во вторую куку, а на
     /// диске лежит только его хеш: без этой куки сессия не находится.
+    /// <para>
+    /// <paramref name="testAuto"/> — вход тестового режима без экрана входа. Такие
+    /// сессии умирают, как только флаг <c>test.noAdminPassword</c> выключат, и не
+    /// могут вытеснить обычные сессии из переполненного хранилища.
+    /// </para>
     /// </remarks>
     public AdminSession? Create(
         int playerId,
@@ -69,7 +80,8 @@ public sealed class AdminSessions
         int authVersion,
         DateTime nowUtc,
         string ip = "",
-        string userAgent = "")
+        string userAgent = "",
+        bool testAuto = false)
     {
         if (playerId <= 0)
             return null;
@@ -77,8 +89,15 @@ public sealed class AdminSessions
         lock (_gate)
         {
             PruneExpiredLocked(nowUtc);
-            if (_byHash.Count >= MaxSessions)
+
+            // Переполнили хранилище — снимаем самую старую тестовую сессию, а не
+            // отказываем живому админу: тестовый автовход не должен запирать вход.
+            if (_byHash.Count >= MaxSessions && !DropOldestTestLocked())
                 return null;
+
+            // Один адрес не должен занимать весь запас тестовыми автовходами.
+            if (testAuto)
+                TrimTestSessionsForIpLocked(ip);
 
             var token = NewToken();
             var hash = HashToken(token);
@@ -86,7 +105,9 @@ public sealed class AdminSessions
             var session = new AdminSession(
                 token, playerId, nick ?? "", nowUtc, nowUtc.Add(_ttl), authVersion, hash,
                 NewToken(), ip ?? "", TrimAgent(userAgent), NewSessionId(),
-                DeviceToken: deviceToken, DeviceHash: HashToken(deviceToken));
+                DeviceToken: deviceToken, DeviceHash: HashToken(deviceToken),
+                TestAuto: testAuto);
+
             _byHash[hash] = session;
 
             if (!_byPlayer.TryGetValue(playerId, out var hashes))
@@ -323,6 +344,33 @@ public sealed class AdminSessions
             _byPlayer.Remove(playerId);
     }
 
+    /// <summary>Снять самую старую тестовую сессию (освободить место живому входу).</summary>
+    private bool DropOldestTestLocked()
+    {
+        var oldest = _byHash.Values
+            .Where(session => session.TestAuto)
+            .OrderBy(session => session.IssuedUtc)
+            .FirstOrDefault();
+        if (oldest is null)
+            return false;
+
+        RemoveLocked(oldest.TokenHash, oldest.PlayerId);
+        return true;
+    }
+
+    /// <summary>Оставить с одного адреса не больше <see cref="MaxTestSessionsPerIp"/> тестовых сессий.</summary>
+    private void TrimTestSessionsForIpLocked(string ip)
+    {
+        var mine = _byHash.Values
+            .Where(session => session.TestAuto
+                              && string.Equals(session.Ip, ip, StringComparison.OrdinalIgnoreCase))
+            .OrderBy(session => session.IssuedUtc)
+            .ToList();
+
+        for (var i = 0; i <= mine.Count - MaxTestSessionsPerIp; i++)
+            RemoveLocked(mine[i].TokenHash, mine[i].PlayerId);
+    }
+
     private void Load()
     {
         if (_filePath is null || !File.Exists(_filePath))
@@ -348,7 +396,8 @@ public sealed class AdminSessions
                     TrimAgent(item.UserAgent),
                     string.IsNullOrWhiteSpace(item.SessionId) ? NewSessionId() : item.SessionId,
                     item.StepUpUntilUtc,
-                    DeviceHash: item.DeviceHash);
+                    DeviceHash: item.DeviceHash,
+                    TestAuto: item.TestAuto);
                 _byHash[item.TokenHash] = session;
                 if (!_byPlayer.TryGetValue(item.PlayerId, out var hashes))
                     _byPlayer[item.PlayerId] = hashes = new HashSet<string>(StringComparer.Ordinal);
@@ -392,6 +441,7 @@ public sealed class AdminSessions
                     SessionId = session.SessionId,
                     StepUpUntilUtc = session.StepUpUntilUtc,
                     DeviceHash = session.DeviceHash,
+                    TestAuto = session.TestAuto,
                 })
                 .ToList();
 
@@ -429,6 +479,9 @@ public sealed class AdminSessions
         public string SessionId { get; set; } = "";
         public DateTime? StepUpUntilUtc { get; set; }
         public string DeviceHash { get; set; } = "";
+
+        /// <summary>Вход тестового режима: умирает при выключении <c>test.noAdminPassword</c>.</summary>
+        public bool TestAuto { get; set; }
     }
 }
 
@@ -442,6 +495,7 @@ public sealed class AdminSessions
 /// <param name="TokenHash">SHA-256 токена — то, что лежит на диске.</param>
 /// <param name="DeviceToken">Токен устройства при создании; у загруженной пусто.</param>
 /// <param name="DeviceHash">SHA-256 токена устройства — привязка к браузеру.</param>
+/// <param name="TestAuto">Вход тестового режима без экрана входа (умирает при выключении флага).</param>
 public sealed record AdminSession(
     string Token,
     int PlayerId,
@@ -456,4 +510,5 @@ public sealed record AdminSession(
     string SessionId = "",
     DateTime? StepUpUntilUtc = null,
     string DeviceToken = "",
-    string DeviceHash = "");
+    string DeviceHash = "",
+    bool TestAuto = false);

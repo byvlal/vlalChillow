@@ -24,7 +24,7 @@ namespace StandChillow.LanServer.Config;
 /// остаётся ровно таким, каким его написал владелец.
 /// </para>
 /// </remarks>
-internal static class ConfigMigration
+internal static partial class ConfigMigration
 {
     /// <summary>Владелец сервера по умолчанию — и админ, и мега-админ.</summary>
     internal const int DefaultOwnerId = 1_000_000;
@@ -528,8 +528,13 @@ internal static class ConfigMigration
                             && NamesMatch(stack, keyPath)
                             && string.Equals(pending, keyPath[^1], StringComparison.Ordinal))
                         {
+                            // BytesConsumed — весь документ с начала чтения, а не длина
+                            // токена: с ним end вылезал за границы, если после ключа
+                            // в файле есть ещё данные. ValueSpan — сырые байты значения
+                            // без кавычек, поэтому строке возвращаем их обратно.
                             start = (int)reader.TokenStartIndex;
-                            end = start + (int)reader.BytesConsumed;
+                            end = start + reader.ValueSpan.Length
+                                  + (reader.TokenType == JsonTokenType.String ? 2 : 0);
                             tokenType = reader.TokenType;
                             return true;
                         }
@@ -649,20 +654,25 @@ internal static class ConfigMigration
         public bool Valid;
         public bool HasMegaIds;
         public bool HasTest;
+        public bool HasPublicAccess;
         public bool HasAdmin;
         public bool HasIds;
         public bool IdsIsDefault;
         public bool AdminHasProperties;
+        public bool PublicAccessHasProperties;
         public bool RootHasProperties;
         public int RootStart;
         public int RootEnd;
         public int AdminStart;
         public int AdminEnd;
+        public int PublicAccessStart = -1;
+        public int PublicAccessEnd = -1;
         public int IdsPropertyStart;
         public int IdsStart;
         public int IdsEnd;
         public int FirstRootProperty = -1;
         public int FirstAdminProperty = -1;
+        public int FirstPublicAccessProperty = -1;
 
         public readonly List<long> IdsValues = new();
     }
@@ -677,6 +687,7 @@ internal static class ConfigMigration
         var depth = 0;
         string? rootProperty = null;
         var inAdmin = false;
+        var inPublicAccess = false;
         var expectingIds = false;
         var idsArrayDepth = -1;
 
@@ -705,6 +716,14 @@ internal static class ConfigMigration
                             layout.HasAdmin = true;
                             layout.AdminStart = at;
                         }
+                        else if (depth == 2
+                                 && string.Equals(rootProperty, "publicAccess",
+                                     StringComparison.OrdinalIgnoreCase))
+                        {
+                            inPublicAccess = true;
+                            layout.HasPublicAccess = true;
+                            layout.PublicAccessStart = at;
+                        }
 
                         break;
 
@@ -713,6 +732,11 @@ internal static class ConfigMigration
                         {
                             layout.AdminEnd = at + 1;
                             inAdmin = false;
+                        }
+                        else if (depth == 2 && inPublicAccess)
+                        {
+                            layout.PublicAccessEnd = at + 1;
+                            inPublicAccess = false;
                         }
                         else if (depth == 1)
                         {
@@ -748,6 +772,12 @@ internal static class ConfigMigration
                             {
                                 layout.HasMegaIds = true;
                             }
+                        }
+                        else if (depth == 2 && inPublicAccess)
+                        {
+                            layout.PublicAccessHasProperties = true;
+                            if (layout.FirstPublicAccessProperty < 0)
+                                layout.FirstPublicAccessProperty = at;
                         }
 
                         break;

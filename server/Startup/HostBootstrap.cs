@@ -39,7 +39,11 @@ public static class HostBootstrap
         Console.WriteLine(
             $"[config] сеть: bind={serverConfig.Network.BindAddress} " +
             $"ignoreVpn={(serverConfig.Network.IgnoreVpn ? "да" : "нет")} " +
-            $"advertiseIp={serverConfig.Network.AdvertiseIp ?? "авто"}");
+            $"external={(string.IsNullOrWhiteSpace(serverConfig.PublicAccess.Address)
+                ? "выкл"
+                : $"{serverConfig.PublicAccess.Address}, лобби " +
+                  $"{serverConfig.PublicAccess.LobbyPortOr(serverConfig.Server.LobbyPort)}, " +
+                  $"матч {serverConfig.PublicAccess.MatchPortOr(GameMatchHost.DefaultMatchPort)}")}");
 
         // ── Веб-панель: поднимается ДО игровых сокетов ──────────────────────────
         // Спека: если 7777 занят (старый процесс, чужой сервер), страница обязана
@@ -140,12 +144,22 @@ public static class HostBootstrap
         using var plugins = new PluginManager();
         Console.WriteLine($"[plugins] root: {plugins.PluginsRoot}");
 
-        var advertiseIp = !string.IsNullOrWhiteSpace(serverConfig.Network.AdvertiseIp)
-                          && IPAddress.TryParse(serverConfig.Network.AdvertiseIp, out var forcedIp)
-            ? forcedIp
-            : LanInterfacePicker.PickLanBindAddress();
+        // LAN-адрес — фолбэк для op9; внешний адрес задаётся в publicAccess
+        // и подменяет его только в пакетах клиентам.
+        var advertiseIp = LanInterfacePicker.PickLanBindAddress();
         Console.WriteLine($"[config] файл: {ServerConfig.LastLoadedPath}");
         Console.WriteLine($"[config] админы (id): {serverConfig.DescribeAdmins()}");
+        if (serverConfig.Test.NoAdminPassword || serverConfig.Test.AutoMegaAdmin)
+        {
+            var testFlags = new List<string>();
+            if (serverConfig.Test.NoAdminPassword)
+                testFlags.Add("панель входит без пароля и без экрана входа");
+            if (serverConfig.Test.AutoMegaAdmin)
+                testFlags.Add("аккаунт без админки получает мега-права");
+            Console.WriteLine(
+                "[config] ВНИМАНИЕ: ТЕСТОВЫЙ РЕЖИМ — " + string.Join(", ", testFlags) +
+                ". НИКОГДА не включать на боевом сервере!");
+        }
         if (serverConfig.Admin.Ids.Count == 0 && serverConfig.Admin.MegaIds.Count == 0)
         {
             // Пустой список — самая частая причина «я не админ»: человек в лобби есть,
@@ -211,7 +225,8 @@ public static class HostBootstrap
         Console.WriteLine($"  probe listen : UDP {LanDiscoveryHost.DiscoveryPort}");
         Console.WriteLine($"  lobby listen : UDP {current.GamePort}");
         Console.WriteLine($"  match listen : UDP {GameMatchHost.DefaultMatchPort} SINGLETON (key MyVerySecretKey)");
-        Console.WriteLine($"  advertise    : {game.AdvertiseLanIp}:{GameMatchHost.DefaultMatchPort}");
+        Console.WriteLine($"  advertise    : {game.AdvertisedMatchIp}:{game.AdvertisedMatchPort}" +
+                          (string.IsNullOrWhiteSpace(game.PublicAddress) ? " (LAN)" : " (publicAccess)"));
         Console.WriteLine($"  mode/levels  : {game.Session.GameModeId} / [{string.Join(", ", game.Session.SelectedLevels)}]");
         Console.WriteLine($"  discovery    : cxbl={(current.HasExtraStrings ? 1 : 0)} (1=map waiting, 0=Join in-progress)");
         Console.WriteLine($"  payload hex  : {current.ToHex()}");

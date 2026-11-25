@@ -126,6 +126,58 @@ public sealed class SessionPersistenceTests : IDisposable
     }
 
     [Fact]
+    public void TestAutoSession_KeepsItsMarkAcrossReload()
+    {
+        var path = Path.Combine(_dir, "sessions.json");
+        var sessions = new AdminSessions(path, _store);
+        var session = sessions.Create(
+            PlayerId, "влал", 1, Now, "203.0.113.10", "", testAuto: true)!;
+
+        var reloaded = new AdminSessions(path, _store);
+        var found = reloaded.Find(session.Token, session.DeviceToken, Now.AddMinutes(1));
+
+        Assert.NotNull(found);
+        Assert.True(found!.TestAuto);
+
+        var normal = sessions.Create(PlayerId, "влал", 1, Now)!;
+        Assert.False(normal.TestAuto);
+    }
+
+    [Fact]
+    public void TestAutoSessions_AreCappedPerAddress()
+    {
+        var sessions = new AdminSessions(null, _store);
+
+        for (var i = 0; i < AdminSessions.MaxTestSessionsPerIp + 2; i++)
+            Assert.NotNull(sessions.Create(
+                PlayerId, "влал", 1, Now.AddSeconds(i), "203.0.113.10", "", testAuto: true));
+
+        Assert.Equal(AdminSessions.MaxTestSessionsPerIp, sessions.Count);
+
+        // Другой адрес не вытесняет чужие тестовые сессии.
+        Assert.NotNull(sessions.Create(
+            PlayerId, "влал", 1, Now, "203.0.113.11", "", testAuto: true));
+        Assert.Equal(AdminSessions.MaxTestSessionsPerIp + 1, sessions.Count);
+    }
+
+    [Fact]
+    public void FullStore_EvictsTestSessionInsteadOfRefusingALogin()
+    {
+        var sessions = new AdminSessions(null, _store);
+        var test = sessions.Create(
+            PlayerId, "тест", 1, Now, "203.0.113.10", "", testAuto: true)!;
+
+        while (sessions.Count < AdminSessions.MaxSessions)
+            Assert.NotNull(sessions.Create(PlayerId, "влал", 1, Now));
+
+        var login = sessions.Create(PlayerId, "влал", 1, Now);
+
+        Assert.NotNull(login);
+        Assert.Equal(AdminSessions.MaxSessions, sessions.Count);
+        Assert.Null(sessions.Find(test.Token, test.DeviceToken, Now));
+    }
+
+    [Fact]
     public void SiteSession_SurvivesReloadAndStoresOnlyHash()
     {
         var path = Path.Combine(_dir, "site-sessions.json");

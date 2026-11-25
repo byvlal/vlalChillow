@@ -51,7 +51,11 @@ public sealed class WebPanelRouterAdminTests : IDisposable
         Func<bool>? testNoPassword = null,
         Func<bool>? testAutoMega = null,
         Func<int, bool>? accountExists = null,
-        Func<int, bool>? isAdminLive = null) =>
+        Func<int, bool>? isAdminLive = null,
+        Func<int, bool>? isBanned = null,
+        Func<IReadOnlyList<int>>? megaIds = null,
+        Func<IReadOnlyList<int>>? adminIds = null,
+        Func<(int Id, string Nick)?>? firstAccount = null) =>
         new(
             new RoomRegistry(),
             () => "<!doctype html><title>тест</title>",
@@ -61,9 +65,13 @@ public sealed class WebPanelRouterAdminTests : IDisposable
                 AdminStore = _store,
                 AdminSessionStore = _sessions,
                 IsAdminLive = isAdminLive ?? (id => _admins.Contains(id)),
+                IsBanned = isBanned,
                 TestNoAdminPassword = testNoPassword,
                 TestAutoMegaAdmin = testAutoMega,
                 AccountExists = accountExists,
+                MegaIds = megaIds,
+                AdminIds = adminIds,
+                FirstAccount = firstAccount,
                 CookiePath = "/",
                 BanSettings = () => (true, 10, 14),
                 Reports = _reports,
@@ -525,5 +533,220 @@ public sealed class WebPanelRouterAdminTests : IDisposable
         Assert.Equal(401, login.Status);
         Assert.Contains("bad_credentials", login.Body);
         Assert.False(_store.IsRuntimeMega(PlayerId));
+    }
+
+    // ── тестовый автовход без экрана входа ──────────────────────────────────────
+
+    private static string? CookieOf(WebResponse response)
+    {
+        var cookies = response.ExtraHeaders
+            .Where(header => header.Item1 == "Set-Cookie")
+            .Select(header => header.Item2.Split(';')[0])
+            .Where(cookie => cookie.Length > 0)
+            .ToArray();
+        return cookies.Length == 0 ? null : string.Join("; ", cookies);
+    }
+
+    private static bool HasSetCookie(WebResponse response) =>
+        response.ExtraHeaders.Any(header => header.Item1 == "Set-Cookie");
+
+    [Fact]
+    public void TestAutoLogin_WhenFlagOff_IsRejected()
+    {
+        var router = NewRouter();
+
+        var response = router.Route(Post("/api/admin/test-login", "{}"));
+
+        Assert.Equal(403, response.Status);
+        Assert.Contains("test_disabled", Body(response));
+        Assert.False(HasSetCookie(response));
+    }
+
+    [Fact]
+    public void TestAutoLogin_IsPostOnly()
+    {
+        var router = NewRouter();
+
+        Assert.Equal(405, router.Route(Get("/api/admin/test-login")).Status);
+    }
+
+    [Fact]
+    public void TestAutoLogin_EntersAsFirstMega_WithoutScreen()
+    {
+        var router = NewRouter(
+            testNoPassword: () => true,
+            megaIds: () => new[] { MegaId },
+            adminIds: () => new[] { AdminId, SecondId, MegaId });
+
+        var response = router.Route(Post("/api/admin/test-login", "{}"));
+        var body = Body(response);
+        var cookie = CookieOf(response);
+
+        Assert.Equal(200, response.Status);
+        Assert.NotNull(cookie);
+        Assert.Contains("\"authed\":true", body);
+        Assert.Contains($"\"id\":{MegaId}", body);
+        Assert.Contains("\"mega\":true", body);
+        Assert.Contains("\"testAutoLogin\":true", body);
+
+        var state = router.Route(Get("/api/admin", cookie));
+        Assert.Equal(200, state.Status);
+        Assert.Contains("\"testAutoLogin\":true", Body(state));
+
+        // Автовход снимает только пароль: CSRF остаётся обязательным.
+        var noCsrf = router.Route(Post("/api/admin/customid", """{"customId":"x"}""", cookie));
+        Assert.Equal(403, noCsrf.Status);
+        Assert.Contains("bad_csrf", Body(noCsrf));
+    }
+
+    [Fact]
+    public void TestAutoLogin_WithoutMega_TakesPlainAdminAndKeepsPermissions()
+    {
+        var router = NewRouter(
+            testNoPassword: () => true,
+            megaIds: () => Array.Empty<int>(),
+            adminIds: () => new[] { AdminId });
+
+        var response = router.Route(Post("/api/admin/test-login", "{}"));
+        var cookie = CookieOf(response);
+
+        Assert.Equal(200, response.Status);
+        Assert.Contains($"\"id\":{AdminId}", Body(response));
+        Assert.Contains("\"mega\":false", Body(response));
+
+        // Права не раздаются: обычный админ видит только свои вкладки.
+        Assert.Equal(200, router.Route(Get("/api/admin/dashboard", cookie)).Status);
+        Assert.Equal(403, router.Route(Get("/api/admin/config", cookie)).Status);
+        Assert.Equal(403, router.Route(Get("/api/admin/admins", cookie)).Status);
+    }
+
+    [Fact]
+    public void TestAutoLogin_SessionDiesWhenFlagTurnsOff()
+    {
+        var on = true;
+        var router = NewRouter(
+            testNoPassword: () => on,
+            megaIds: () => new[] { MegaId },
+            adminIds: () => new[] { MegaId });
+
+        var cookie = CookieOf(router.Route(Post("/api/admin/test-login", "{}")));
+        Assert.NotNull(cookie);
+        Assert.Equal(200, router.Route(Get("/api/admin", cookie)).Status);
+
+        on = false;
+
+        var after = router.Route(Get("/api/admin", cookie));
+        Assert.Equal(401, after.Status);
+        Assert.Contains("no_admin_auth", Body(after));
+
+        var again = router.Route(Post("/api/admin/test-login", "{}"));
+        Assert.Equal(403, again.Status);
+        Assert.Contains("test_disabled", Body(again));
+    }
+
+    [Fact]
+    public void TestAutoLogin_DoesNotCreateSecondSessionForExistingLogin()
+    {
+        var router = NewRouter(
+            testNoPassword: () => true,
+            megaIds: () => new[] { MegaId },
+            adminIds: () => new[] { MegaId });
+
+        var first = router.Route(Post("/api/admin/test-login", "{}"));
+        var cookie = CookieOf(first);
+        var count = _sessions.Count;
+
+        var second = router.Route(Post("/api/admin/test-login", "{}", cookie));
+
+        Assert.Equal(200, second.Status);
+        Assert.Equal(count, _sessions.Count);
+        Assert.False(HasSetCookie(second));
+    }
+
+    [Fact]
+    public void TestAutoLogin_NoAdminsAndNoAutoMega_Returns409()
+    {
+        var router = NewRouter(
+            testNoPassword: () => true,
+            megaIds: () => Array.Empty<int>(),
+            adminIds: () => Array.Empty<int>());
+
+        var response = router.Route(Post("/api/admin/test-login", "{}"));
+
+        Assert.Equal(409, response.Status);
+        Assert.Contains("no_test_admin", Body(response));
+        Assert.False(HasSetCookie(response));
+    }
+
+    [Fact]
+    public void TestAutoLogin_AutoMega_GrantsMegaToFirstAccount()
+    {
+        const int PlayerId = 3000;
+        var router = NewRouter(
+            testNoPassword: () => true,
+            testAutoMega: () => true,
+            accountExists: id => id == PlayerId,
+            isAdminLive: id => _admins.Contains(id) || _store.IsRuntimeMega(id),
+            megaIds: () => Array.Empty<int>(),
+            adminIds: () => Array.Empty<int>(),
+            firstAccount: () => (PlayerId, "тест"));
+
+        var response = router.Route(Post("/api/admin/test-login", "{}"));
+
+        Assert.Equal(200, response.Status);
+        Assert.Contains($"\"id\":{PlayerId}", Body(response));
+        Assert.Contains("\"mega\":true", Body(response));
+        Assert.True(_store.IsRuntimeMega(PlayerId));
+        Assert.Equal("тест", _store.Find(PlayerId)?.Nick);
+    }
+
+    [Fact]
+    public void TestAutoLogin_SkipsBannedCandidates()
+    {
+        var router = NewRouter(
+            testNoPassword: () => true,
+            isBanned: id => id == MegaId,
+            megaIds: () => new[] { MegaId },
+            adminIds: () => new[] { AdminId });
+
+        var response = router.Route(Post("/api/admin/test-login", "{}"));
+
+        Assert.Equal(200, response.Status);
+        Assert.Contains($"\"id\":{AdminId}", Body(response));
+    }
+
+    [Fact]
+    public void TestAutoLogin_AllCandidatesBanned_Returns409()
+    {
+        var router = NewRouter(
+            testNoPassword: () => true,
+            isBanned: _ => true,
+            megaIds: () => new[] { MegaId },
+            adminIds: () => new[] { AdminId });
+
+        var response = router.Route(Post("/api/admin/test-login", "{}"));
+
+        Assert.Equal(409, response.Status);
+        Assert.Contains("no_test_admin", Body(response));
+        Assert.Contains("забанены", Body(response));
+    }
+
+    [Fact]
+    public void TestAutoLogin_DoesNotAffectPasswordSessions()
+    {
+        var on = true;
+        var router = NewRouter(
+            testNoPassword: () => on,
+            megaIds: () => new[] { MegaId },
+            adminIds: () => new[] { MegaId });
+
+        var login = Login(router, MegaId, PasswordOf(MegaId));
+        Assert.Equal(200, login.Status);
+
+        on = false;
+
+        var state = router.Route(Get("/api/admin", login.Cookie));
+        Assert.Equal(200, state.Status);
+        Assert.Contains("\"testAutoLogin\":false", Body(state));
     }
 }
