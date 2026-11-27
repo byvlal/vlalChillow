@@ -99,6 +99,16 @@ public sealed class BotMessageFilterTests
     }
 
     [Fact]
+    public void Group_MentionAfterLeadingSpace_KeepsEntityOffsets()
+    {
+        var text = "  @" + Bot + " 123456";
+        var entities = new[] { Mention(2, Bot.Length + 1) };
+
+        Assert.True(Take(text, ChatType.Group, out var cleaned, entities: entities));
+        Assert.Equal("123456", cleaned);
+    }
+
+    [Fact]
     public void Group_BareMention_BecomesMenu()
     {
         var entities = new[] { Mention(0, Bot.Length + 1) };

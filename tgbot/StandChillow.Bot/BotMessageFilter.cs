@@ -62,9 +62,11 @@ internal static class BotMessageFilter
             return true;
         }
 
-        if (MentionsBot(trimmed, entities, botUsername))
+        // Смещения сущностей считаются по исходному тексту, а не по обрезанному:
+        // ведущий пробел или перевод строки иначе сдвинул бы упоминание.
+        if (MentionsBot(text, entities, botUsername))
         {
-            cleaned = RemoveMention(trimmed, botUsername!);
+            cleaned = RemoveMention(text, botUsername!);
             if (cleaned.Length == 0)
                 cleaned = "/menu";
             return true;
