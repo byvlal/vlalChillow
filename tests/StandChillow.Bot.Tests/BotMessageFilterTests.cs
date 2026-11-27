@@ -64,6 +64,21 @@ public sealed class BotMessageFilterTests
     }
 
     [Fact]
+    public void Group_CommandWithArguments_IsAccepted()
+    {
+        Assert.True(Take("/start 123", ChatType.Group, out var text));
+        Assert.Equal("/start 123", text);
+    }
+
+    [Fact]
+    public void Group_SlashPath_IsNotACommand()
+    {
+        Assert.False(Take("/home/user", ChatType.Group, out _));
+        Assert.False(Take("/etc/passwd", ChatType.Group, out _));
+        Assert.False(Take("//start", ChatType.Group, out _));
+    }
+
+    [Fact]
     public void Group_Mention_IsAcceptedAndStripped()
     {
         var text = "@" + Bot + " 123456";

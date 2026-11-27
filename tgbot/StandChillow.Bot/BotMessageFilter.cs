@@ -53,6 +53,9 @@ internal static class BotMessageFilter
 
         if (trimmed.StartsWith('/'))
         {
+            // «/home/user» — это путь, а не команда: на такое бот не отвечает.
+            if (!LooksLikeCommand(trimmed))
+                return false;
             if (CommandTargetsAnotherBot(trimmed, botUsername))
                 return false;
             cleaned = trimmed;
@@ -74,6 +77,37 @@ internal static class BotMessageFilter
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// Первое слово — команда вида <c>/start</c> или <c>/start@bot</c>. Слэш в
+    /// середине (путь, ссылка) командой не считается.
+    /// </summary>
+    private static bool LooksLikeCommand(string text)
+    {
+        var token = text.Split(' ', 2)[0];
+        if (token.Length < 2 || token[0] != '/')
+            return false;
+
+        var at = token.IndexOf('@');
+        var name = at < 0 ? token[1..] : token[1..at];
+        if (!IsCommandWord(name))
+            return false;
+
+        return at < 0 || IsCommandWord(token[(at + 1)..]);
+    }
+
+    private static bool IsCommandWord(string value)
+    {
+        if (value.Length is 0 or > 32)
+            return false;
+        foreach (var c in value)
+        {
+            if (!char.IsAsciiLetterOrDigit(c) && c != '_')
+                return false;
+        }
+
+        return true;
     }
 
     private static bool CommandTargetsAnotherBot(string text, string? botUsername)
