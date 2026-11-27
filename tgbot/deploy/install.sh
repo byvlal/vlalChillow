@@ -21,6 +21,12 @@ if ! id "$bot_user" >/dev/null 2>&1; then
   exit 1
 fi
 
+# Остановить до копирования: если перезаписать DLL под работающим процессом,
+# .NET может аварийно завершиться при ленивой загрузке сборки.
+if systemctl is-active --quiet vlalchillow-tgbot 2>/dev/null; then
+  systemctl stop vlalchillow-tgbot
+fi
+
 install -d -m 755 -o "$bot_user" -g "$bot_user" "$dest"
 cp -a "$src/." "$dest/"
 install -d -m 700 -o "$bot_user" -g "$bot_user" "$dest/data"
