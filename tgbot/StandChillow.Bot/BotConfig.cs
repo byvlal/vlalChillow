@@ -9,20 +9,29 @@ public sealed class BotConfigException : Exception
 }
 
 /// <summary>
-/// Один игровой сервер, к которому умеет ходить бот: панель, ключ и адрес для игроков.
+/// Настройки бота из <c>.env</c> и переменных окружения.
 /// </summary>
 /// <remarks>
-/// Профили независимы: у локального стенда и у Новосибирска свои ключи, свои сессии
-/// игроков и свои адреса. Бот держит по клиенту на профиль и выбирает сервер по коду
-/// из лобби, а не по глобальному режиму.
+/// <para>
+/// Файл ищется рядом с запуском (текущий каталог), затем рядом с бинарником;
+/// <c>BOT_ENV_FILE</c> задаёт путь явно. Переменная окружения сильнее файла — так
+/// systemd или ручной запуск могут переопределить одно значение, не трогая остальные.
+/// </para>
+/// <para>
+/// Бот обслуживает один сервер — Новосибирск. Адрес панели, ключ и адрес для игроков
+/// задаются один раз; локального стенда в боте нет.
+/// </para>
 /// </remarks>
-public sealed class ServerProfile
+public sealed class BotConfig
 {
-    /// <summary>Ключ привязки в базе: <c>local</c> или <c>remote</c>.</summary>
-    public required string Id { get; init; }
+    private static readonly Regex Hex64 = new("^[0-9a-fA-F]{64}$", RegexOptions.Compiled);
 
-    /// <summary>Человеческое имя для сообщений: «локальный сервер», «Новосибирск».</summary>
-    public required string Label { get; init; }
+    public const string DefaultSiteUrl = "https://skam.su/vlalchillow";
+    public const string DefaultGameAddress = "212.164.115.37:7778";
+    public const string DefaultLabel = "Новосибирск";
+
+    public required string TelegramToken { get; init; }
+    public string? TelegramProxy { get; init; }
 
     /// <summary>Адрес входа бота, всегда с <c>/api/bot</c> на конце.</summary>
     public required string ApiBaseUrl { get; init; }
@@ -33,53 +42,13 @@ public sealed class ServerProfile
     /// <summary>Адрес, который бот показывает игрокам в инструкции.</summary>
     public required string GameAddress { get; init; }
 
-    /// <summary>Имя переменной с ключом — для честной подсказки владельцу.</summary>
-    public required string KeyEnvName { get; init; }
-}
+    /// <summary>Человеческое имя сервера для сообщений.</summary>
+    public required string Label { get; init; }
 
-/// <summary>
-/// Настройки бота из <c>.env</c> и переменных окружения.
-/// </summary>
-/// <remarks>
-/// <para>
-/// Файл ищется рядом с запуском (текущий каталог), затем рядом с бинарником;
-/// <c>BOT_ENV_FILE</c> задаёт путь явно. Переменная окружения сильнее файла — так
-/// systemd или ручной запуск могут переопределить одно значение, не трогая остальные.
-/// </para>
-/// <para>
-/// Серверов может быть несколько: <c>local</c> и <c>remote</c> настраиваются
-/// независимо, и бот сам выбирает сервер по коду из лобби. <c>BOT_SERVERS</c>
-/// ограничивает список (например, <c>remote</c>), а без него включаются все серверы,
-/// для которых задан ключ. Старый <c>BOT_MODE</c> понимается как <c>BOT_SERVERS</c>
-/// из одного имени.
-/// </para>
-/// </remarks>
-public sealed class BotConfig
-{
-    private static readonly Regex Hex64 = new("^[0-9a-fA-F]{64}$", RegexOptions.Compiled);
-
-    public required string TelegramToken { get; init; }
-    public string? TelegramProxy { get; init; }
-    public required IReadOnlyList<ServerProfile> Servers { get; init; }
     public required string DbPath { get; init; }
     public required TimeZoneInfo TimeZone { get; init; }
     public required string TimeZoneId { get; init; }
     public TimeSpan ApiTimeout { get; init; } = TimeSpan.FromSeconds(20);
-
-    /// <summary>Профиль по ключу привязки или <c>null</c>, если сервер убрали из .env.</summary>
-    public ServerProfile? FindServer(string? id)
-    {
-        if (string.IsNullOrWhiteSpace(id))
-            return null;
-
-        foreach (var server in Servers)
-        {
-            if (server.Id.Equals(id, StringComparison.Ordinal))
-                return server;
-        }
-
-        return null;
-    }
 
     public static BotConfig Load()
     {
@@ -129,21 +98,10 @@ public sealed class BotConfig
         if (int.TryParse(get("BOT_API_TIMEOUT_SEC"), out var parsedTimeout))
             timeout = Math.Clamp(parsedTimeout, 5, 120);
 
-        var selected = ParseServerList(get("BOT_SERVERS") ?? get("BOT_MODE"));
-        var servers = new List<ServerProfile>(2);
-
-        // Сначала настоящий сервер: если один и тот же код вдруг подойдёт обоим,
-        // привязка уйдёт к Новосибирску, а не к тестовому стенду.
-        AddRemote(servers, get, selected);
-        AddLocal(servers, get, selected);
-
-        if (servers.Count == 0)
-        {
-            throw new BotConfigException(
-                "Не настроен ни один сервер.\n" +
-                "Задай LOCAL_BOT_KEY и/или REMOTE_BOT_KEY в .env " +
-                "(ключ лежит в auth/tgbot/password.txt на сервере).");
-        }
+        var site = get("SITE_URL") ?? DefaultSiteUrl;
+        var game = get("GAME_ADDRESS") ?? DefaultGameAddress;
+        var label = get("BOT_LABEL") ?? DefaultLabel;
+        var botKey = RequireKey(get("BOT_KEY"), "BOT_KEY");
 
         var dbPath = Path.GetFullPath(get("BOT_DB_PATH") ?? "data/bot.db");
 
@@ -168,92 +126,15 @@ public sealed class BotConfig
         {
             TelegramToken = token,
             TelegramProxy = string.IsNullOrWhiteSpace(proxy) ? null : proxy,
-            Servers = servers,
+            ApiBaseUrl = NormalizeApiBase(site, "SITE_URL"),
+            BotKey = botKey,
+            GameAddress = NormalizeAddress(game),
+            Label = label,
             DbPath = dbPath,
             TimeZone = tz,
             TimeZoneId = tzId,
             ApiTimeout = TimeSpan.FromSeconds(timeout),
         };
-    }
-
-    private static void AddRemote(
-        List<ServerProfile> servers, Func<string, string?> get, HashSet<string>? selected)
-    {
-        var key = get("REMOTE_BOT_KEY");
-        if (selected is null && string.IsNullOrWhiteSpace(key))
-            return;
-        if (selected is not null && !selected.Contains("remote"))
-            return;
-
-        var site = get("REMOTE_SITE_URL");
-        if (string.IsNullOrWhiteSpace(site))
-        {
-            throw new BotConfigException(
-                "Для удалённого сервера нужен REMOTE_SITE_URL, например\n" +
-                "  REMOTE_SITE_URL=https://skam.su/vlalchillow");
-        }
-
-        var game = get("REMOTE_GAME_ADDRESS");
-        if (string.IsNullOrWhiteSpace(game))
-        {
-            throw new BotConfigException(
-                "Для удалённого сервера нужен REMOTE_GAME_ADDRESS, например\n" +
-                "  REMOTE_GAME_ADDRESS=212.164.115.37:7778");
-        }
-
-        servers.Add(new ServerProfile
-        {
-            Id = "remote",
-            Label = get("REMOTE_LABEL") ?? "Новосибирск",
-            ApiBaseUrl = NormalizeApiBase(site, "REMOTE_SITE_URL"),
-            BotKey = RequireKey(key, "REMOTE_BOT_KEY"),
-            GameAddress = NormalizeAddress(game),
-            KeyEnvName = "REMOTE_BOT_KEY",
-        });
-    }
-
-    private static void AddLocal(
-        List<ServerProfile> servers, Func<string, string?> get, HashSet<string>? selected)
-    {
-        var key = get("LOCAL_BOT_KEY");
-        if (selected is null && string.IsNullOrWhiteSpace(key))
-            return;
-        if (selected is not null && !selected.Contains("local"))
-            return;
-
-        var api = get("LOCAL_API_URL") ?? "http://127.0.0.1:8080";
-        var game = get("LOCAL_GAME_ADDRESS") ?? "127.0.0.1:7778";
-
-        servers.Add(new ServerProfile
-        {
-            Id = "local",
-            Label = get("LOCAL_LABEL") ?? "локальный сервер",
-            ApiBaseUrl = NormalizeApiBase(api, "LOCAL_API_URL"),
-            BotKey = RequireKey(key, "LOCAL_BOT_KEY"),
-            GameAddress = NormalizeAddress(game),
-            KeyEnvName = "LOCAL_BOT_KEY",
-        });
-    }
-
-    private static HashSet<string>? ParseServerList(string? value)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-            return null;
-
-        var result = new HashSet<string>(StringComparer.Ordinal);
-        foreach (var raw in value.Split(',', StringSplitOptions.RemoveEmptyEntries))
-        {
-            var id = raw.Trim().ToLowerInvariant();
-            if (id is not ("local" or "remote"))
-            {
-                throw new BotConfigException(
-                    $"BOT_SERVERS={value} — можно только local и remote через запятую.");
-            }
-
-            result.Add(id);
-        }
-
-        return result.Count == 0 ? null : result;
     }
 
     private static string FindEnvFile()

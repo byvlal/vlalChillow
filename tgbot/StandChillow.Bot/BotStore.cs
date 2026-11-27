@@ -2,10 +2,9 @@ using Microsoft.Data.Sqlite;
 
 namespace StandChillow.Bot;
 
-/// <summary>Привязка Telegram-пользователя к игроку на конкретном сервере.</summary>
+/// <summary>Привязка Telegram-пользователя к игроку.</summary>
 public sealed record UserBinding(
     long TelegramId,
-    string ServerId,
     int PlayerId,
     string Nick,
     string SessionToken,
@@ -17,8 +16,8 @@ public sealed record UserBinding(
 /// </summary>
 /// <remarks>
 /// <para>
-/// Ключ — пара <c>(telegram_id, server_id)</c>: один и тот же человек может быть
-/// привязан и к локальному серверу, и к Новосибирску, и это две разные сессии.
+/// Ключ — <c>telegram_id</c>: у человека одна активная привязка. Новый код из лобби
+/// заменяет её, а не добавляет вторую.
 /// </para>
 /// <para>
 /// Токен сессии лежит рядом с привязкой: бот переживает перезапуск и не просит код
@@ -55,111 +54,67 @@ public sealed class BotStore : IDisposable
     public void EnsureCreated()
     {
         using var connection = Open();
-        using var command = connection.CreateCommand();
-        command.CommandText = """
-            CREATE TABLE IF NOT EXISTS users (
-                telegram_id   INTEGER NOT NULL,
-                server_id     TEXT    NOT NULL,
-                player_id     INTEGER NOT NULL,
-                nick          TEXT    NOT NULL,
-                session_token TEXT    NOT NULL,
-                created_utc   TEXT    NOT NULL,
-                updated_utc   TEXT    NOT NULL,
-                PRIMARY KEY (telegram_id, server_id)
-            );
-            """;
-        command.ExecuteNonQuery();
+        using var transaction = connection.BeginTransaction();
 
+        // Старая версия хранила по строке на сервер. Оставляем самую свежую:
+        // у человека теперь одна привязка, а не набор серверов.
+        if (HasLegacyServerColumn(connection, transaction))
+            MigrateLegacy(connection, transaction);
+
+        using (var command = connection.CreateCommand())
+        {
+            command.Transaction = transaction;
+            command.CommandText = """
+                CREATE TABLE IF NOT EXISTS users (
+                    telegram_id   INTEGER NOT NULL PRIMARY KEY,
+                    player_id     INTEGER NOT NULL,
+                    nick          TEXT    NOT NULL,
+                    session_token TEXT    NOT NULL,
+                    created_utc   TEXT    NOT NULL,
+                    updated_utc   TEXT    NOT NULL
+                );
+                """;
+            command.ExecuteNonQuery();
+        }
+
+        transaction.Commit();
         TrySetMode(_path, UnixFileMode.UserRead | UnixFileMode.UserWrite);
     }
 
-    public UserBinding? Get(long telegramId, string serverId)
+    public UserBinding? Get(long telegramId)
     {
         using var connection = Open();
         using var command = connection.CreateCommand();
         command.CommandText = """
-            SELECT telegram_id, server_id, player_id, nick, session_token,
+            SELECT telegram_id, player_id, nick, session_token,
                    created_utc, updated_utc
             FROM users
-            WHERE telegram_id = $tg AND server_id = $server;
-            """;
-        command.Parameters.AddWithValue("$tg", telegramId);
-        command.Parameters.AddWithValue("$server", serverId);
-
-        using var reader = command.ExecuteReader();
-        return reader.Read() ? ReadBinding(reader) : null;
-    }
-
-    /// <summary>
-    /// Самая свежая привязка Telegram-пользователя — сервер, который он выбрал кодом
-    /// из лобби последним.
-    /// </summary>
-    /// <remarks>
-    /// После входа бот оставляет ровно одну привязку (<see cref="DeleteOthers"/>), но
-    /// в базе могли остаться строки от старой версии: тогда порядок по
-    /// <c>updated_utc</c> честно выбирает последнюю.
-    /// </remarks>
-    public UserBinding? GetActive(long telegramId)
-    {
-        using var connection = Open();
-        using var command = connection.CreateCommand();
-        command.CommandText = """
-            SELECT telegram_id, server_id, player_id, nick, session_token,
-                   created_utc, updated_utc
-            FROM users
-            WHERE telegram_id = $tg
-            ORDER BY updated_utc DESC
-            LIMIT 1;
+            WHERE telegram_id = $tg;
             """;
         command.Parameters.AddWithValue("$tg", telegramId);
 
         using var reader = command.ExecuteReader();
         return reader.Read() ? ReadBinding(reader) : null;
     }
-
-    /// <summary>Оставить только привязку к выбранному серверу: один человек — один сервер.</summary>
-    public void DeleteOthers(long telegramId, string keepServerId)
-    {
-        using var connection = Open();
-        using var command = connection.CreateCommand();
-        command.CommandText =
-            "DELETE FROM users WHERE telegram_id = $tg AND server_id <> $server;";
-        command.Parameters.AddWithValue("$tg", telegramId);
-        command.Parameters.AddWithValue("$server", keepServerId);
-        command.ExecuteNonQuery();
-    }
-
-    private static UserBinding ReadBinding(SqliteDataReader reader) =>
-        new(
-            reader.GetInt64(0),
-            reader.GetString(1),
-            reader.GetInt32(2),
-            reader.GetString(3),
-            reader.GetString(4),
-            DateTimeOffset.Parse(reader.GetString(5), null,
-                System.Globalization.DateTimeStyles.RoundtripKind),
-            DateTimeOffset.Parse(reader.GetString(6), null,
-                System.Globalization.DateTimeStyles.RoundtripKind));
 
     public void Upsert(
-        long telegramId, string serverId, int playerId, string nick, string sessionToken)
+        long telegramId, int playerId, string nick, string sessionToken)
     {
         var now = DateTimeOffset.UtcNow.ToString("O");
         using var connection = Open();
         using var command = connection.CreateCommand();
         command.CommandText = """
             INSERT INTO users (
-                telegram_id, server_id, player_id, nick, session_token,
+                telegram_id, player_id, nick, session_token,
                 created_utc, updated_utc)
-            VALUES ($tg, $server, $player, $nick, $token, $now, $now)
-            ON CONFLICT(telegram_id, server_id) DO UPDATE SET
+            VALUES ($tg, $player, $nick, $token, $now, $now)
+            ON CONFLICT(telegram_id) DO UPDATE SET
                 player_id = excluded.player_id,
                 nick = excluded.nick,
                 session_token = excluded.session_token,
                 updated_utc = excluded.updated_utc;
             """;
         command.Parameters.AddWithValue("$tg", telegramId);
-        command.Parameters.AddWithValue("$server", serverId);
         command.Parameters.AddWithValue("$player", playerId);
         command.Parameters.AddWithValue("$nick", nick);
         command.Parameters.AddWithValue("$token", sessionToken);
@@ -167,16 +122,77 @@ public sealed class BotStore : IDisposable
         command.ExecuteNonQuery();
     }
 
-    public void Delete(long telegramId, string serverId)
+    public void Delete(long telegramId)
     {
         using var connection = Open();
         using var command = connection.CreateCommand();
-        command.CommandText =
-            "DELETE FROM users WHERE telegram_id = $tg AND server_id = $server;";
+        command.CommandText = "DELETE FROM users WHERE telegram_id = $tg;";
         command.Parameters.AddWithValue("$tg", telegramId);
-        command.Parameters.AddWithValue("$server", serverId);
         command.ExecuteNonQuery();
     }
+
+    private static bool HasLegacyServerColumn(
+        SqliteConnection connection, SqliteTransaction transaction)
+    {
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "PRAGMA table_info(users);";
+
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            if (string.Equals(reader.GetString(1), "server_id", StringComparison.OrdinalIgnoreCase))
+                return true;
+        }
+
+        return false;
+    }
+
+    private static void MigrateLegacy(
+        SqliteConnection connection, SqliteTransaction transaction)
+    {
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = """
+            DROP TABLE IF EXISTS users_new;
+
+            CREATE TABLE users_new (
+                telegram_id   INTEGER NOT NULL PRIMARY KEY,
+                player_id     INTEGER NOT NULL,
+                nick          TEXT    NOT NULL,
+                session_token TEXT    NOT NULL,
+                created_utc   TEXT    NOT NULL,
+                updated_utc   TEXT    NOT NULL
+            );
+
+            INSERT INTO users_new (
+                telegram_id, player_id, nick, session_token, created_utc, updated_utc)
+            SELECT telegram_id, player_id, nick, session_token, created_utc, updated_utc
+            FROM users AS u
+            WHERE u.rowid = (
+                SELECT x.rowid
+                FROM users AS x
+                WHERE x.telegram_id = u.telegram_id
+                ORDER BY x.updated_utc DESC, x.rowid DESC
+                LIMIT 1
+            );
+
+            DROP TABLE users;
+            ALTER TABLE users_new RENAME TO users;
+            """;
+        command.ExecuteNonQuery();
+    }
+
+    private static UserBinding ReadBinding(SqliteDataReader reader) =>
+        new(
+            reader.GetInt64(0),
+            reader.GetInt32(1),
+            reader.GetString(2),
+            reader.GetString(3),
+            DateTimeOffset.Parse(reader.GetString(4), null,
+                System.Globalization.DateTimeStyles.RoundtripKind),
+            DateTimeOffset.Parse(reader.GetString(5), null,
+                System.Globalization.DateTimeStyles.RoundtripKind));
 
     private SqliteConnection Open()
     {

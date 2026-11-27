@@ -275,11 +275,11 @@ public sealed partial class TelegramBot
 
         try
         {
-            var profile = await PanelFor(binding).WhoAmIAsync(binding.SessionToken, ct);
+            var profile = await _panel.WhoAmIAsync(binding.SessionToken, ct);
             var text = Fmt.JoinLines(
                 $"👤 <b>{Fmt.E(profile.Nick)}</b>",
                 $"ID: {Fmt.E(profile.DisplayId)}",
-                $"Сервер: {Fmt.E(ProfileOf(binding)?.Label ?? binding.ServerId)}",
+                $"Сервер: {Fmt.E(_config.Label)}",
                 profile.Admin ? "👑 Администратор" : null);
 
             var keyboard = new InlineKeyboardMarkup(new[]
@@ -316,7 +316,7 @@ public sealed partial class TelegramBot
 
         try
         {
-            var stats = await PanelFor(binding).GetMyStatsAsync(binding.SessionToken, ct);
+            var stats = await _panel.GetMyStatsAsync(binding.SessionToken, ct);
             var text = Fmt.JoinLines(
                 "📊 <b>Статистика</b>",
                 $"Убийств: {stats.Kills}",
@@ -361,7 +361,7 @@ public sealed partial class TelegramBot
 
         try
         {
-            var response = await PanelFor(binding).GetMatchesAsync(targetId, 20, ct);
+            var response = await _panel.GetMatchesAsync(targetId, 20, ct);
             var matches = response.Matches;
 
             const int pageSize = 5;
@@ -430,11 +430,10 @@ public sealed partial class TelegramBot
     private async Task ShowMatchAsync(
         ChatTarget chat, int? messageId, int id, int playerId, CancellationToken ct)
     {
-        var server = SelectedServer(chat.UserId);
         var binding = ActiveBinding(chat.UserId);
         try
         {
-            var match = await PanelOf(server).GetMatchAsync(id, ct);
+            var match = await _panel.GetMatchAsync(id, ct);
 
             var text = new StringBuilder();
             text.AppendLine($"🏆 <b>Матч #{match.Id}</b>");
@@ -537,10 +536,9 @@ public sealed partial class TelegramBot
             return;
         }
 
-        var server = SelectedServer(chat.UserId);
         try
         {
-            var player = await PanelOf(server).GetPlayerAsync(text, ct);
+            var player = await _panel.GetPlayerAsync(text, ct);
             var body = Fmt.JoinLines(
                 $"👤 <b>{Fmt.E(player.Nick)}</b>",
                 $"ID: {Fmt.E(player.DisplayId)}",
@@ -694,7 +692,7 @@ public sealed partial class TelegramBot
 
         try
         {
-            var result = await PanelFor(binding).SubmitReportAsync(
+            var result = await _panel.SubmitReportAsync(
                 binding.SessionToken, wizard.TargetId, wizard.Category, reason, ct);
 
             State(chat.UserId).Wizard = null;
@@ -758,7 +756,7 @@ public sealed partial class TelegramBot
 
         try
         {
-            var response = await PanelFor(binding).GetMyReportsAsync(
+            var response = await _panel.GetMyReportsAsync(
                 binding.SessionToken, Math.Max(1, page), ct);
 
             const int pageSize = 5;
@@ -837,13 +835,12 @@ public sealed partial class TelegramBot
     private async Task ShowAdministrationAsync(
         ChatTarget chat, int? messageId, CancellationToken ct)
     {
-        var server = SelectedServer(chat.UserId);
         try
         {
-            var response = await PanelOf(server).GetAdministrationAsync(ct);
+            var response = await _panel.GetAdministrationAsync(ct);
             var text = new StringBuilder();
             text.AppendLine($"👑 <b>Администрация</b> · {response.Admins.Count}");
-            text.AppendLine($"Сервер: {Fmt.E(server.Label)}");
+            text.AppendLine($"Сервер: {Fmt.E(_config.Label)}");
 
             if (response.Admins.Count == 0)
             {
@@ -892,31 +889,14 @@ public sealed partial class TelegramBot
 
     private async Task ShowHelpAsync(ChatTarget chat, int? messageId, CancellationToken ct)
     {
-        var binding = ActiveBinding(chat.UserId);
-        string address;
-
-        if (binding is not null && ProfileOf(binding) is { } bound)
-        {
-            address =
-                $"2. Адрес твоего сервера: <code>{Fmt.E(bound.GameAddress)}</code>\n" +
-                $"   ({Fmt.E(bound.Label)})";
-        }
-        else
-        {
-            var lines = string.Join("\n", _config.Servers.Select(server =>
-                $"• {Fmt.E(server.Label)} — <code>{Fmt.E(server.GameAddress)}</code>"));
-            address = "2. Адрес сервера:\n" + lines;
-        }
-
         var text =
             "📖 <b>Как подключиться</b>\n\n" +
             "1. Запусти игру.\n" +
-            address + "\n" +
+            $"2. Адрес сервера: <code>{Fmt.E(_config.GameAddress)}</code>\n" +
+            $"   ({Fmt.E(_config.Label)})\n" +
             "3. Зайди в лобби и возьми код из 6 цифр.\n" +
             "4. Пришли код сюда — бот запомнит тебя.\n\n" +
             "Комнаты создаются кнопкой «Создать». Список комнат, статус и матчи — в меню.\n\n" +
-            "Сменить сервер: зайди в лобби другого сервера и пришли новый код — " +
-            "бот перепривяжется.\n\n" +
             "Код живёт 30 минут. Если сессия истекла, бот попросит новый код.";
 
         var keyboard = new InlineKeyboardMarkup(new[]
@@ -965,14 +945,14 @@ public sealed partial class TelegramBot
 
         try
         {
-            await PanelFor(binding).LogoutAsync(binding.SessionToken, ct);
+            await _panel.LogoutAsync(binding.SessionToken, ct);
         }
         catch (Exception ex)
         {
             Log($"logout: {ex.Message}");
         }
 
-        _store.Delete(chat.UserId, binding.ServerId);
+        _store.Delete(chat.UserId);
         State(chat.UserId).Wizard = null;
 
         await ShowAuthPromptAsync(
