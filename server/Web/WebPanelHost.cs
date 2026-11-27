@@ -54,6 +54,9 @@ public sealed class WebPanelHost : IDisposable
 
     /// <summary>Админы, пароли и права. Один на процесс: им пользуются сайт и игра.</summary>
     private readonly AdminStore _adminStore;
+
+    /// <summary>Постоянный ключ Telegram-бота: вход <c>/api/bot/*</c> и сброс из консоли.</summary>
+    private readonly BotKeyStore _botKey;
     private readonly SiteAddressResolver _addresses;
     private readonly WebPanelServer _server_;
     private readonly WebPanelRouter _router;
@@ -90,7 +93,10 @@ public sealed class WebPanelHost : IDisposable
     private const string MatchHistoryFileName = "matches.json";
 
     public WebPanelHost(
-        ServerConfig server, AvatarCache? avatars = null, AdminStore? adminStore = null)
+        ServerConfig server,
+        AvatarCache? avatars = null,
+        AdminStore? adminStore = null,
+        BotKeyStore? botKey = null)
     {
         _server = server;
         _config = server.Web;
@@ -107,6 +113,12 @@ public sealed class WebPanelHost : IDisposable
         _sessions = new SiteSessions(Path.Combine(authDirectory, "site-sessions.json"));
         _adminSessions = new AdminSessions(
             Path.Combine(authDirectory, "sessions.json"), _adminStore);
+
+        // Ключ бота: auth/tgbot/password.txt. Создаётся при первом старте, сброс —
+        // командой tgbot resetkey. В логи попадает только путь, не сам ключ.
+        _botKey = botKey ?? new BotKeyStore(
+            Path.Combine(authDirectory, BotKeyStore.DirectoryName), Console.WriteLine);
+        _botKey.LoadOrCreate();
 
         // Статистика живёт на диске рядом с exe: рестарт ничего не теряет.
         _stats = new PlayerStatsStore(Path.Combine(AppContext.BaseDirectory, StatsFileName));
@@ -184,6 +196,9 @@ public sealed class WebPanelHost : IDisposable
                 // История матчей: последние катки для профилей.
                 Matches = _history,
 
+                // Вход Telegram-бота: постоянный ключ, проверяется до всех данных.
+                BotKey = _botKey,
+
                 // ── Админ панель ──
                 AdminStore = _adminStore,
                 AdminSessionStore = _adminSessions,
@@ -252,6 +267,9 @@ public sealed class WebPanelHost : IDisposable
 
     /// <summary>Откуда брать адрес сайта для «создать можно здесь».</summary>
     public SiteAddressResolver SiteAddress => _addresses;
+
+    /// <summary>Ключ бота — тот же объект, что проверяет <c>/api/bot/*</c>.</summary>
+    public BotKeyStore BotKey => _botKey;
 
     /// <summary>
     /// Поднять панель. Провал бинда — не катастрофа: возвращаем <c>false</c> и причину,

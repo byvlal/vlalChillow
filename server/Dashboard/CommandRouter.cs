@@ -1,8 +1,10 @@
+using System.Text;
 using StandChillow.LanServer.Lan;
 using StandChillow.LanServer.Net;
 using StandChillow.LanServer.Net.Lobby;
 using StandChillow.LanServer.Net.Match;
 using StandChillow.LanServer.Plugins;
+using StandChillow.LanServer.Web;
 
 namespace StandChillow.LanServer.Dashboard;
 
@@ -17,11 +19,13 @@ public sealed class CommandRouter
     private readonly Action<string> _setLobbyTitle;
     private readonly Action _syncDiscovery;
     private readonly Action<string> _feedback;
+    private readonly BotKeyStore _botKey;
 
     public CommandRouter(
         GameNetHost game,
         PluginManager plugins,
         LanDiscoveryHost discovery,
+        BotKeyStore botKey,
         Func<LanDiscoveryInfo> getDiscoveryInfo,
         Action<LanDiscoveryInfo> setDiscoveryInfo,
         Action<string> setLobbyTitle,
@@ -36,6 +40,7 @@ public sealed class CommandRouter
         _setLobbyTitle = setLobbyTitle;
         _syncDiscovery = syncDiscovery;
         _feedback = feedback;
+        _botKey = botKey;
     }
 
     public bool Handle(string line)
@@ -128,6 +133,9 @@ public sealed class CommandRouter
                 }
                 break;
             }
+            case "tgbot":
+                HandleTgbot(parts.Length > 1 ? parts[1].Trim() : "");
+                break;
             default:
             {
                 // Plugin console commands first; else free text → lobby chat as Server.
@@ -142,4 +150,66 @@ public sealed class CommandRouter
         return true;
     }
 
+    /// <summary>
+    /// Консольные команды бота. Сброс ключа печатает сам ключ только в терминал
+    /// (<c>/dev/tty</c>), мимо дашборда и <c>latest.log</c>: ключ — секрет, а лог
+    /// переживает сессию и уезжает в бэкапы.
+    /// </summary>
+    private void HandleTgbot(string sub)
+    {
+        if (!sub.Equals("resetkey", StringComparison.OrdinalIgnoreCase)
+            && !sub.Equals("reset", StringComparison.OrdinalIgnoreCase))
+        {
+            _feedback("usage: tgbot resetkey — новый ключ бота (старый сразу перестанет работать)");
+            return;
+        }
+
+        var result = _botKey.Rotate();
+        if (!result.Ok)
+        {
+            _feedback($"[tgbot] не смог записать ключ: {result.Error}");
+            return;
+        }
+
+        _feedback($"[tgbot] ключ сброшен: {result.Path}");
+        var secret =
+            $"\n=== новый ключ бота (старый больше не работает) ===\n{result.Key}\n" +
+            "=== впиши его в REMOTE_BOT_KEY (или LOCAL_BOT_KEY) и перезапусти бота ===\n";
+        if (!TryWriteSecretToTty(secret))
+            _feedback("[tgbot] терминала нет — ключ лежит в файле выше");
+    }
+
+    /// <summary>
+    /// Записать секрет прямо в управляющий терминал. При запуске из systemd без TTY
+    /// честно возвращаем <c>false</c>: пусть человек возьмёт ключ из файла.
+    /// </summary>
+    private static bool TryWriteSecretToTty(string text)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            try
+            {
+                Console.Out.Write(text);
+                Console.Out.Flush();
+                return true;
+            }
+            catch (Exception)
+            {
+                return false;
+            }
+        }
+
+        try
+        {
+            using var tty = new FileStream(
+                "/dev/tty", FileMode.Open, FileAccess.Write, FileShare.ReadWrite);
+            using var writer = new StreamWriter(tty, new UTF8Encoding(false)) { AutoFlush = true };
+            writer.Write(text);
+            return true;
+        }
+        catch (Exception)
+        {
+            return false;
+        }
+    }
 }

@@ -239,7 +239,8 @@ public static class HostBootstrap
                 : "Captures: off (debug.captures)");
         Console.WriteLine($"Config: {ServerConfig.LastLoadedPath}");
         Console.WriteLine(
-            "Commands: play|start|end|mode|map|set|help|status|binds|roster|plugins|auth|whoami|quit");
+            "Commands: play|start|end|mode|map|set|help|status|binds|roster|plugins|auth|whoami|" +
+            "tgbot resetkey|quit");
         Console.WriteLine($"  defaults: {MatchHostSettings.FormatStatusLine()}");
         if (MatchHostSettings.DebugMatchChat)
             Console.WriteLine("  debug-chat: ON — Server posts plant/kill/round-end into lobby chat");
@@ -303,6 +304,7 @@ public static class HostBootstrap
             game,
             plugins,
             discovery,
+            botKey: web.BotKey,
             getDiscoveryInfo: () => current,
             setDiscoveryInfo: value => current = value,
             setLobbyTitle: title =>
