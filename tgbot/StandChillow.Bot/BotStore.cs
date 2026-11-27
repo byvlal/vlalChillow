@@ -87,10 +87,50 @@ public sealed class BotStore : IDisposable
         command.Parameters.AddWithValue("$server", serverId);
 
         using var reader = command.ExecuteReader();
-        if (!reader.Read())
-            return null;
+        return reader.Read() ? ReadBinding(reader) : null;
+    }
 
-        return new UserBinding(
+    /// <summary>
+    /// Самая свежая привязка Telegram-пользователя — сервер, который он выбрал кодом
+    /// из лобби последним.
+    /// </summary>
+    /// <remarks>
+    /// После входа бот оставляет ровно одну привязку (<see cref="DeleteOthers"/>), но
+    /// в базе могли остаться строки от старой версии: тогда порядок по
+    /// <c>updated_utc</c> честно выбирает последнюю.
+    /// </remarks>
+    public UserBinding? GetActive(long telegramId)
+    {
+        using var connection = Open();
+        using var command = connection.CreateCommand();
+        command.CommandText = """
+            SELECT telegram_id, server_id, player_id, nick, session_token,
+                   created_utc, updated_utc
+            FROM users
+            WHERE telegram_id = $tg
+            ORDER BY updated_utc DESC
+            LIMIT 1;
+            """;
+        command.Parameters.AddWithValue("$tg", telegramId);
+
+        using var reader = command.ExecuteReader();
+        return reader.Read() ? ReadBinding(reader) : null;
+    }
+
+    /// <summary>Оставить только привязку к выбранному серверу: один человек — один сервер.</summary>
+    public void DeleteOthers(long telegramId, string keepServerId)
+    {
+        using var connection = Open();
+        using var command = connection.CreateCommand();
+        command.CommandText =
+            "DELETE FROM users WHERE telegram_id = $tg AND server_id <> $server;";
+        command.Parameters.AddWithValue("$tg", telegramId);
+        command.Parameters.AddWithValue("$server", keepServerId);
+        command.ExecuteNonQuery();
+    }
+
+    private static UserBinding ReadBinding(SqliteDataReader reader) =>
+        new(
             reader.GetInt64(0),
             reader.GetString(1),
             reader.GetInt32(2),
@@ -100,7 +140,6 @@ public sealed class BotStore : IDisposable
                 System.Globalization.DateTimeStyles.RoundtripKind),
             DateTimeOffset.Parse(reader.GetString(6), null,
                 System.Globalization.DateTimeStyles.RoundtripKind));
-    }
 
     public void Upsert(
         long telegramId, string serverId, int playerId, string nick, string sessionToken)

@@ -151,7 +151,7 @@ public sealed class PanelClient : IDisposable
     public async Task<RoomCard> GetRoomAsync(int number, CancellationToken ct = default)
     {
         using var response = await SendRawAsync(
-            HttpMethod.Get, UriFor($"api/rooms/{number}"), token: null, body: null, ct);
+            HttpMethod.Get, UriFor($"api/room/{number}"), token: null, body: null, ct);
         var wrapper = await ReadAsync<RoomResponse>(response, ct);
         return wrapper.Room;
     }

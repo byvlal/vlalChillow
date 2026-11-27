@@ -8,24 +8,38 @@ try
     using var store = new BotStore(config.DbPath);
     store.EnsureCreated();
 
-    using var panel = new PanelClient(new PanelClientOptions
+    // По клиенту на сервер: у локального стенда и у Новосибирска свои ключи и адреса.
+    // Какой из них обслуживать, решает код из лобби, а не режим в .env.
+    var panels = new Dictionary<string, PanelClient>(StringComparer.Ordinal);
+    try
     {
-        BaseUrl = new Uri(config.ApiBaseUrl),
-        BotKey = config.BotKey,
-        Timeout = config.ApiTimeout,
-    });
+        foreach (var server in config.Servers)
+        {
+            panels[server.Id] = new PanelClient(new PanelClientOptions
+            {
+                BaseUrl = new Uri(server.ApiBaseUrl),
+                BotKey = server.BotKey,
+                Timeout = config.ApiTimeout,
+            });
+        }
 
-    var bot = new TelegramBot(config, store, panel);
+        var bot = new TelegramBot(config, store, panels);
 
-    using var cts = new CancellationTokenSource();
-    Console.CancelKeyPress += (_, args) =>
+        using var cts = new CancellationTokenSource();
+        Console.CancelKeyPress += (_, args) =>
+        {
+            args.Cancel = true;
+            cts.Cancel();
+        };
+        AppDomain.CurrentDomain.ProcessExit += (_, _) => cts.Cancel();
+
+        await bot.RunAsync(cts.Token);
+    }
+    finally
     {
-        args.Cancel = true;
-        cts.Cancel();
-    };
-    AppDomain.CurrentDomain.ProcessExit += (_, _) => cts.Cancel();
-
-    await bot.RunAsync(cts.Token);
+        foreach (var panel in panels.Values)
+            panel.Dispose();
+    }
 }
 catch (BotConfigException ex)
 {

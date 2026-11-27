@@ -20,6 +20,10 @@
   </ItemGroup>
 
   <ItemGroup>
+    <InternalsVisibleTo Include="StandChillow.Bot.Tests" />
+  </ItemGroup>
+
+  <ItemGroup>
     <None Include="../.env.example" Link=".env.example"
           CopyToOutputDirectory="PreserveNewest"
           CopyToPublishDirectory="PreserveNewest" />

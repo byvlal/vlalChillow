@@ -30,16 +30,17 @@ public sealed partial class TelegramBot
 {
     private readonly BotConfig _config;
     private readonly BotStore _store;
-    private readonly PanelClient _panel;
+    private readonly IReadOnlyDictionary<string, PanelClient> _panels;
     private readonly ITelegramBotClient _bot;
     private readonly ConcurrentDictionary<long, UserState> _states = new();
     private readonly ConcurrentDictionary<long, SemaphoreSlim> _locks = new();
 
-    public TelegramBot(BotConfig config, BotStore store, PanelClient panel)
+    public TelegramBot(
+        BotConfig config, BotStore store, IReadOnlyDictionary<string, PanelClient> panels)
     {
         _config = config;
         _store = store;
-        _panel = panel;
+        _panels = panels;
 
         HttpClient? http = null;
         if (!string.IsNullOrWhiteSpace(config.TelegramProxy))
@@ -58,7 +59,12 @@ public sealed partial class TelegramBot
 
     public async Task RunAsync(CancellationToken ct)
     {
-        Log($"режим {_config.Mode}: панель {_config.ApiBaseUrl}, игра {_config.GameAddress}");
+        foreach (var server in _config.Servers)
+        {
+            Log($"сервер {server.Id} ({server.Label}): панель {server.ApiBaseUrl}, " +
+                $"игра {server.GameAddress}");
+        }
+
         Log($"база: {_config.DbPath}");
 
         try
@@ -80,14 +86,17 @@ public sealed partial class TelegramBot
             Log($"не смог представиться: {ex.Message}");
         }
 
-        try
+        foreach (var server in _config.Servers)
         {
-            var handshake = await _panel.HandshakeAsync(ct);
-            Log($"панель ответила: {handshake.Service}, api {handshake.Api}");
-        }
-        catch (Exception ex)
-        {
-            Log($"панель пока не отвечает: {ex.Message}");
+            try
+            {
+                var handshake = await PanelOf(server).HandshakeAsync(ct);
+                Log($"панель {server.Id} ответила: {handshake.Service}, api {handshake.Api}");
+            }
+            catch (Exception ex)
+            {
+                Log($"панель {server.Id} пока не отвечает: {ex.Message}");
+            }
         }
 
         var receiver = new ReceiverOptions
@@ -199,7 +208,7 @@ public sealed partial class TelegramBot
                 return;
         }
 
-        var binding = _store.Get(chatId, _config.ServerId);
+        var binding = ActiveBinding(chatId);
         if (binding is null)
         {
             if (IsLobbyCode(text))
@@ -222,7 +231,7 @@ public sealed partial class TelegramBot
     private async Task OnStartAsync(long chatId, CancellationToken ct)
     {
         State(chatId).Wizard = null;
-        if (_store.Get(chatId, _config.ServerId) is not null)
+        if (ActiveBinding(chatId) is not null)
         {
             await ShowMenuAsync(chatId, null, ct);
             return;
@@ -245,42 +254,97 @@ public sealed partial class TelegramBot
             // «печатает» — украшение, а не условие входа.
         }
 
-        try
-        {
-            var result = await _panel.AuthenticateAsync(code, ct);
-            _store.Upsert(
-                chatId, _config.ServerId,
-                result.Profile.Id, result.Profile.Nick, result.Token);
+        var keyProblems = new List<ServerProfile>();
+        var unreachable = new List<ServerProfile>();
+        var otherFailures = new List<string>();
 
-            await ShowMenuAsync(
-                chatId, null, ct,
-                $"✅ Ты в игре как <b>{Fmt.E(result.Profile.Nick)}</b>.");
-        }
-        catch (PanelApiException ex)
+        // Код принадлежит тому серверу, где игрок стоит в лобби. Проверяем все
+        // настроенные серверы по очереди: где приняли — туда и привязываемся.
+        foreach (var server in _config.Servers)
         {
-            var text = ex.Code switch
+            try
             {
-                "bad_code" =>
-                    "Код не подошёл или уже истёк.\n" +
-                    "Зайди в лобби ещё раз — там будет новый код из 6 цифр.",
-                "banned" => "Аккаунт забанен. Вход закрыт.",
-                "bad_bot_key" or "bot_disabled" or "bot_key_unavailable" =>
-                    "Сервер не принял ключ бота.\n" +
-                    "Владельцу: проверь <code>LOCAL_BOT_KEY</code> / " +
-                    "<code>REMOTE_BOT_KEY</code>, при необходимости " +
-                    "<code>tgbot resetkey</code>.",
-                _ => $"Не получилось войти: {Fmt.E(ex.Message)}",
-            };
-            await SendAsync(chatId, text, AuthKeyboard(), ct);
+                var result = await PanelOf(server).AuthenticateAsync(code, ct);
+                _store.Upsert(
+                    chatId, server.Id,
+                    result.Profile.Id, result.Profile.Nick, result.Token);
+                _store.DeleteOthers(chatId, server.Id);
+                State(chatId).Wizard = null;
+
+                await ShowMenuAsync(
+                    chatId, null, ct,
+                    $"✅ Ты в игре как <b>{Fmt.E(result.Profile.Nick)}</b>.\n" +
+                    $"Сервер: {Fmt.E(server.Label)}.");
+                return;
+            }
+            catch (PanelApiException ex) when (ex.Code == "bad_code")
+            {
+                // Код не от этого сервера — проверяем следующий.
+            }
+            catch (PanelApiException ex) when (ex.IsBotKeyProblem)
+            {
+                Log($"auth {server.Id}: ключ бота не принят ({ex.Code})");
+                keyProblems.Add(server);
+            }
+            catch (PanelApiException ex) when (ex.Code == "banned")
+            {
+                await SendAsync(
+                    chatId,
+                    $"Аккаунт забанен на сервере «{Fmt.E(server.Label)}». Вход закрыт.",
+                    AuthKeyboard(), ct);
+                return;
+            }
+            catch (PanelApiException ex)
+            {
+                Log($"auth {server.Id}: {ex.Code}: {ex.Message}");
+                otherFailures.Add($"{server.Label}: {ex.Message}");
+            }
+            catch (Exception ex)
+            {
+                Log($"auth {server.Id}: {ex.Message}");
+                unreachable.Add(server);
+            }
         }
-        catch (Exception ex)
+
+        if (keyProblems.Count > 0)
         {
-            Log($"auth: {ex.Message}");
+            var lines = keyProblems.Select(server =>
+                $"• {Fmt.E(server.Label)} — <code>{Fmt.E(server.KeyEnvName)}</code>");
             await SendAsync(
                 chatId,
-                "Сервер не отвечает. Проверь, что он запущен, и попробуй ещё раз.",
+                "Сервер не принял ключ бота.\n" +
+                string.Join("\n", lines) + "\n\n" +
+                "Владельцу: проверь ключ в <code>.env</code> и перезапусти бота.\n" +
+                "Новый ключ выдаёт <code>tgbot resetkey</code>.",
                 AuthKeyboard(), ct);
+            return;
         }
+
+        if (unreachable.Count > 0)
+        {
+            var names = string.Join(", ", unreachable.Select(server => server.Label));
+            await SendAsync(
+                chatId,
+                $"Не смог проверить код: {Fmt.E(names)} не отвечает.\n" +
+                "Попробуй ещё раз через минуту.",
+                AuthKeyboard(), ct);
+            return;
+        }
+
+        if (otherFailures.Count > 0)
+        {
+            await SendAsync(
+                chatId,
+                $"Не получилось войти: {Fmt.E(otherFailures[0])}",
+                AuthKeyboard(), ct);
+            return;
+        }
+
+        await SendAsync(
+            chatId,
+            "Код не подошёл или уже истёк.\n" +
+            "Зайди в лобби ещё раз — там будет новый код из 6 цифр.",
+            AuthKeyboard(), ct);
     }
 
     // ── меню ────────────────────────────────────────────────────────────────
@@ -296,7 +360,7 @@ public sealed partial class TelegramBot
             prefix,
             "<b>влалChillow</b>",
             $"Ты в игре как <b>{Fmt.E(binding.Nick)}</b> (ID {binding.PlayerId}).",
-            $"Сервер: {Fmt.E(_config.ServerLabel)}",
+            $"Сервер: {Fmt.E(ProfileOf(binding)?.Label ?? binding.ServerId)}",
             "",
             "Выбери, что нужно:");
 
@@ -351,16 +415,18 @@ public sealed partial class TelegramBot
     private async Task ShowAuthPromptAsync(
         long chatId, int? messageId, CancellationToken ct, string? prefix = null)
     {
-        var text = Fmt.JoinLines(
-            prefix,
-            "👋 Привет! Это бот <b>влалChillow</b>.",
-            "",
-            "Чтобы войти:",
-            "1. Запусти игру и зайди в лобби.",
-            "2. Возьми там код из 6 цифр.",
-            "3. Пришли код сюда.",
-            "",
-            "Код живёт 30 минут. Бот запомнит тебя и не будет спрашивать каждый раз.");
+        var addresses = string.Join("\n", _config.Servers.Select(server =>
+            $"• {Fmt.E(server.Label)} — <code>{Fmt.E(server.GameAddress)}</code>"));
+
+        var text =
+            (string.IsNullOrWhiteSpace(prefix) ? string.Empty : prefix + "\n\n") +
+            "👋 Привет! Это бот <b>влалChillow</b>.\n\n" +
+            "Чтобы войти:\n" +
+            "1. Запусти игру и зайди в лобби.\n" +
+            "2. Возьми там код из 6 цифр.\n" +
+            "3. Пришли код сюда.\n\n" +
+            "Серверы:\n" + addresses + "\n\n" +
+            "Код живёт 30 минут. Бот запомнит тебя и не будет спрашивать каждый раз.";
 
         await EditOrSendAsync(chatId, messageId, text, AuthKeyboard(), ct);
     }
@@ -369,11 +435,12 @@ public sealed partial class TelegramBot
 
     private async Task ShowStatusAsync(long chatId, int? messageId, CancellationToken ct)
     {
+        var server = SelectedServer(chatId);
         try
         {
-            var status = await _panel.GetStatusAsync(ct);
+            var status = await PanelOf(server).GetStatusAsync(ct);
             var text = Fmt.JoinLines(
-                "🟢 <b>Сервер в сети</b>",
+                $"🟢 <b>{Fmt.E(server.Label)}</b> · в сети",
                 $"В лобби: {status.OnlineLobby}",
                 $"В бою: {status.OnlineMatch}",
                 $"Комнат: {status.RoomsCount} / {status.RoomsMax}",
@@ -386,7 +453,7 @@ public sealed partial class TelegramBot
                         ? "Игровой порт ждёт следующей комнаты."
                         : null,
                 "",
-                $"Адрес: <code>{Fmt.E(_config.GameAddress)}</code>");
+                $"Адрес: <code>{Fmt.E(server.GameAddress)}</code>");
 
             var keyboard = new InlineKeyboardMarkup(new[]
             {
@@ -414,10 +481,11 @@ public sealed partial class TelegramBot
     private async Task ShowRoomsAsync(
         long chatId, int? messageId, int page, CancellationToken ct)
     {
+        var server = SelectedServer(chatId);
+        var binding = ActiveBinding(chatId);
         try
         {
-            var binding = _store.Get(chatId, _config.ServerId);
-            var response = await _panel.GetRoomsAsync(binding?.SessionToken, ct);
+            var response = await PanelOf(server).GetRoomsAsync(binding?.SessionToken, ct);
 
             var rooms = response.Rooms
                 .OrderByDescending(room => room.IsMine)
@@ -430,6 +498,7 @@ public sealed partial class TelegramBot
 
             var text = new StringBuilder();
             text.AppendLine($"🎮 <b>Комнаты</b> · {rooms.Count} / {response.MaxRooms}");
+            text.AppendLine($"Сервер: {Fmt.E(server.Label)}");
             if (rooms.Count == 0)
             {
                 text.AppendLine();
@@ -492,11 +561,12 @@ public sealed partial class TelegramBot
             if (binding is null)
                 return;
 
-            var room = await _panel.GetRoomAsync(number, ct);
+            var room = await PanelFor(binding).GetRoomAsync(number, ct);
             var mine = room.Owner.Id == binding.PlayerId;
 
             var text = new StringBuilder();
             text.AppendLine($"🎮 <b>Комната #{room.Number}</b>");
+            text.AppendLine($"Сервер: {Fmt.E(ProfileOf(binding)?.Label ?? binding.ServerId)}");
             text.AppendLine($"{Fmt.State(room.State)} · {Fmt.E(room.ModeName)}");
             text.AppendLine($"Карта: {Fmt.E(room.Map)}");
             text.AppendLine($"Название: {Fmt.E(room.Name)}");
@@ -596,7 +666,7 @@ public sealed partial class TelegramBot
 
         try
         {
-            await _panel.EndRoomAsync(binding.SessionToken, number, ct);
+            await PanelFor(binding).EndRoomAsync(binding.SessionToken, number, ct);
             var text =
                 $"✅ Комната <b>#{number}</b> завершена.\n" +
                 "Игроки вернулись в лобби.";
@@ -625,9 +695,13 @@ public sealed partial class TelegramBot
     private async Task ShowCreateModesAsync(
         long chatId, int? messageId, CancellationToken ct)
     {
+        var binding = await RequireBindingAsync(chatId, messageId, ct);
+        if (binding is null)
+            return;
+
         try
         {
-            var modes = (await _panel.GetModesAsync(ct)).Modes
+            var modes = (await PanelFor(binding).GetModesAsync(ct)).Modes
                 .Where(mode => mode.Implemented)
                 .ToList();
 
@@ -678,6 +752,10 @@ public sealed partial class TelegramBot
     private async Task ShowCreateMapsAsync(
         long chatId, int? messageId, string modeId, CancellationToken ct)
     {
+        var binding = await RequireBindingAsync(chatId, messageId, ct);
+        if (binding is null)
+            return;
+
         try
         {
             var state = State(chatId);
@@ -686,7 +764,7 @@ public sealed partial class TelegramBot
 
             if (mode is null || !mode.Id.Equals(modeId, StringComparison.Ordinal))
             {
-                var modes = (await _panel.GetModesAsync(ct)).Modes;
+                var modes = (await PanelFor(binding).GetModesAsync(ct)).Modes;
                 mode = modes.FirstOrDefault(m => m.Id.Equals(modeId, StringComparison.Ordinal));
                 if (mode is null)
                 {
@@ -846,7 +924,7 @@ public sealed partial class TelegramBot
 
         try
         {
-            var created = await _panel.CreateRoomAsync(
+            var created = await PanelFor(binding).CreateRoomAsync(
                 binding.SessionToken,
                 new CreateRoomRequest
                 {
@@ -911,12 +989,50 @@ public sealed partial class TelegramBot
         }
     }
 
+    // ── выбор сервера ───────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Привязка человека к серверу, который он выбрал кодом из лобби. Сервер мог
+    /// исчезнуть из <c>.env</c> — тогда привязка не считается рабочей.
+    /// </summary>
+    private UserBinding? ActiveBinding(long chatId)
+    {
+        var binding = _store.GetActive(chatId);
+        if (binding is null)
+            return null;
+        return _config.FindServer(binding.ServerId) is null ? null : binding;
+    }
+
+    private ServerProfile? ProfileOf(UserBinding binding) =>
+        _config.FindServer(binding.ServerId);
+
+    /// <summary>Сервер привязки, а до входа — первый настроенный (Новосибирск).</summary>
+    private ServerProfile SelectedServer(long chatId)
+    {
+        var binding = ActiveBinding(chatId);
+        if (binding is not null && ProfileOf(binding) is { } bound)
+            return bound;
+        return _config.Servers[0];
+    }
+
+    private PanelClient PanelOf(ServerProfile server) =>
+        _panels.TryGetValue(server.Id, out var panel)
+            ? panel
+            : throw new InvalidOperationException(
+                $"нет клиента панели для сервера {server.Id}");
+
+    private PanelClient PanelFor(UserBinding binding) =>
+        _panels.TryGetValue(binding.ServerId, out var panel)
+            ? panel
+            : throw new InvalidOperationException(
+                $"нет клиента панели для сервера {binding.ServerId}");
+
     // ── общие ответы ────────────────────────────────────────────────────────
 
     private async Task<UserBinding?> RequireBindingAsync(
         long chatId, int? messageId, CancellationToken ct)
     {
-        var binding = _store.Get(chatId, _config.ServerId);
+        var binding = ActiveBinding(chatId);
         if (binding is not null && !string.IsNullOrWhiteSpace(binding.SessionToken))
             return binding;
 
@@ -928,21 +1044,24 @@ public sealed partial class TelegramBot
         long chatId, int? messageId, PanelApiException ex,
         string? retryData, CancellationToken ct)
     {
+        var binding = ActiveBinding(chatId);
         if (ex.IsAuthLost)
         {
-            _store.Delete(chatId, _config.ServerId);
+            if (binding is not null)
+                _store.Delete(chatId, binding.ServerId);
             await ShowAuthPromptAsync(
                 chatId, messageId, ct,
                 "🔒 Сессия истекла. Зайди в лобби и пришли новый код из 6 цифр.");
             return;
         }
 
+        var server = SelectedServer(chatId);
         var text = ex.Code switch
         {
             "bad_bot_key" or "bot_disabled" or "bot_key_unavailable" =>
-                "Сервер не принял ключ бота.\n" +
-                "Владельцу: проверь ключ в <code>.env</code>; новый выдаёт " +
-                "<code>tgbot resetkey</code>.",
+                $"Сервер «{Fmt.E(server.Label)}» не принял ключ бота.\n" +
+                $"Владельцу: проверь <code>{Fmt.E(server.KeyEnvName)}</code> в " +
+                "<code>.env</code>; новый выдаёт <code>tgbot resetkey</code>.",
             "player_offline" =>
                 "Тебя нет в лобби. Зайди в игру и попробуй снова.",
             "banned" =>
@@ -962,9 +1081,10 @@ public sealed partial class TelegramBot
         long chatId, int? messageId, Exception ex,
         string? retryData, CancellationToken ct)
     {
-        Log($"сеть: {ex.Message}");
+        var server = SelectedServer(chatId);
+        Log($"сеть {server.Id}: {ex.Message}");
         var text =
-            "Сервер не отвечает.\n" +
+            $"Сервер «{Fmt.E(server.Label)}» не отвечает.\n" +
             "Проверь, что игра запущена, и попробуй ещё раз.";
         var keyboard = retryData is null ? MenuKeyboard() : RetryKeyboard(retryData);
         await EditOrSendAsync(chatId, messageId, text, keyboard, ct);
