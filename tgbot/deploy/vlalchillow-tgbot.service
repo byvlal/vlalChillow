@@ -1,0 +1,29 @@
+[Unit]
+Description=влалChillow Telegram bot
+Documentation=https://github.com/byvlal/vlalChillow
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=vlal
+Group=vlal
+WorkingDirectory=/opt/vlalchillow-tgbot
+ExecStart=/usr/bin/env dotnet /opt/vlalchillow-tgbot/StandChillow.Bot.dll
+Restart=always
+RestartSec=5
+TimeoutStopSec=15
+
+# Боту нужны только свой каталог и база. Остальная система — только на чтение.
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/vlalchillow-tgbot/data
+
+Environment=DOTNET_CLI_TELEMETRY_OPTOUT=1
+Environment=DOTNET_NOLOGO=1
+Environment=TZ=Asia/Novosibirsk
+
+[Install]
+WantedBy=multi-user.target

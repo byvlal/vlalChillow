@@ -15,6 +15,7 @@
 .env
 .env.*
 **/.env
+!**/.env.example
 **/config.json
 !**/config.example.json
 
@@ -47,3 +48,10 @@ auth.txt
 .DS_Store
 Thumbs.db
 *~
+
+# Telegram bot runtime state (local only)
+tgbot/**/data/
+tgbot/**/*.db
+tgbot/**/*.db-wal
+tgbot/**/*.db-shm
+tgbot/publish/

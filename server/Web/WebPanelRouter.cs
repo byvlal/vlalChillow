@@ -59,6 +59,11 @@ public sealed partial class WebPanelRouter
     {
         var path = NormalizePath(request.Path, _options.BasePath);
 
+        // Telegram-бот: отдельный вход по постоянному ключу. Проверка стоит до всех
+        // маршрутов — без ключа бот не видит даже того, какие пути существуют.
+        if (IsBotPath(path))
+            return BotRoute(request, path);
+
         // Страница и её данные — только чтение, доступны всем.
         if (request.Method == "GET" && (path == "/" || path == "/index.html"))
             return WebResponse.Html(IndexHtml());
@@ -771,6 +776,14 @@ public sealed class WebPanelRouterOptions
     /// подключён, страница не должна показывать пустоту как «админов нет».
     /// </summary>
     public Func<IReadOnlyList<ReportTarget>?>? AdministrationList { get; init; }
+
+    // ── Telegram-бот ─────────────────────────────────────────────────────────────
+
+    /// <summary>
+    /// Постоянный ключ бота (<c>auth/tgbot/password.txt</c>). <c>null</c> — вход
+    /// <c>/api/bot/*</c> закрыт: сервер не настроен для бота (503).
+    /// </summary>
+    public BotKeyStore? BotKey { get; init; }
 
     // ── Админ панель ─────────────────────────────────────────────────────────────
 
