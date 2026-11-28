@@ -16,6 +16,22 @@ namespace StandChillow.LanServer.Stats;
 public sealed record PlayerStatsSnapshot(
     int Id, string Nick, long Kills, long Deaths, long Seconds, long Matches);
 
+/// <summary>По какой метрике строится таблица лидеров (#/top).</summary>
+public enum LeaderboardSort
+{
+    /// <summary>Всего киллов — метрика по умолчанию.</summary>
+    Kills,
+
+    /// <summary>K/D: киллы на смерть (без смертей — по киллам).</summary>
+    Kd,
+
+    /// <summary>Время в живых матчах.</summary>
+    Seconds,
+
+    /// <summary>Сколько забегов комнат отыграно.</summary>
+    Matches,
+}
+
 /// <summary>
 /// Статистика игроков: киллы, смерти, время в матчах, уникальные матчи — на диске.
 /// </summary>
@@ -247,6 +263,67 @@ public sealed class PlayerStatsStore
             return new PlayerStatsSnapshot(id, e.Nick, e.Kills, e.Deaths, e.Seconds, e.Matches);
         }
     }
+
+    /// <summary>
+    /// Срез таблицы лидеров. В зачёт идут только те, кто реально играл: ноль киллов
+    /// и ноль матчей — это запись «засветился в лобби», а не игрок рейтинга.
+    /// </summary>
+    /// <remarks>
+    /// Читает память под тем же <c>_gate</c>, что и запись: сортировка по копии
+    /// не мешает матчу писать статистику. Ничьи разбиваются киллами, потом ником —
+    /// порядок строк не должен прыгать между двумя запросами подряд.
+    /// </remarks>
+    public IReadOnlyList<PlayerStatsSnapshot> Top(LeaderboardSort sort, int limit)
+    {
+        limit = Math.Clamp(limit, 1, 100);
+        lock (_gate)
+        {
+            var rows = new List<PlayerStatsSnapshot>(_players.Count);
+            foreach (var (id, e) in _players)
+            {
+                if (e.Matches <= 0 && e.Kills <= 0)
+                    continue;
+                if (string.IsNullOrWhiteSpace(e.Nick))
+                    continue;
+                rows.Add(new PlayerStatsSnapshot(id, e.Nick, e.Kills, e.Deaths, e.Seconds, e.Matches));
+            }
+
+            rows.Sort((a, b) => Compare(a, b, sort));
+            if (rows.Count > limit)
+                rows.RemoveRange(limit, rows.Count - limit);
+            return rows;
+        }
+    }
+
+    private static int Compare(PlayerStatsSnapshot a, PlayerStatsSnapshot b, LeaderboardSort sort)
+    {
+        var bySort = sort switch
+        {
+            LeaderboardSort.Kd => Kd(b).CompareTo(Kd(a)),
+            LeaderboardSort.Seconds => b.Seconds.CompareTo(a.Seconds),
+            LeaderboardSort.Matches => b.Matches.CompareTo(a.Matches),
+            _ => b.Kills.CompareTo(a.Kills),
+        };
+        if (bySort != 0)
+            return bySort;
+
+        var byKills = b.Kills.CompareTo(a.Kills);
+        if (byKills != 0)
+            return byKills;
+
+        var byMatches = b.Matches.CompareTo(a.Matches);
+        if (byMatches != 0)
+            return byMatches;
+
+        return string.Compare(a.Nick, b.Nick, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// K/D для рейтинга. Смертей нет — считаем по киллам, как и в публичном профиле:
+    /// одна и та же цифра не должна значить разное на двух страницах.
+    /// </summary>
+    public static double Kd(PlayerStatsSnapshot row) =>
+        row.Deaths > 0 ? Math.Round((double)row.Kills / row.Deaths, 2) : row.Kills;
 
     /// <summary>Сохранить немедленно, если есть что сохранять. Зовут на остановке.</summary>
     public void Flush()

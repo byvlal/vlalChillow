@@ -17,6 +17,7 @@
 | admin | 0.37.1 | конь, красно-синий | https://static.wikia.nocookie.net/standoff-2/images/b/b8/%D0%97%D0%B0%D0%B4%D0%BD%D0%B8%D0%B9_%D1%84%D0%BE%D0%BD_%D0%B3%D0%BB%D0%B0%D0%B2%D0%BD%D0%BE%D0%B3%D0%BE_%D0%BC%D0%B5%D0%BD%D1%8E_0.37.1.png/revision/latest/scale-to-width-down/1280?cb=20260213113935&path-prefix=ru |
 | reports | 1.1.0 | красно-синий демон | https://static.wikia.nocookie.net/standoff-2/images/0/01/%D0%97%D0%B0%D0%B4%D0%BD%D0%B8%D0%B9_%D1%84%D0%BE%D0%BD_%D0%B3%D0%BB%D0%B0%D0%B2%D0%BD%D0%BE%D0%B3%D0%BE_%D0%BC%D0%B5%D0%BD%D1%8E_1.1.0.png/revision/latest/scale-to-width-down/1280?cb=20261031090539&path-prefix=ru |
 | administration | 1.0.0 | фараон, золото-синий | https://static.wikia.nocookie.net/standoff-2/images/1/1a/%D0%97%D0%B0%D0%B4%D0%BD%D0%B8%D0%B9_%D1%84%D0%BE%D0%BD_%D0%B3%D0%BB%D0%B0%D0%B2%D0%BD%D0%BE%D0%B3%D0%BE_%D0%BC%D0%B5%D0%BD%D1%8E_1.0.0.png/revision/latest/scale-to-width-down/1280?cb=20260927163617&path-prefix=ru |
+| top | 0.39.0 | синий неон, «9 лет» | https://static.wikia.nocookie.net/standoff-2/images/5/59/%D0%97%D0%B0%D0%B4%D0%BD%D0%B8%D0%B9_%D1%84%D0%BE%D0%BD_%D0%B3%D0%BB%D0%B0%D0%B2%D0%BD%D0%BE%D0%B3%D0%BE_%D0%BC%D0%B5%D0%BD%D1%8E_0.39.0.png/revision/latest/scale-to-width-down/1280?cb=20260616130519&path-prefix=ru |
 
 ## Логотип
 

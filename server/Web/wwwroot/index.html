@@ -728,7 +728,7 @@ body.is-home{background:var(--so-bg)}
 /* ══ фон страницы: арт меню за всем контентом ══
    Слой fixed внутри экрана: не скроллится, не ловит клики и живёт под
    карточками. У каждого экрана своя картинка через --so-pagebg. */
-#view-home,#view-docs,#view-play,#view-profile,#view-admin,#view-reports,
+#view-home,#view-docs,#view-play,#view-profile,#view-top,#view-admin,#view-reports,
 #view-administration,#view-player,#view-match,#view-room{
   position:relative;isolation:isolate;background:transparent;
 }
@@ -757,6 +757,7 @@ body.is-home{background:var(--so-bg)}
 #view-reports{--so-pagebg:url("https://static.wikia.nocookie.net/standoff-2/images/0/01/%D0%97%D0%B0%D0%B4%D0%BD%D0%B8%D0%B9_%D1%84%D0%BE%D0%BD_%D0%B3%D0%BB%D0%B0%D0%B2%D0%BD%D0%BE%D0%B3%D0%BE_%D0%BC%D0%B5%D0%BD%D1%8E_1.1.0.png/revision/latest/scale-to-width-down/1280?cb=20261031090539&path-prefix=ru");--so-pagebg-top:.18;--so-pagebg-mid:.34}
 #view-administration{--so-pagebg:url("https://static.wikia.nocookie.net/standoff-2/images/1/1a/%D0%97%D0%B0%D0%B4%D0%BD%D0%B8%D0%B9_%D1%84%D0%BE%D0%BD_%D0%B3%D0%BB%D0%B0%D0%B2%D0%BD%D0%BE%D0%B3%D0%BE_%D0%BC%D0%B5%D0%BD%D1%8E_1.0.0.png/revision/latest/scale-to-width-down/1280?cb=20260927163617&path-prefix=ru");--so-pagebg-top:.22;--so-pagebg-mid:.38}
 #view-player{--so-pagebg:url("https://static.wikia.nocookie.net/standoff-2/images/b/be/%D0%97%D0%B0%D0%B4%D0%BD%D0%B8%D0%B9_%D1%84%D0%BE%D0%BD_%D0%B3%D0%BB%D0%B0%D0%B2%D0%BD%D0%BE%D0%B3%D0%BE_%D0%BC%D0%B5%D0%BD%D1%8E_0.34.0.png/revision/latest/scale-to-width-down/1280?cb=20250611142313&path-prefix=ru");--so-pagebg-top:.2;--so-pagebg-mid:.36}
+#view-top{--so-pagebg:url("https://static.wikia.nocookie.net/standoff-2/images/5/59/%D0%97%D0%B0%D0%B4%D0%BD%D0%B8%D0%B9_%D1%84%D0%BE%D0%BD_%D0%B3%D0%BB%D0%B0%D0%B2%D0%BD%D0%BE%D0%B3%D0%BE_%D0%BC%D0%B5%D0%BD%D1%8E_0.39.0.png/revision/latest/scale-to-width-down/1280?cb=20260616130519&path-prefix=ru");--so-pagebg-top:.2;--so-pagebg-mid:.36}
 /* комната и матч: арт текущей карты ставит JS, пока данных нет — тёмный фон */
 #view-match,#view-room{--so-pagebg:none;--so-pagebg-top:.18;--so-pagebg-mid:.34}
 
@@ -2581,33 +2582,6 @@ img.so-pubav{object-fit:cover;}
 .so-hroom__go{color:var(--so-acc);font-family:var(--so-display);letter-spacing:.12em}
 .so-hroom__full{color:#e0a1a1;font-family:var(--so-display);letter-spacing:.12em}
 
-/* ── мозаика карт в «О проекте» ── */
-.so-mapwall{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-top:30px}
-.so-mapwall__it{
-  position:relative;display:block;overflow:hidden;border-radius:10px;
-  border:1px solid var(--so-line);aspect-ratio:16/9;text-decoration:none;
-  background:linear-gradient(140deg,#1d3a52,#0e1d29);
-}
-.so-mapwall__it img{
-  width:100%;height:100%;object-fit:cover;display:block;
-  transition:transform .35s cubic-bezier(.2,0,0,1);
-}
-.so-mapwall__it:hover img{transform:scale(1.05)}
-.so-mapwall__it::after{
-  content:"";position:absolute;inset:0;pointer-events:none;
-  background:linear-gradient(0deg,rgba(5,12,19,.86) 0%,rgba(5,12,19,0) 58%);
-}
-.so-mapwall__n{
-  position:absolute;left:12px;bottom:9px;z-index:2;
-  font-family:var(--so-display);font-size:16px;letter-spacing:.1em;color:#fff;
-}
-.so-mapwall__more{margin-top:14px;text-align:right}
-.so-mapwall__more a{
-  font-family:var(--so-display);font-size:13px;letter-spacing:.14em;
-  color:var(--so-acc);text-decoration:none;
-}
-.so-mapwall__more a:hover{color:#fff}
-
 /* ── полоса скриншотов в «Как начать» ── */
 .so-docstrip{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin-top:26px}
 .so-docstrip__it{
@@ -2667,12 +2641,131 @@ img.so-pubav{object-fit:cover;}
     -webkit-overflow-scrolling:touch;
   }
   .so-hroom{flex:0 0 82%;scroll-snap-align:start}
-  .so-mapwall{grid-template-columns:repeat(2,minmax(0,1fr))}
-  .so-mapwall__n{font-size:14px;left:10px;bottom:8px}
   .so-docstrip{grid-template-columns:1fr;gap:8px}
   .so-docstrip__it{display:grid;grid-template-columns:118px minmax(0,1fr);align-items:center}
   .so-docstrip__it img{height:100%;aspect-ratio:auto}
   .so-docstrip__cap{padding:10px 12px;font-size:15px}
+}
+
+/* ══════════════════════════════════════════════════════════════════
+   P4: таблица лидеров #/top, живой список онлайна на главной,
+   переходы между экранами.
+   ══════════════════════════════════════════════════════════════════ */
+
+/* ── переходы: экран проявляется, контент чуть поднимается ── */
+@keyframes so-view-in{from{opacity:0}to{opacity:1}}
+@keyframes so-view-rise{from{transform:translate3d(0,12px,0)}to{transform:none}}
+.so-view.is-enter{animation:so-view-in .22s ease-out both}
+.so-view.is-enter > main,
+.so-view.is-enter > .so-docs,
+.so-view.is-enter > .so-hero{animation:so-view-rise .26s cubic-bezier(.22,.61,.36,1) both}
+
+/* ── таблица лидеров ── */
+.so-lb{margin-top:22px}
+.so-lb__head{
+  display:flex;align-items:center;justify-content:space-between;gap:14px;flex-wrap:wrap;
+  padding:16px 20px;border-bottom:1px solid var(--so-line);
+}
+.so-lb__tabs{display:flex;gap:6px;flex-wrap:wrap}
+.so-lb__tab{
+  font-family:var(--so-display);font-size:13px;letter-spacing:.14em;
+  padding:8px 14px 6px;border-radius:6px;cursor:pointer;
+  background:rgba(9,20,30,.55);color:var(--so-muted);
+  border:1px solid var(--so-line-strong);
+  transition:color .15s,border-color .15s,background .15s;
+}
+.so-lb__tab:hover{color:var(--so-text);border-color:rgba(169,196,226,.6)}
+.so-lb__tab.is-on{background:var(--so-acc);border-color:var(--so-acc);color:var(--so-acc-ink)}
+.so-lb__count{font-size:11.5px;letter-spacing:.12em;color:var(--so-muted);text-transform:uppercase}
+.so-lb__cols,.so-lb__row{
+  display:grid;grid-template-columns:52px minmax(0,1fr) repeat(4,minmax(0,92px));
+  gap:12px;align-items:center;
+}
+.so-lb__cols{
+  padding:11px 20px;border-bottom:1px solid var(--so-line);
+  font-size:10.5px;letter-spacing:.2em;text-transform:uppercase;color:#68809a;
+}
+.so-lb__cols span:not(:nth-child(2)){text-align:right}
+.so-lb__row{
+  padding:13px 20px;border-bottom:1px solid var(--so-line);
+  text-decoration:none;color:inherit;transition:background .15s;
+}
+.so-lb__row:last-child{border-bottom:0}
+.so-lb__row:hover{background:rgba(26,44,58,.42)}
+.so-lb__place{font-family:var(--so-display);font-size:21px;color:var(--so-muted)}
+.so-lb__row--p1 .so-lb__place,
+.so-lb__row--p2 .so-lb__place,
+.so-lb__row--p3 .so-lb__place{color:var(--so-acc)}
+.so-lb__who{min-width:0}
+.so-lb__line{display:flex;align-items:center;gap:7px;min-width:0}
+.so-lb__nick{
+  display:block;min-width:0;font-family:var(--so-display);font-size:19px;
+  letter-spacing:.03em;color:var(--so-text);
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.so-lb__id{display:block;margin-top:2px;font-size:11.5px;letter-spacing:.06em;color:var(--so-muted)}
+.so-lb__nums{display:contents}
+.so-lb__num{text-align:right;font-family:var(--so-display);font-size:18px;color:var(--so-text)}
+.so-lb__num i{
+  display:none;font-style:normal;font-family:var(--so-font);font-size:10px;
+  letter-spacing:.12em;text-transform:uppercase;color:var(--so-muted);
+}
+.so-lb__adm{
+  font-style:normal;font-family:var(--so-display);font-size:10px;letter-spacing:.14em;
+  color:var(--so-acc);border:1px solid rgba(232,163,61,.45);border-radius:4px;
+  padding:2px 5px 1px;flex:0 0 auto;
+}
+
+/* ── живой список онлайна на главной ── */
+.so-olist{margin-top:18px}
+.so-olist__head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:10px}
+.so-olist__k{
+  font-family:var(--so-display);font-size:12px;letter-spacing:.2em;
+  text-transform:uppercase;color:var(--so-muted);
+}
+.so-olist__all{
+  font-family:var(--so-display);font-size:12px;letter-spacing:.14em;
+  color:var(--so-acc);text-decoration:none;
+}
+.so-olist__all:hover{color:#fff}
+.so-olist__grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:8px}
+.so-ol{
+  display:flex;align-items:center;gap:9px;padding:10px 13px;border-radius:8px;
+  background:rgba(9,20,30,.55);border:1px solid var(--so-line);
+  text-decoration:none;color:var(--so-text);min-width:0;
+  transition:border-color .15s,background .15s;
+}
+.so-ol:hover{border-color:rgba(169,196,226,.5);background:rgba(17,37,52,.7)}
+.so-ol__dot{
+  width:6px;height:6px;border-radius:50%;background:#57d98a;flex:0 0 auto;
+  box-shadow:0 0 6px rgba(87,217,138,.55);
+}
+.so-ol__nick{
+  font-family:var(--so-display);font-size:16px;letter-spacing:.03em;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.so-ol__where{
+  margin-left:auto;flex:0 0 auto;font-size:10.5px;letter-spacing:.08em;
+  color:var(--so-muted);text-transform:uppercase;
+}
+
+@media (max-width:760px){
+  .so-lb__head{padding:14px 16px}
+  .so-lb__cols{display:none}
+  .so-lb__row{grid-template-columns:34px minmax(0,1fr);row-gap:8px;padding:12px 16px}
+  .so-lb__place{grid-row:1 / span 2;align-self:start;font-size:19px}
+  .so-lb__nums{display:grid;grid-column:2;grid-template-columns:repeat(4,minmax(0,1fr));gap:6px}
+  .so-lb__num{text-align:left;font-size:16px}
+  .so-lb__num i{display:block}
+  .so-olist__grid{grid-template-columns:1fr}
+}
+
+@media (prefers-reduced-motion:reduce){
+  .so-view.is-enter,
+  .so-view.is-enter > main,
+  .so-view.is-enter > .so-docs,
+  .so-view.is-enter > .so-hero{animation:none}
+  .so-lb__row,.so-lb__tab,.so-ol{transition:none}
 }
 </style>
 </head>
@@ -2697,6 +2790,7 @@ img.so-pubav{object-fit:cover;}
       <nav>
         <a href="#/docs">ИНСТРУКЦИЯ</a>
         <a href="#/play">КОМНАТЫ</a>
+        <a href="#/top">ТОП</a>
         <span class="so-online"><i class="so-online__dot" id="so-dot"></i></span>
         <button class="so-sidebtn" type="button" data-side-open>ПАНЕЛЬ</button>
       </nav>
@@ -2766,31 +2860,6 @@ img.so-pubav{object-fit:cover;}
         <span class="so-facts__v">ВСЕ</span>
       </div>
     </div>
-
-    <!-- мозаика карт: те же обложки Fandom, что и в каталоге комнат -->
-    <div class="so-mapwall" aria-label="Карты сервера">
-      <a class="so-mapwall__it" href="#/play">
-        <img src="https://static.wikia.nocookie.net/standoff-2/images/3/37/%D0%9F%D1%80%D0%B5%D0%B2%D1%8C%D1%8E_%E2%80%94_%D0%9A%D0%B0%D1%80%D1%82%D0%B0_Prison_0.38.0.png/revision/latest/scale-to-width-down/640?cb=20260410163143&amp;path-prefix=ru"
-             alt="Карта Prison" loading="lazy" decoding="async" onerror="this.remove()">
-        <span class="so-mapwall__n">PRISON</span>
-      </a>
-      <a class="so-mapwall__it" href="#/play">
-        <img src="https://static.wikia.nocookie.net/standoff-2/images/1/12/%D0%9F%D1%80%D0%B5%D0%B2%D1%8C%D1%8E_%E2%80%94_%D0%9A%D0%B0%D1%80%D1%82%D0%B0_Sandstone_0.27.0.png/revision/latest/scale-to-width-down/640?cb=20241123165338&amp;path-prefix=ru"
-             alt="Карта Sandstone" loading="lazy" decoding="async" onerror="this.remove()">
-        <span class="so-mapwall__n">SANDSTONE</span>
-      </a>
-      <a class="so-mapwall__it" href="#/play">
-        <img src="https://static.wikia.nocookie.net/standoff-2/images/d/d8/%D0%9F%D1%80%D0%B5%D0%B2%D1%8C%D1%8E_%E2%80%94_%D0%9A%D0%B0%D1%80%D1%82%D0%B0_Hanami_0.35.0.png/revision/latest/scale-to-width-down/640?cb=20250828120618&amp;path-prefix=ru"
-             alt="Карта Hanami" loading="lazy" decoding="async" onerror="this.remove()">
-        <span class="so-mapwall__n">HANAMI</span>
-      </a>
-      <a class="so-mapwall__it" href="#/play">
-        <img src="https://static.wikia.nocookie.net/standoff-2/images/b/b4/%D0%9F%D1%80%D0%B5%D0%B2%D1%8C%D1%8E_%E2%80%94_%D0%9A%D0%B0%D1%80%D1%82%D0%B0_Rust_0.38.0.png/revision/latest/scale-to-width-down/640?cb=20260409105917&amp;path-prefix=ru"
-             alt="Карта Rust" loading="lazy" decoding="async" onerror="this.remove()">
-        <span class="so-mapwall__n">RUST</span>
-      </a>
-    </div>
-    <p class="so-mapwall__more"><a href="#/play">ВСЕ КАРТЫ →</a></p>
   </section>
 
   <!-- ══ как начать ══ -->
@@ -2910,6 +2979,15 @@ img.so-pubav{object-fit:cover;}
       <div class="so-now__cell"><div class="so-now__v" id="n-rooms">0 / 0</div><div class="so-now__l">комнат</div></div>
     </div>
 
+    <!-- кто сейчас в сети: тот же /api/status, что и цифры выше -->
+    <div class="so-olist" id="so-olist" hidden>
+      <div class="so-olist__head">
+        <span class="so-olist__k">◆ Кто сейчас в сети</span>
+        <a class="so-olist__all" href="#/top">ТОП ИГРОКОВ →</a>
+      </div>
+      <div class="so-olist__grid" id="so-olist-grid"></div>
+    </div>
+
     <!-- живые комнаты: данные из общего rooms, обновление вместе со статусом -->
     <div class="so-hrooms" id="so-hrooms" hidden>
       <div class="so-hrooms__head">
@@ -2993,6 +3071,7 @@ img.so-pubav{object-fit:cover;}
       <a href="#/">ГЛАВНАЯ</a>
       <a href="#/docs" class="is-here">ИНСТРУКЦИЯ</a>
       <a href="#/play">КОМНАТЫ</a>
+      <a href="#/top">ТОП</a>
       <span class="so-online"><i class="so-online__dot" id="so-dot-docs"></i></span>
       <button class="so-sidebtn" type="button" data-side-open>ПАНЕЛЬ</button>
     </nav>
@@ -3297,6 +3376,7 @@ img.so-pubav{object-fit:cover;}
       <a href="#/">ГЛАВНАЯ</a>
       <a href="#/docs">ИНСТРУКЦИЯ</a>
       <a href="#/play" class="is-here">КОМНАТЫ</a>
+      <a href="#/top">ТОП</a>
       <span class="so-online" title="сервер отвечает"><i class="so-online__dot" id="so-dot-play"></i></span>
       <button class="so-sidebtn" type="button" data-side-open>ПАНЕЛЬ</button>
     </nav>
@@ -3488,6 +3568,7 @@ img.so-pubav{object-fit:cover;}
       <a href="#/">ГЛАВНАЯ</a>
       <a href="#/docs">ИНСТРУКЦИЯ</a>
       <a href="#/play">КОМНАТЫ</a>
+      <a href="#/top">ТОП</a>
       <span class="so-online" title="сервер отвечает"><i class="so-online__dot" id="so-dot-profile"></i></span>
       <button class="so-sidebtn" type="button" data-side-open>ПАНЕЛЬ</button>
     </nav>
@@ -3593,6 +3674,67 @@ img.so-pubav{object-fit:cover;}
   </main>
 </div><!-- /view-profile -->
 
+<!-- ═════════════════════ ТОП ИГРОКОВ (#/top) ═════════════════════ -->
+<div id="view-top" hidden>
+  <div class="so-pagebg" aria-hidden="true"></div>
+
+  <header class="so-top so-top--static">
+    <a class="so-top__logo" href="#/">ВЛАЛ<b>CHILLOW</b></a>
+    <nav>
+      <a href="#/">ГЛАВНАЯ</a>
+      <a href="#/docs">ИНСТРУКЦИЯ</a>
+      <a href="#/play">КОМНАТЫ</a>
+      <a href="#/top" class="is-here">ТОП</a>
+      <span class="so-online" title="сервер отвечает"><i class="so-online__dot" id="so-dot-top"></i></span>
+      <button class="so-sidebtn" type="button" data-side-open>ПАНЕЛЬ</button>
+    </nav>
+  </header>
+
+  <main class="so-sec" style="padding-top:22px;padding-bottom:110px">
+
+    <section class="so-pagehero so-pagehero--top" aria-label="Таблица лидеров">
+      <div class="so-pagehero__body">
+        <span class="so-pagehero__k">Рейтинг · всё время</span>
+        <h1 class="so-playhead__h">ТОП <em>ИГРОКОВ</em></h1>
+        <p class="so-pagehero__d">Киллы, K/D, время в катках и число матчей — только то,
+           что сервер реально записал. Цифры те же, что в профиле: рейтинг ничего
+           не досчитывает.</p>
+      </div>
+      <div class="so-pagehero__art" aria-hidden="true">
+        <img src="https://static.wikia.nocookie.net/standoff-2/images/5/59/%D0%97%D0%B0%D0%B4%D0%BD%D0%B8%D0%B9_%D1%84%D0%BE%D0%BD_%D0%B3%D0%BB%D0%B0%D0%B2%D0%BD%D0%BE%D0%B3%D0%BE_%D0%BC%D0%B5%D0%BD%D1%8E_0.39.0.png/revision/latest/scale-to-width-down/1280?cb=20260616130519&path-prefix=ru"
+             alt="" loading="lazy" decoding="async" onerror="this.remove()">
+      </div>
+    </section>
+
+    <section class="so-card so-card--flush so-lb" aria-label="Таблица лидеров">
+      <div class="so-lb__head">
+        <div class="so-lb__tabs" role="tablist" aria-label="Сортировка рейтинга">
+          <button class="so-lb__tab is-on" type="button" role="tab" aria-selected="true"
+                  data-lb-sort="kills">КИЛЛЫ</button>
+          <button class="so-lb__tab" type="button" role="tab" aria-selected="false"
+                  data-lb-sort="kd">K/D</button>
+          <button class="so-lb__tab" type="button" role="tab" aria-selected="false"
+                  data-lb-sort="seconds">ВРЕМЯ</button>
+          <button class="so-lb__tab" type="button" role="tab" aria-selected="false"
+                  data-lb-sort="matches">МАТЧИ</button>
+        </div>
+        <span class="so-lb__count" id="lb-count"></span>
+      </div>
+      <div class="so-lb__cols" aria-hidden="true">
+        <span>#</span><span>ИГРОК</span><span>КИЛЛЫ</span><span>K/D</span><span>ВРЕМЯ</span><span>МАТЧИ</span>
+      </div>
+      <div id="lb-rows"></div>
+      <div class="so-empty so-empty--rich so-empty--art" id="lb-empty" hidden>
+        <div class="so-empty__d" aria-hidden="true">◆</div>
+        <div class="so-empty__t">Рейтинг пока пуст</div>
+        <p class="so-empty__p">Сервер ещё не записал ни одной катки — таблица появится
+           после первого матча.</p>
+        <a class="so-btn so-btn--sm so-btn--acc" href="#/play"><span>НАЙТИ КОМНАТУ</span></a>
+      </div>
+    </section>
+  </main>
+</div><!-- /view-top -->
+
 <!-- ═════════════════════ АДМИН ПАНЕЛЬ (#/admin) ═════════════════════ -->
 <div id="view-admin" hidden>
   <div class="so-pagebg" aria-hidden="true"></div>
@@ -3603,6 +3745,7 @@ img.so-pubav{object-fit:cover;}
       <a href="#/">ГЛАВНАЯ</a>
       <a href="#/docs">ИНСТРУКЦИЯ</a>
       <a href="#/play">КОМНАТЫ</a>
+      <a href="#/top">ТОП</a>
       <span class="so-online" title="сервер отвечает"><i class="so-online__dot" id="so-dot-admin"></i></span>
       <button class="so-sidebtn" type="button" data-side-open>ПАНЕЛЬ</button>
     </nav>
@@ -4042,6 +4185,7 @@ img.so-pubav{object-fit:cover;}
       <a href="#/">ГЛАВНАЯ</a>
       <a href="#/docs">ИНСТРУКЦИЯ</a>
       <a href="#/play">КОМНАТЫ</a>
+      <a href="#/top">ТОП</a>
       <a href="#/administration">АДМИНИСТРАЦИЯ</a>
       <span class="so-online" title="сервер отвечает"><i class="so-online__dot" id="so-dot-reports"></i></span>
       <button class="so-sidebtn" type="button" data-side-open>ПАНЕЛЬ</button>
@@ -4238,6 +4382,7 @@ img.so-pubav{object-fit:cover;}
       <a href="#/">ГЛАВНАЯ</a>
       <a href="#/docs">ИНСТРУКЦИЯ</a>
       <a href="#/play">КОМНАТЫ</a>
+      <a href="#/top">ТОП</a>
       <a href="#/reports">РЕПОРТЫ</a>
       <span class="so-online" title="сервер отвечает"><i class="so-online__dot" id="so-dot-administration"></i></span>
       <button class="so-sidebtn" type="button" data-side-open>ПАНЕЛЬ</button>
@@ -4279,6 +4424,7 @@ img.so-pubav{object-fit:cover;}
       <a href="#/">ГЛАВНАЯ</a>
       <a href="#/docs">ИНСТРУКЦИЯ</a>
       <a href="#/play">КОМНАТЫ</a>
+      <a href="#/top">ТОП</a>
       <a href="#/administration">АДМИНИСТРАЦИЯ</a>
       <span class="so-online" title="сервер отвечает"><i class="so-online__dot" id="so-dot-player"></i></span>
       <button class="so-sidebtn" type="button" data-side-open>ПАНЕЛЬ</button>
@@ -4378,6 +4524,7 @@ img.so-pubav{object-fit:cover;}
       <a href="#/">ГЛАВНАЯ</a>
       <a href="#/docs">ИНСТРУКЦИЯ</a>
       <a href="#/play">КОМНАТЫ</a>
+      <a href="#/top">ТОП</a>
       <a href="#/administration">АДМИНИСТРАЦИЯ</a>
       <span class="so-online" title="сервер отвечает"><i class="so-online__dot" id="so-dot-match"></i></span>
       <button class="so-sidebtn" type="button" data-side-open>ПАНЕЛЬ</button>
@@ -4412,6 +4559,7 @@ img.so-pubav{object-fit:cover;}
       <a href="#/">ГЛАВНАЯ</a>
       <a href="#/docs">ИНСТРУКЦИЯ</a>
       <a href="#/play">КОМНАТЫ</a>
+      <a href="#/top">ТОП</a>
       <a href="#/administration">АДМИНИСТРАЦИЯ</a>
       <span class="so-online" title="сервер отвечает"><i class="so-online__dot" id="so-dot-room"></i></span>
       <button class="so-sidebtn" type="button" data-side-open>ПАНЕЛЬ</button>
@@ -9006,6 +9154,8 @@ function loadStatus(){
     }
     renderStats();
     renderHomeStatus(res);
+    /* Старый сервер без поля players просто спрячет блок: список не критичен. */
+    renderOnlineList(res.data.players);
   });
 }
 
@@ -9424,6 +9574,7 @@ var homeView = $('view-home');
 var docsView = $('view-docs');
 var playView = $('view-play');
 var profileView = $('view-profile');
+var topView = $('view-top');
 var adminView = $('view-admin');
 var reportsView = $('view-reports');
 var administrationView = $('view-administration');
@@ -9459,6 +9610,31 @@ function renderHomeNow(){
   set('n-rooms', rooms.length + ' / ' + (online.max || 0));
   set('so-hero-count', online.total);
   renderHomeRooms();
+}
+
+/* Кто сейчас в сети — списком. Данные приходят в /api/status вместе с цифрами,
+   поэтому отдельного запроса и отдельного таймера нет. */
+function renderOnlineList(players){
+  var box = $('so-olist');
+  var grid = $('so-olist-grid');
+  if (!box || !grid) return;
+
+  var rows = (players || []).filter(function(p){ return p && p.id > 0; });
+  if (!rows.length){
+    box.hidden = true;
+    grid.innerHTML = '';
+    return;
+  }
+
+  box.hidden = false;
+  grid.innerHTML = rows.map(function(p){
+    var where = p.room > 0 ? ('комната #' + p.room) : 'лобби';
+    return '<a class="so-ol" href="#/profile/' + encodeURIComponent(String(p.id)) + '">' +
+      '<i class="so-ol__dot" aria-hidden="true"></i>' +
+      '<span class="so-ol__nick">' + esc(p.nick || '—') + '</span>' +
+      '<span class="so-ol__where">' + esc(where) + '</span>' +
+    '</a>';
+  }).join('');
 }
 
 /* До трёх живых комнат на главной. Отдельного API нет: rooms уже грузится
@@ -9572,7 +9748,7 @@ function renderHomeStatus(res){
   applyPublicAccess(res.data);
   var down = res.data.gameListening === false;
   ['so-dot', 'so-dot-hero', 'so-dot-docs', 'so-dot-play', 'so-dot-profile',
-   'so-dot-room'].forEach(function(id){
+   'so-dot-top', 'so-dot-room'].forEach(function(id){
     var el = $(id);
     if (el) el.classList.toggle('so-online__dot--off', down);
   });
@@ -9597,10 +9773,95 @@ function fillMarquee(){
   track.innerHTML = '<span>' + line + '</span><span>' + line + '</span>';
 }
 
+/* ── #/top: таблица лидеров ── */
+var topSort = 'kills';
+var topRows = [];
+
+function loadTop(){
+  var box = $('lb-rows');
+  if (!box) return Promise.resolve();
+  return api('GET', 'api/top?sort=' + encodeURIComponent(topSort) + '&limit=50')
+    .then(function(res){
+      if (!res.ok || !res.data) return;
+      topRows = res.data.players || [];
+      renderTop();
+    })
+    .catch(function(){ /* сеть моргнула — на экране остаётся прошлый ответ */ });
+}
+
+/* Секунды → «2 ч 05 м» / «14 м»: третий разряд в таблице не нужен. */
+function topTime(sec){
+  var total = Math.max(0, Math.round(sec || 0));
+  var h = Math.floor(total / 3600);
+  var m = Math.round((total % 3600) / 60);
+  if (h > 0) return h + ' ч ' + (m < 10 ? '0' : '') + m + ' м';
+  return m + ' м';
+}
+
+function renderTop(){
+  var box = $('lb-rows');
+  var empty = $('lb-empty');
+  var count = $('lb-count');
+  if (!box) return;
+
+  if (!topRows.length){
+    box.innerHTML = '';
+    box.hidden = true;
+    if (empty) empty.hidden = false;
+    if (count) count.textContent = '';
+    return;
+  }
+
+  box.hidden = false;
+  if (empty) empty.hidden = true;
+  if (count) count.textContent = topRows.length + ' в зачёте';
+
+  box.innerHTML = topRows.map(function(r, i){
+    var place = i + 1;
+    var num = (place < 10 ? '0' : '') + place;
+    var cls = 'so-lb__row' + (place <= 3 ? ' so-lb__row--p' + place : '');
+    var adm = r.admin ? '<em class="so-lb__adm">ADMIN</em>' : '';
+    var kd = r.kd == null ? '0.00' : Number(r.kd).toFixed(2);
+    return '<a class="' + cls + '" href="#/profile/' + encodeURIComponent(String(r.id)) + '">' +
+      '<span class="so-lb__place">' + num + '</span>' +
+      '<span class="so-lb__who">' +
+        '<span class="so-lb__line"><span class="so-lb__nick">' +
+          esc(r.nick || '—') + '</span>' + adm + '</span>' +
+        '<span class="so-lb__id">ID ' + esc(String(r.displayId || r.id)) + '</span>' +
+      '</span>' +
+      '<span class="so-lb__nums">' +
+        '<span class="so-lb__num"><b>' + (r.kills || 0) + '</b><i>киллы</i></span>' +
+        '<span class="so-lb__num"><b>' + kd + '</b><i>K/D</i></span>' +
+        '<span class="so-lb__num"><b>' + topTime(r.seconds) + '</b><i>время</i></span>' +
+        '<span class="so-lb__num"><b>' + (r.matches || 0) + '</b><i>матчи</i></span>' +
+      '</span>' +
+    '</a>';
+  }).join('');
+}
+
+function initTopTabs(){
+  var tabs = document.querySelectorAll('.so-lb__tab');
+  Array.prototype.forEach.call(tabs, function(btn){
+    btn.addEventListener('click', function(){
+      var sort = btn.getAttribute('data-lb-sort') || 'kills';
+      if (sort === topSort) return;
+      topSort = sort;
+      Array.prototype.forEach.call(tabs, function(b){
+        var on = b === btn;
+        b.classList.toggle('is-on', on);
+        b.setAttribute('aria-selected', on ? 'true' : 'false');
+      });
+      loadTop();
+    });
+  });
+}
+
 function currentRoute(){
   var h = (location.hash || '').replace(/^#\/?/, '');
   if (h === 'play' || h.indexOf('play/') === 0 || h.indexOf('play?') === 0) return 'play';
   if (h === 'profile') return 'profile';
+  /* #/top — таблица лидеров, публичная: вход по коду не нужен. */
+  if (h === 'top' || h.indexOf('top/') === 0) return 'top';
   /* #/profile/<id> — чужой (или свой) профиль по ссылке; старый #/player/<id>
      переводим на новый адрес в applyRoute. */
   if (h.indexOf('profile/') === 0) return 'player';
@@ -9618,9 +9879,9 @@ function currentRoute(){
 }
 
 function applyRoute(){
-  if (!homeView || !playView || !docsView || !profileView || !adminView ||
-      !reportsView || !administrationView || !playerView || !matchView ||
-      !roomView) return;
+  if (!homeView || !playView || !docsView || !profileView || !topView ||
+      !adminView || !reportsView || !administrationView || !playerView ||
+      !matchView || !roomView) return;
 
   // Старые ссылки #/player/<id> — на новый адрес #/profile/<id>. Одна замена,
   // дальше сработает hashchange и применит уже новый маршрут.
@@ -9638,17 +9899,19 @@ function applyRoute(){
   var onPlay = route === 'play';
   var onDocs = route === 'docs';
   var onProfile = route === 'profile';
+  var onTop = route === 'top';
   var onAdmin = route === 'admin';
   var onReports = route === 'reports';
   var onAdministration = route === 'administration';
   var onPlayer = route === 'player';
   var onMatch = route === 'match';
   var onRoom = route === 'room';
-  homeView.hidden = onPlay || onDocs || onProfile || onAdmin || onReports ||
-    onAdministration || onPlayer || onMatch || onRoom;
+  homeView.hidden = onPlay || onDocs || onProfile || onTop || onAdmin ||
+    onReports || onAdministration || onPlayer || onMatch || onRoom;
   docsView.hidden = !onDocs;
   playView.hidden = !onPlay;
   profileView.hidden = !onProfile;
+  topView.hidden = !onTop;
   adminView.hidden = !onAdmin;
   reportsView.hidden = !onReports;
   administrationView.hidden = !onAdministration;
@@ -9669,6 +9932,7 @@ function applyRoute(){
   /* Жалобы, список админов и публичный профиль — каждый раз с сервера. */
   if (onReports) renderReportsPage();
   if (onAdministration) loadAdministration();
+  if (onTop) loadTop();
   if (onPlayer) loadPublicPlayer(publicPlayerQueryFromHash());
   if (onMatch) loadMatch(matchIdFromHash());
   if (onRoom) loadRoom(roomNumberFromHash());
@@ -9683,7 +9947,7 @@ function applyRoute(){
       jump.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'start' });
     });
   }
-  if (!onPlay && !onDocs && !onProfile && !onAdmin && !onReports &&
+  if (!onPlay && !onDocs && !onProfile && !onTop && !onAdmin && !onReports &&
       !onAdministration && !onPlayer){
     var anchor = route === 'how' ? $('sec-how') : null;
     if (anchor){
@@ -9698,7 +9962,31 @@ function applyRoute(){
   } else {
     window.scrollTo(0, 0);
   }
+  enterView(onDocs ? docsView : onPlay ? playView : onProfile ? profileView :
+    onTop ? topView : onAdmin ? adminView : onReports ? reportsView :
+    onAdministration ? administrationView : onPlayer ? playerView :
+    onMatch ? matchView : onRoom ? roomView : homeView);
   syncHeroVideo();
+}
+
+/* Переход между экранами: класс живёт только на активном экране и только когда
+   экран реально сменился — иначе анимация играла бы на каждом hashchange
+   внутри одной страницы (например, при переходе к шагу инструкции). */
+var lastViewId = '';
+function enterView(view){
+  if (!view) return;
+  var id = view.id || '';
+  if (id === lastViewId) return;
+  lastViewId = id;
+  if (reduceMotion) return;
+  view.classList.remove('is-enter');
+  void view.offsetWidth;            /* рестарт, если класс не успел сняться */
+  view.classList.add('is-enter');
+  view.addEventListener('animationend', function once(e){
+    if (e.target !== view) return;
+    view.classList.remove('is-enter');
+    view.removeEventListener('animationend', once);
+  });
 }
 
 /* Переход к конкретному шагу инструкции со страниц, где хэш-якоря занят роутером
@@ -9825,6 +10113,7 @@ applySelect();
 applyRoute();
 fillMarquee();
 initDocsNav();
+initTopTabs();
 window.addEventListener('hashchange', applyRoute);
 
 /* отдаём функции тесту (jsdom) — в браузере просто игнорируется */
@@ -9845,6 +10134,11 @@ if (typeof window !== 'undefined') {
     loadStats: loadStats, renderProfileView: renderProfileView, renderSide: renderSide,
     loadOwnMatches: loadOwnMatches, renderMatchHistory: renderMatchHistory,
     loadMatch: loadMatch, renderMatchPage: renderMatchPage,
+    loadTop: loadTop, renderTop: renderTop, topTime: topTime, applyRoute: applyRoute,
+    renderOnlineList: renderOnlineList, enterView: enterView,
+    get topSort(){ return topSort; },
+    set topSort(v){ topSort = v; },
+    get topRows(){ return topRows; },
     openSide: openSide, closeSide: closeSide,
     loadAdminState: loadAdminState, renderAdmin: renderAdmin,
     adminLogin: adminLogin, adminLogout: adminLogout,
