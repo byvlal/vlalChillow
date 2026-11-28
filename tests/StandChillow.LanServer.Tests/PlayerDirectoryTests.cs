@@ -63,23 +63,35 @@ public sealed class PlayerDirectoryTests
     }
 
     [Fact]
-    public void SameNickOnTwoAccountsStaysTwoPeople()
+    public void SameExactNickOnTwoAccountsStaysTwoPeople()
     {
         var directory = new PlayerDirectory();
         directory.Remember("Влал", "203.0.113.9", Now, accountId: AccountA);
-        directory.Remember("влал", "203.0.113.10", Now.AddMinutes(1), accountId: AccountB);
+        directory.Remember("Влал", "203.0.113.10", Now.AddMinutes(1), accountId: AccountB);
 
-        // Ник — не личность: тёзка получает свою запись и свой номер.
+        // Ник — не личность: два старых аккаунта с одной строкой остаются двумя записями.
         Assert.Equal(2, directory.Count);
         Assert.Equal(AccountA, directory.Resolve(AccountA)!.Id);
         Assert.Equal(AccountB, directory.Resolve(AccountB)!.Id);
 
         // Ссылка по нику ведёт к тому, кто заходил позже.
-        Assert.Equal(AccountB, directory.FindByNick("ВЛал")!.Id);
+        Assert.Equal(AccountB, directory.FindByNick("Влал")!.Id);
 
         directory.Remember("Влал", "203.0.113.9", Now.AddMinutes(2), accountId: AccountA);
-        Assert.Equal(AccountA, directory.FindByNick("влал")!.Id);
+        Assert.Equal(AccountA, directory.FindByNick("Влал")!.Id);
         Assert.Equal(2, directory.Count);
+    }
+
+    [Fact]
+    public void NickCaseIsIdentity()
+    {
+        var directory = new PlayerDirectory();
+        directory.Remember("Влал", "203.0.113.9", Now, accountId: AccountA);
+        directory.Remember("влал", "203.0.113.10", Now.AddMinutes(1), accountId: AccountB);
+
+        Assert.Equal(AccountA, directory.FindByNick("Влал")!.Id);
+        Assert.Equal(AccountB, directory.FindByNick("влал")!.Id);
+        Assert.Null(directory.FindByNick("ВЛАЛ"));
     }
 
     [Fact]
@@ -95,7 +107,8 @@ public sealed class PlayerDirectoryTests
         Assert.Equal("Влал2", found!.Nick);
         Assert.Equal(2, found.Ips.Count);
         Assert.Null(directory.FindByNick("Влал"));
-        Assert.Equal(AccountA, directory.FindByNick("влал2")!.Id);
+        Assert.Equal(AccountA, directory.FindByNick("Влал2")!.Id);
+        Assert.Null(directory.FindByNick("влал2"));
     }
 
     [Fact]
@@ -140,7 +153,7 @@ public sealed class PlayerDirectoryTests
     }
 
     [Fact]
-    public void RemapMergesLegacyCaseVariantsAndTheirData()
+    public void RemapMergesLegacyRecordsOfOneAccount()
     {
         var directory = new PlayerDirectory();
         directory.Load(new[]
@@ -280,16 +293,18 @@ public sealed class PlayerDirectoryTests
     }
 
     [Fact]
-    public void RememberTreatsNickCaseInsensitively()
+    public void RememberUpdatesNickForSameAccount()
     {
         var directory = new PlayerDirectory();
         var first = directory.Remember("Влал", "203.0.113.9", Now, accountId: AccountA);
         var second = directory.Remember("влал", "10.8.0.2", Now.AddMinutes(1), accountId: AccountA);
 
-        // «Влал» и «влал» — один аккаунт, иначе /ban по id задевал бы не то написание.
+        // Это один аккаунт, который сменил написание: запись одна, ник — последний.
         Assert.Same(first, second);
         Assert.Equal(1, directory.Count);
         Assert.Equal(2, first!.Ips.Count);
         Assert.Equal("влал", first.Nick);
+        Assert.Null(directory.FindByNick("Влал"));
+        Assert.Equal(AccountA, directory.FindByNick("влал")!.Id);
     }
 }

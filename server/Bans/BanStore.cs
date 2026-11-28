@@ -288,7 +288,8 @@ public sealed class BanStore
         cleaned = 0;
         merged = 0;
 
-        var byNick = new Dictionary<string, SeenPlayer>(StringComparer.OrdinalIgnoreCase);
+        // Точный ник — личность: «Skipp» и «skipp» остаются разными записями.
+        var byNick = new Dictionary<string, SeenPlayer>(StringComparer.Ordinal);
         foreach (var player in players)
         {
             if (player is null || string.IsNullOrWhiteSpace(player.Nick))

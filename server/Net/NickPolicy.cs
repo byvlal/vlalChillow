@@ -84,6 +84,162 @@ public static class NickPolicy
     }
 
     /// <summary>
+    /// Проверка на входе: обычные правила плюс запрет выдавать себя за влала.
+    /// </summary>
+    /// <param name="allowVlal">
+    /// <c>true</c> для админов и мега-админов: им можно любой ник, включая «Влал».
+    /// Права определяет вызывающий по <c>admin.ids</c>/<c>admin.megaIds</c>, не хардкод.
+    /// </param>
+    public static NickCheck CheckForJoin(
+        string? raw,
+        int maxLength = DefaultMaxLength,
+        bool allowVlal = false)
+    {
+        var check = Check(raw, maxLength);
+        if (allowVlal)
+            return check;
+
+        // Маскировку проверяем и для ников с запрещёнными символами: «v|a|l»
+        // должен получить причину «выдаёт себя за влала», а не просто «символ |».
+        if (LooksLikeVlal(check.Name))
+            return new NickCheck(false, check.Name, "выдаёт себя за влала", Impersonation: true);
+
+        return check;
+    }
+
+    /// <summary>
+    /// Похож ли ник на «влала» после снятия маскировки: другая раскладка, leet,
+    /// цифры, разделители, повторы букв.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <c>vlal</c> — уникальное сочетание, его запрещаем в любой позиции. <c>vlad</c> —
+    /// обычное имя, поэтому мягче: только в начале и только если после него конец,
+    /// цифра или разделитель. «Владимир» и «Vladislav» остаются допустимыми.
+    /// </para>
+    /// <para>
+    /// Сравнение идёт по свёрнутой строке: кириллица переводится в латиницу
+    /// (<c>в→v, л→l, а→a, д→d</c>), leet-цифры — в буквы, разделители выкидываются,
+    /// повторы схлопываются. Поэтому «В л а л», «v1a1», «VVLLLAALL» — один и тот же ник.
+    /// </para>
+    /// </remarks>
+    public static bool LooksLikeVlal(string? raw)
+    {
+        var name = Canonical(raw);
+        if (name.Length == 0)
+            return false;
+
+        var folded = new StringBuilder(name.Length);
+        var boundary = new List<bool>(name.Length);
+        var pendingBoundary = false;
+
+        foreach (var source in name.Normalize(NormalizationForm.FormKC).ToLowerInvariant())
+        {
+            if (!char.IsLetterOrDigit(source))
+            {
+                // Пробел, _, -, точка и прочие разделители: следующая буква начинает
+                // новый сегмент, а не продолжает «vlad» вплотную.
+                pendingBoundary = true;
+                continue;
+            }
+
+            var mapped = FoldForImpersonation(source);
+            if (mapped.Length == 0)
+                continue;
+
+            var isBoundary = pendingBoundary || char.IsDigit(source);
+            foreach (var c in mapped)
+            {
+                if (folded.Length > 0 && folded[^1] == c)
+                {
+                    // Повтор не добавляет букву, но граница после него важна.
+                    if (isBoundary)
+                        boundary[^1] = true;
+                    continue;
+                }
+
+                folded.Append(c);
+                boundary.Add(isBoundary);
+                isBoundary = false;
+            }
+
+            pendingBoundary = false;
+        }
+
+        var text = folded.ToString();
+        if (text.Contains("vlal", StringComparison.Ordinal))
+            return true;
+
+        if (!text.StartsWith("vlad", StringComparison.Ordinal))
+            return false;
+
+        // «vlad» целиком или «vlad» + цифра/разделитель. «Vladimir» не трогаем.
+        return text.Length == 4 || boundary[4];
+    }
+
+    /// <summary>Одна буква/цифра в свёрнутом виде для сравнения с «vlal»/«vlad».</summary>
+    private static string FoldForImpersonation(char c)
+    {
+        if (c is >= '0' and <= '9')
+        {
+            return c switch
+            {
+                '0' => "o",
+                '1' => "l",
+                '3' => "e",
+                '4' => "a",
+                '5' => "s",
+                '6' => "b",
+                '7' => "t",
+                '8' => "b",
+                '9' => "g",
+                _ => c.ToString(),
+            };
+        }
+
+        if (c is >= 'a' and <= 'z')
+            return c.ToString();
+
+        return c switch
+        {
+            'а' => "a",
+            'б' => "b",
+            'в' => "v",
+            'г' => "g",
+            'д' => "d",
+            'е' => "e",
+            'ё' => "e",
+            'ж' => "zh",
+            'з' => "z",
+            'и' => "i",
+            'й' => "i",
+            'к' => "k",
+            'л' => "l",
+            'м' => "m",
+            'н' => "n",
+            'о' => "o",
+            'п' => "p",
+            'р' => "r",
+            'с' => "s",
+            'т' => "t",
+            'у' => "u",
+            'ф' => "f",
+            'х' => "h",
+            'ц' => "c",
+            'ч' => "ch",
+            'ш' => "sh",
+            'щ' => "sch",
+            'ъ' => "",
+            'ы' => "y",
+            'ь' => "",
+            'э' => "e",
+            'ю' => "yu",
+            'я' => "ya",
+            _ => c.ToString(),
+        };
+    }
+
+    /// <summary>
     /// Ближайший допустимый ник для подсказки: снять разметку, выкинуть запрещённые символы.
     /// <c>&lt;color=red&gt;miro</c> → <c>miro</c>. Пусто — подсказать нечего.
     /// </summary>
@@ -101,6 +257,11 @@ public static class NickPolicy
         var name = Canonical(buffer.ToString());
         if (name.Length > maxLength)
             name = name[..maxLength].TrimEnd();
+
+        // Не предлагаем ник, который сам выдаёт себя за влала: подсказка должна
+        // вести к полностью другому имени, а не к соседнему написанию.
+        if (LooksLikeVlal(name))
+            return "";
 
         return Check(name, maxLength).Ok ? name : "";
     }
@@ -139,4 +300,11 @@ public static class NickPolicy
 }
 
 /// <summary>Результат <see cref="NickPolicy.Check"/>: пускать или нет и почему.</summary>
-public readonly record struct NickCheck(bool Ok, string Name, string Reason);
+/// <param name="Impersonation">
+/// Отказ именно за маскировку под влала: подсказка не поможет, нужен полностью другой ник.
+/// </param>
+public readonly record struct NickCheck(
+    bool Ok,
+    string Name,
+    string Reason,
+    bool Impersonation = false);

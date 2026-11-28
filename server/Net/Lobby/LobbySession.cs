@@ -383,7 +383,7 @@ public sealed class LobbySession
             {
                 if (ReferenceEquals(p, self) || !p.Joined)
                     continue;
-                if (!string.Equals(p.Name, nick, StringComparison.OrdinalIgnoreCase))
+                if (!string.Equals(p.Name, nick, StringComparison.Ordinal))
                     continue;
                 if (p.Peer.Address is not { } oldAddress
                     || peer.Address is not { } newAddress

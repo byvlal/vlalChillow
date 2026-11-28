@@ -377,7 +377,7 @@ public sealed partial class GameMatchHost
         return fallback;
     }
 
-    private static int ReadActorIntProp(MatchRoom room, byte actorNr, string key)
+    internal static int ReadActorIntProp(MatchRoom room, byte actorNr, string key)
     {
         if (!room.ActorProps.TryGetValue((actorNr, key), out var v))
             return -1;

@@ -37,6 +37,20 @@ public enum MatchFlowPhase : byte
     AlliesPreWarmup = 15,
 }
 
+/// <summary>
+/// What the C2=22 buy tick does when a fighting team is empty. A round must never open C2=31
+/// with nobody on the other side: the remaining team would get a free round.
+/// </summary>
+public enum AlliesBuyHoldAction
+{
+    /// <summary>Both teams are present and no hold was active — the normal buy flow.</summary>
+    None = 0,
+    /// <summary>A team is empty: keep C2=22 alive and do not start combat.</summary>
+    Hold = 1,
+    /// <summary>Both teams are back after a hold: give one full buy window.</summary>
+    Resume = 2,
+}
+
 /// <summary>Per-room match clock — C2 / Time / Round / scores / wipe state.
 /// Filled by observe-then-forward on RX (MATCH_ARCHITECTURE.md): <see cref="DeadActors"/>,
 /// <see cref="BombPlantedUtc"/>+fuse, <see cref="Phase"/> + <see cref="PhaseEndsUtc"/>
@@ -93,6 +107,13 @@ public sealed class MatchFlowState
     /// A bare pawn <c>DestroyWorldObject</c> is NOT a death (phase respawn) — see
     /// <see cref="PendingCombatDestroy"/> and MATCH_WORLD.md "death vs respawn".
     /// </summary>
+    /// <remarks>
+    /// The wire <c>death</c> prop is a <b>cumulative</b> match counter (issue #56), not a
+    /// round-local flag: it keeps its value after a respawn. Never rebuild this set by scanning
+    /// actor props for a non-zero <c>death</c> — that would mark every player who ever died as
+    /// dead again on the next C2=31. Only the death event adds here, and the player's own
+    /// <c>CreateWorldObject</c> (<see cref="MatchFlowRules.NoteSpawn"/>) removes him.
+    /// </remarks>
     public HashSet<byte> DeadActors { get; } = new();
     /// <summary>
     /// Fighters that were already dead when the current round started and have not sent their
@@ -108,6 +129,12 @@ public sealed class MatchFlowState
     /// round flag, so it cannot answer «did he respawn» — this set can.
     /// </remarks>
     public HashSet<byte> CarriedDeadActors { get; } = new();
+    /// <summary>
+    /// C2=31 spawn clock for live roster fighters without a body yet. The host treats an
+    /// expired deadline as death for the wipe (5 s grace, see
+    /// <see cref="MatchLifeRules.SpawnGrace"/>); a CWO or a real death removes the clock.
+    /// </summary>
+    public Dictionary<byte, DateTime> SpawnDeadlines { get; } = new();
     /// <summary>
     /// Fighters that actually entered the current round (actor → team), frozen when combat
     /// starts (C2=31 for the bomb family, Live for classic Ranked).
@@ -135,6 +162,12 @@ public sealed class MatchFlowState
     public MatchTeam PendingWinner { get; set; }
     /// <summary>One 5s prep extension when a living fighter picked team but has no pawn yet.</summary>
     public bool PrepSpawnExtensionUsed { get; set; }
+    /// <summary>
+    /// C2=22 buy is held because one fighting team is empty (disconnect, spectator, late join).
+    /// The tick sends a 5s keepalive instead of C2=31; once both teams are back the buy gets
+    /// its full wall again. Cleared on PreStart / combat.
+    /// </summary>
+    public bool AlliesBuyHeldForMissingTeam { get; set; }
     /// <summary>
     /// Legacy Allies buy-pad gate fields — cleared on PreStart/combat; unused on gold path
     /// (C2=22 Time=RST=now → stay on C2=31). Kept so older snapshots/deserializers stay stable.
@@ -215,6 +248,18 @@ public static class MatchFlowRules
             or MatchFlowPhase.PurchasePhase;
 
     /// <summary>
+    /// Decide the C2=22 buy window when one fighting team is empty. <see cref="AlliesBuyHoldAction.Hold"/>
+    /// keeps the round in buy instead of opening C2=31 for a side that has nobody to fight;
+    /// <see cref="AlliesBuyHoldAction.Resume"/> grants a fresh full buy, never an instant combat start.
+    /// </summary>
+    public static AlliesBuyHoldAction DecideAlliesBuyHold(bool bothTeamsPresent, bool holdActive)
+    {
+        if (!bothTeamsPresent)
+            return AlliesBuyHoldAction.Hold;
+        return holdActive ? AlliesBuyHoldAction.Resume : AlliesBuyHoldAction.None;
+    }
+
+    /// <summary>
     /// Phases where a bare <c>DestroyWorldObject</c> may indicate a combat elimination.
     /// Warmup/PreStart clients Destroy+Create on phase transition (respawn). Combat:
     /// RoundLive / BombPlanted / TDM Live / Allies+Escalation C2=31 PurchasePhase.
@@ -239,7 +284,9 @@ public static class MatchFlowRules
         IReadOnlyDictionary<(byte Actor, string Key), LobbyVariant> actorProps,
         byte actorNr)
     {
-        return flow.DeadActors.Contains(actorNr);
+        // Single source of truth: a proven death this round, or a carried death without a
+        // body, is dead. The cumulative `death` prop is never consulted here.
+        return MatchLifeRules.IsDead(flow, actorNr);
     }
 
     /// <summary>
@@ -332,6 +379,7 @@ public static class MatchFlowRules
     {
         flow.CarriedDeadActors.UnionWith(flow.DeadActors);
         flow.DeadActors.Clear();
+        flow.SpawnDeadlines.Clear();
     }
 
     /// <summary>Fresh match / warmup: forget every per-player death fact from the last match.</summary>
@@ -339,6 +387,7 @@ public static class MatchFlowRules
     {
         flow.DeadActors.Clear();
         flow.CarriedDeadActors.Clear();
+        flow.SpawnDeadlines.Clear();
     }
 
     /// <summary>
@@ -350,6 +399,7 @@ public static class MatchFlowRules
     {
         var wasDead = flow.DeadActors.Remove(actorNr);
         flow.CarriedDeadActors.Remove(actorNr);
+        flow.SpawnDeadlines.Remove(actorNr);
         return wasDead;
     }
 
@@ -370,6 +420,7 @@ public static class MatchFlowRules
                 flow.CarriedDeadActors.Add(actor);
         }
         flow.CarriedDeadActors.UnionWith(flow.DeadActors);
+        flow.SpawnDeadlines.Clear();
     }
 
     /// <summary>
@@ -562,5 +613,73 @@ public static class MatchFlowRules
             && v.Kind == LobbyVariantKind.Byte)
             return (MatchTeam)v.Byte;
         return MatchTeam.None;
+    }
+
+    /// <summary>
+    /// Resolve the victim of a <c>kills</c>++ that arrived without damage attribution, when the
+    /// killer has exactly one living enemy. Returns <c>0</c> when the kill is not provable.
+    /// </summary>
+    /// <remarks>
+    /// A suicide also increments the client's own <c>kills</c> counter (latest.log round 2:
+    /// влал threw a grenade at his feet, his pawn was destroyed, the client still sent
+    /// <c>kills++</c>). With one enemy alive the old fallback «the only enemy must be the
+    /// victim» authored that enemy's death and awarded the round to the suicider. A killer
+    /// without a living pawn, or already marked dead, cannot have produced a kill here — the
+    /// victim's own death evidence or the killer's death must decide the round instead.
+    /// </remarks>
+    public static byte ResolveSingleEnemyFallback(
+        MatchFlowState flow,
+        IReadOnlySet<byte> livingPawnOwners,
+        byte killerActorNr,
+        Func<byte, MatchTeam> teamOf,
+        out string reason)
+    {
+        reason = "no unambiguous living enemy";
+        if (killerActorNr == 0 || killerActorNr == MatchHostActor.ActorNr)
+        {
+            reason = "killer is host/zero";
+            return 0;
+        }
+        if (!livingPawnOwners.Contains(killerActorNr))
+        {
+            reason = "killer has no living pawn (suicide/dead)";
+            return 0;
+        }
+        if (MatchLifeRules.IsDead(flow, killerActorNr))
+        {
+            reason = "killer is dead";
+            return 0;
+        }
+
+        var killerTeam = teamOf(killerActorNr);
+        if (killerTeam is not (MatchTeam.Tr or MatchTeam.Ct))
+        {
+            reason = "killer team unknown";
+            return 0;
+        }
+
+        byte victim = 0;
+        foreach (var owner in livingPawnOwners.Distinct())
+        {
+            if (owner == 0 || owner == MatchHostActor.ActorNr || owner == killerActorNr)
+                continue;
+            var team = teamOf(owner);
+            if (team is not (MatchTeam.Tr or MatchTeam.Ct) || team == killerTeam)
+                continue;
+            if (victim != 0)
+            {
+                reason = "more than one living enemy";
+                return 0;
+            }
+            victim = owner;
+        }
+        if (victim == 0)
+        {
+            reason = "no living enemy";
+            return 0;
+        }
+
+        reason = "single living enemy";
+        return victim;
     }
 }

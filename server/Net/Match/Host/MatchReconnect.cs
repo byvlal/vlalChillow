@@ -150,6 +150,7 @@ internal static class MatchReconnect
         // A new session gets a new body: the old session's carried round-death must not follow
         // the returning player into the next round. His own CWO is the fresh proof of life.
         room.Flow.CarriedDeadActors.Remove(actorNr);
+        room.Flow.SpawnDeadlines.Remove(actorNr);
         room.LastCombatDamage.Remove(actorNr);
         foreach (var attacker in room.LastCombatDamage
                      .Where(kv => kv.Value.Victim == actorNr)
@@ -188,6 +189,9 @@ internal static class MatchReconnect
             remembered is MatchTeam.Tr or MatchTeam.Ct ? remembered : null;
         // Identity batch от вернувшегося клиента не приходит — INIT не ждём.
         newState.ReconnectIdentityTrusted = true;
+        // The actor kept its props through the takeover: the returning client must not
+        // overwrite the carried scoreboard with its fresh zeros.
+        newState.MatchStatsCarried = true;
         return new ReconnectAdoption(remembered, pawnIds, clearedRoundDeath);
     }
 }

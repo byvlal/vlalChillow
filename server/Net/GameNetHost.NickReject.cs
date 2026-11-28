@@ -39,7 +39,7 @@ public sealed partial class GameNetHost
             return;
         }
 
-        var check = NickPolicy.Check(req.Profile.Name, _config.Names.MaxLength);
+        var check = CheckNickForJoin(req.Profile.Name);
         var suggest = NickPolicy.Suggest(req.Profile.Name, _config.Names.MaxLength);
         var shown = NickPolicy.Describe(req.Profile.Name);
 
@@ -59,10 +59,19 @@ public sealed partial class GameNetHost
         // Три строки по порядку: ReliableOrdered доставит их так же, как приветствие.
         // Старый ник показываем в квадратных скобках, а не в угловых: угловые клиент
         // нарисовал бы как разметку, и сообщение сломалось бы само о себя.
-        SendServerChatTo(peer, $"ник хуйня ебаная: «{shown}»");
-        SendServerChatTo(peer, suggest.Length > 0
-            ? $"иди смени на «{suggest}» — буквы, цифры, пробел, _ и -"
-            : "иди смени ник — нужны буквы или цифры, пробел, _ и -");
+        if (check.Impersonation)
+        {
+            // Подсказка «смени одну букву» здесь вредна: нужен полностью другой ник.
+            SendServerChatTo(peer, $"ник «{shown}» выдаёт себя за влала");
+            SendServerChatTo(peer, "возьми полностью другой ник — этот не подойдёт");
+        }
+        else
+        {
+            SendServerChatTo(peer, $"ник хуйня ебаная: «{shown}»");
+            SendServerChatTo(peer, suggest.Length > 0
+                ? $"иди смени на «{suggest}» — буквы, цифры, пробел, _ и -"
+                : "иди смени ник — нужны буквы или цифры, пробел, _ и -");
+        }
         SendServerChatTo(peer, $"кик через {_config.Names.KickDelaySec} сек");
 
         var delayMs = Math.Max(1, _config.Names.KickDelaySec) * 1000;
@@ -85,6 +94,20 @@ public sealed partial class GameNetHost
         lock (_nickRejectGate)
             return _nickRejectedPeers.ContainsKey(peer);
     }
+
+    /// <summary>
+    /// Можно ли пустить ник в лобби и катку: обычные правила плюс анти-Влал.
+    /// Админам и мега-админам анти-Влал не применяется — права даёт конфиг, не ник.
+    /// </summary>
+    private bool IsNickAllowedForJoin(string? nick) =>
+        CheckNickForJoin(nick).Ok;
+
+    /// <summary>Та же проверка с причиной отказа — для подсказки в скрытом лобби.</summary>
+    private NickCheck CheckNickForJoin(string? nick) =>
+        NickPolicy.CheckForJoin(
+            nick,
+            _config.Names.MaxLength,
+            allowVlal: IsAdminId(IdOf(nick)));
 
     private void ForgetNickReject(NetPeer peer)
     {

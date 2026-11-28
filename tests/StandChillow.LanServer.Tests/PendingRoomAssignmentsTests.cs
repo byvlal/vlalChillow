@@ -57,13 +57,16 @@ public sealed class PendingRoomAssignmentsTests
     }
 
     [Fact]
-    public void HasReservationIgnoresCorruptedNick()
+    public void HasReservationNormalizesSpacesButKeepsCase()
     {
         var reg = new PendingRoomAssignments();
         Assert.True(reg.Reserve("room#1", "влал"));
 
-        // Пробелы и регистр — тот же человек, а не чужой.
-        Assert.True(reg.HasReservation("  ВЛАЛ  "));
+        // Пробелы — не часть ника.
+        Assert.True(reg.HasReservation("  влал  "));
+
+        // Регистр — уже другой аккаунт.
+        Assert.False(reg.HasReservation("ВЛАЛ"));
     }
 
     [Fact]
@@ -103,12 +106,15 @@ public sealed class PendingRoomAssignmentsTests
     }
 
     [Fact]
-    public void NickComparedCaseInsensitively()
+    public void NickComparedExactly()
     {
         var reg = new PendingRoomAssignments();
         reg.Reserve("room#1", "Vlal");
-        Assert.True(reg.TryResolve("vLaL", null, null, out var key));
+
+        Assert.True(reg.TryResolve("Vlal", null, null, out var key));
         Assert.Equal("room#1", key);
+
+        Assert.False(reg.TryResolve("vLaL", null, null, out _));
     }
 
     [Fact]
@@ -265,12 +271,15 @@ public sealed class PendingRoomAssignmentsTests
     }
 
     [Fact]
-    public void ReleaseByNickDropsReservation()
+    public void ReleaseByNickDropsOnlyExactNick()
     {
         var reg = new PendingRoomAssignments();
         reg.Reserve("room#1", "влал");
 
-        Assert.True(reg.ReleaseByNick("ВЛАЛ"));
+        Assert.False(reg.ReleaseByNick("ВЛАЛ"));
+        Assert.True(reg.TryResolve("влал", null, null, out _));
+
+        Assert.True(reg.ReleaseByNick("влал"));
         Assert.False(reg.TryResolve("влал", null, null, out _));
     }
 

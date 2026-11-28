@@ -4,8 +4,8 @@ using Xunit;
 namespace StandChillow.LanServer.Tests;
 
 /// <summary>
-/// Реестр аккаунтов: номера выдаются на входе по порядку, ник — подпись, устройство —
-/// доказательство личности. Тёзка не должен получить чужой номер или чужой бан.
+/// Реестр аккаунтов: номер постоянный, личность — точный ник (с учётом регистра).
+/// Устройство только улика: оно не создаёт второй аккаунт и не отбирает чужой бан.
 /// </summary>
 public sealed class AccountStoreTests
 {
@@ -40,6 +40,25 @@ public sealed class AccountStoreTests
         return path;
     }
 
+    /// <summary>Старый файл с тремя точными дублями «Skipp» и отдельным «skipp».</summary>
+    private static string DuplicateNicksPath()
+    {
+        var path = TempPath();
+        File.WriteAllText(path, """
+        {
+          "version": 2,
+          "nextId": 1000004,
+          "accounts": [
+            { "Id": 1000000, "Nick": "Skipp", "Aliases": [], "Devices": ["LB143C7D41FAE30EB14F49B1678E3933C9"], "CreatedUtcMs": 50, "LastSeenUtcMs": 100 },
+            { "Id": 1000001, "Nick": "Skipp", "Aliases": ["old"], "Devices": ["LB4B7BA14444774A9D4FBBEC23F4519998"], "CreatedUtcMs": 100, "LastSeenUtcMs": 300 },
+            { "Id": 1000002, "Nick": "Skipp", "Aliases": [], "Devices": [], "CreatedUtcMs": 200, "LastSeenUtcMs": 50 },
+            { "Id": 1000003, "Nick": "skipp", "Aliases": [], "Devices": [], "CreatedUtcMs": 10, "LastSeenUtcMs": 10 }
+          ]
+        }
+        """);
+        return path;
+    }
+
     [Fact]
     public void FirstAccountGetsFirstIdAndNumbersGrowByOne()
     {
@@ -57,15 +76,19 @@ public sealed class AccountStoreTests
     }
 
     [Fact]
-    public void GetOrCreateReusesAccountByNickIgnoringCase()
+    public void GetOrCreateTreatsNickCaseAsDifferentAccount()
     {
         var store = NewStore();
         var first = store.GetOrCreate("Влал", Now);
         var second = store.GetOrCreate("  влАЛ  ", Now.AddMinutes(1));
 
-        Assert.Same(first, second);
-        Assert.Equal(1, store.Count);
-        Assert.Equal("влАЛ", first!.Nick);
+        Assert.NotSame(first, second);
+        Assert.Equal(2, store.Count);
+        Assert.Equal("Влал", first!.Nick);
+        Assert.Equal("влАЛ", second!.Nick);
+        Assert.Equal(first.Id, store.FindByNick("Влал")!.Id);
+        Assert.Equal(second.Id, store.FindByNick("влАЛ")!.Id);
+        Assert.Null(store.FindByNick("влал"));
     }
 
     [Fact]
@@ -82,18 +105,19 @@ public sealed class AccountStoreTests
     }
 
     [Fact]
-    public void NewDeviceUnderTakenNickGetsNewAccount()
+    public void NewDeviceUnderTakenNickKeepsSameAccount()
     {
         var store = NewStore();
         var owner = store.EnsureForJoin("Влал", Device, Now);
-        var namesake = store.EnsureForJoin("Влал", OtherDevice, Now.AddMinutes(1));
+        var samePerson = store.EnsureForJoin("Влал", OtherDevice, Now.AddMinutes(1));
 
-        Assert.NotNull(owner);
-        Assert.NotNull(namesake);
-        Assert.NotEqual(owner!.Id, namesake!.Id);
-        Assert.Equal(2, store.Count);
+        // Устройство — улика, а не личность: точный ник уже доказал, кто это.
+        Assert.Same(owner, samePerson);
+        Assert.Equal(1, store.Count);
+        Assert.True(owner!.HasDevice(Device));
+        Assert.True(owner.HasDevice(OtherDevice));
         Assert.Equal(owner.Id, store.ProbeId(Device));
-        Assert.Equal(namesake.Id, store.ProbeId(OtherDevice));
+        Assert.Equal(owner.Id, store.ProbeId(OtherDevice));
     }
 
     [Fact]
@@ -206,15 +230,30 @@ public sealed class AccountStoreTests
     }
 
     [Fact]
-    public void NewestAccountWithTheSameNickWinsFindByNick()
+    public void SameExactNickOnDifferentDevicesIsOneAccount()
     {
         var store = NewStore();
-        var older = store.EnsureForJoin("Влал", Device, Now);
-        var newer = store.EnsureForJoin("Влал", OtherDevice, Now.AddMinutes(1));
+        var first = store.EnsureForJoin("Влал", Device, Now);
+        var second = store.EnsureForJoin("Влал", OtherDevice, Now.AddMinutes(1));
 
-        Assert.Equal(newer!.Id, store.FindByNick("влал")!.Id);
-        Assert.NotEqual(older!.Id, newer.Id);
-        Assert.Equal(2, store.FindAccountsByNick("Влал").Count);
+        Assert.Same(first, second);
+        Assert.Equal(1, store.Count);
+        Assert.Equal(first!.Id, store.FindByNick("Влал")!.Id);
+        Assert.Single(store.FindAccountsByNick("Влал"));
+    }
+
+    [Fact]
+    public void NickCaseChangeIsANewAccount()
+    {
+        var store = NewStore();
+        var upper = store.EnsureForJoin("Влал", Device, Now);
+        var lower = store.EnsureForJoin("влал", OtherDevice, Now.AddMinutes(1));
+
+        Assert.NotSame(upper, lower);
+        Assert.Equal(2, store.Count);
+        Assert.Equal(upper!.Id, store.FindByNick("Влал")!.Id);
+        Assert.Equal(lower!.Id, store.FindByNick("влал")!.Id);
+        Assert.Null(store.FindByNick("ВЛАЛ"));
     }
 
     [Fact]
@@ -272,8 +311,9 @@ public sealed class AccountStoreTests
         var store = NewStore();
         var account = store.GetOrCreate("Ktulxy", Now);
 
-        Assert.Equal(account!.Id, store.MapLegacyId(123, "ktulxy"));
+        Assert.Equal(account!.Id, store.MapLegacyId(123, "Ktulxy"));
         Assert.Equal(account.Id, store.MapLegacyId(account.Id, null));
+        Assert.Equal(0, store.MapLegacyId(123, "ktulxy"));
         Assert.Equal(0, store.MapLegacyId(123, "неизвестный"));
     }
 
@@ -432,5 +472,61 @@ public sealed class AccountStoreTests
         Assert.Null(store.EnsureForJoin("", Device, Now));
         Assert.Null(store.FindByNick(null));
         Assert.Equal(0, store.Count);
+    }
+
+    [Fact]
+    public void MergeDuplicateNicksKeepsOldestAndMapsOldIds()
+    {
+        var store = new AccountStore(DuplicateNicksPath());
+
+        var merged = store.MergeDuplicateNicks();
+
+        Assert.Equal(2, merged);
+        Assert.Equal(2, store.Count);
+
+        // «Skipp» и «skipp» — разные аккаунты, склеились только точные дубли.
+        var canonical = store.FindByNick("Skipp")!;
+        Assert.Equal(1000000, canonical.Id);
+        Assert.Equal(1000003, store.FindByNick("skipp")!.Id);
+
+        // Устройства и прежние ники переехали на канонический номер.
+        Assert.True(canonical.HasDevice("LB143C7D41FAE30EB14F49B1678E3933C9"));
+        Assert.True(canonical.HasDevice("LB4B7BA14444774A9D4FBBEC23F4519998"));
+        Assert.Contains("old", canonical.Aliases);
+        Assert.Equal(300, canonical.LastSeenUtcMs);
+
+        Assert.Equal(1000000, store.MapMergedId(1000001));
+        Assert.Equal(1000000, store.MapMergedId(1000002));
+        Assert.Equal(1000000, store.MapLegacyId(1000001, null));
+        Assert.Equal(2, store.MergedCount);
+    }
+
+    [Fact]
+    public void MergeDuplicateNicksPrefersAdminAccount()
+    {
+        var store = new AccountStore(DuplicateNicksPath());
+
+        var merged = store.MergeDuplicateNicks(id => id == 1000002);
+
+        Assert.Equal(2, merged);
+        Assert.Equal(1000002, store.FindByNick("Skipp")!.Id);
+        Assert.Equal(1000002, store.MapMergedId(1000000));
+        Assert.Equal(1000002, store.MapMergedId(1000001));
+    }
+
+    [Fact]
+    public void MergedMapSurvivesReload()
+    {
+        var path = DuplicateNicksPath();
+        var first = new AccountStore(path);
+        first.MergeDuplicateNicks();
+
+        var reloaded = new AccountStore(path);
+
+        Assert.Equal(2, reloaded.Count);
+        Assert.Equal(1000000, reloaded.FindByNick("Skipp")!.Id);
+        Assert.Equal(1000000, reloaded.MapMergedId(1000001));
+        Assert.Equal(1000000, reloaded.MapLegacyId(1000002, null));
+        Assert.Equal(2, reloaded.MergedCount);
     }
 }

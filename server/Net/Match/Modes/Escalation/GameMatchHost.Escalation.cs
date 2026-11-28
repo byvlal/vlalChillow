@@ -279,7 +279,8 @@ public sealed partial class GameMatchHost
             room.Flow.PhaseEndsUtc = DefuseTimer.FuseEndsUtc(plantUtc, EscalationFlowParams.BombFuse);
         }
 
-        SyncDeadActorsFromDeathProps(room);
+        // DeadActors is event-driven (death prop + CWO); the cumulative death counter is not a
+        // round state and must not be replayed into it.
         if (TryResolveWipeImmediate(room, bombPlanted: true))
             return;
 

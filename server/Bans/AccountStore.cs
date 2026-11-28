@@ -8,11 +8,11 @@ namespace StandChillow.LanServer.Bans;
 /// Аккаунт игрока: постоянный номер, который сервер выдаёт при первом входе.
 /// </summary>
 /// <remarks>
-/// Номер не зависит от ника: ник — только подпись, которую можно сменить. Устройства
-/// (<c>LB&lt;md5&gt;</c> из 2.07-handshake) привязываются к аккаунту при входе в катку и
-/// переживают смену ника и VPN. Пока устройство не привязано, аккаунт считается
-/// «лёгким»: по нему нельзя банить чужой новый вход, иначе невинный, взявший ник
-/// забаненного, унаследовал бы чужой бан.
+/// Номер не зависит от устройства: личность — точный ник (с учётом регистра).
+/// Устройства (<c>LB&lt;md5&gt;</c> из 2.07-handshake) только записываются как улика
+/// для банов, жалоб и логов; они больше не решают, тот это человек или нет.
+/// Один точный ник — один аккаунт на любом устройстве. Любое изменение буквы или
+/// регистра — уже другой аккаунт.
 /// </remarks>
 public sealed class Account
 {
@@ -44,6 +44,10 @@ public sealed class Account
         }
     }
 
+    /// <summary>
+    /// Совпадает ли ник с текущим или прежним. Регистр не важен — это поиск по
+    /// истории для админки и банов, а не проверка личности.
+    /// </summary>
     public bool HasNick(string? nick)
     {
         var normalized = ServerConfig.NormalizeNick(nick);
@@ -51,6 +55,17 @@ public sealed class Account
             return false;
 
         return AllNicks.Any(n => string.Equals(n, normalized, StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>
+    /// Совпадает ли ник с текущим <b>точно</b>, с учётом регистра. Только это
+    /// выражение является личностью аккаунта.
+    /// </summary>
+    public bool HasCurrentNick(string? nick)
+    {
+        var normalized = ServerConfig.NormalizeNick(nick);
+        return normalized.Length > 0
+               && string.Equals(Nick, normalized, StringComparison.Ordinal);
     }
 
     public bool HasDevice(string? device)
@@ -163,10 +178,14 @@ public sealed class AccountStore
     private readonly string _path;
     private readonly List<Account> _accounts = new();
     private readonly Dictionary<int, Account> _byId = new();
-    // Текущий ник и прежние ники — разные индексы. Иначе алиас одного аккаунта
-    // перекрывает действующий ник другого и тот перестаёт находиться по своему же нику.
-    private readonly Dictionary<string, Account> _byNick = new(StringComparer.OrdinalIgnoreCase);
+    // Текущий ник — ключ личности: сравнение точное, с учётом регистра.
+    // «Skipp» и «skipp» — разные аккаунты, а не один.
+    private readonly Dictionary<string, Account> _byNick = new(StringComparer.Ordinal);
+    // Прежние ники — только история для админ-поиска. Личность по ним не находится.
     private readonly Dictionary<string, Account> _byAlias = new(StringComparer.OrdinalIgnoreCase);
+    // Склеенные дубли: старый номер → канонический. Карта переживает рестарт,
+    // чтобы статистика/история/аватары со старых номеров не потерялись.
+    private readonly Dictionary<int, int> _mergedIds = new();
     // Одно устройство может доказать несколько аккаунтов (разные ники на одной установке).
     // Список, а не один аккаунт: иначе второй аккаунт вытесняет первый из проверки банов.
     private readonly Dictionary<string, List<Account>> _byDevice = new(StringComparer.OrdinalIgnoreCase);
@@ -324,12 +343,10 @@ public sealed class AccountStore
             return _byId.TryGetValue(id, out var account) ? account : null;
     }
 
-    /// <summary>Аккаунт по нику (текущему или прежнему). Регистр не важен.</summary>
-    /// <remarks>
-    /// Действующий ник всегда важнее прежнего: если два аккаунта делят строку, побеждает
-    /// тот, для кого она сейчас <see cref="Account.Nick"/>, а не тот, у кого она осталась
-    /// алиасом. Так алиас не может «украсть» чужой действующий ник.
-    /// </remarks>
+    /// <summary>
+    /// Аккаунт по точному текущему нику. Регистр важен: «Skipp» и «skipp» —
+    /// два разных аккаунта. Прежние ники личностью не считаются.
+    /// </summary>
     public Account? FindByNick(string? nick)
     {
         var normalized = ServerConfig.NormalizeNick(nick);
@@ -340,20 +357,34 @@ public sealed class AccountStore
             return FindByNickLocked(normalized);
     }
 
-    /// <summary>Ник под замком: сначала действующий владелец, затем самый свежий алиас.</summary>
-    private Account? FindByNickLocked(string normalized)
-    {
-        if (_byNick.TryGetValue(normalized, out var account))
-            return account;
+    /// <summary>Точный текущий ник под замком.</summary>
+    private Account? FindByNickLocked(string normalized) =>
+        _byNick.TryGetValue(normalized, out var account) ? account : null;
 
-        return _byAlias.TryGetValue(normalized, out var alias) ? alias : null;
+    /// <summary>
+    /// Все аккаунты с этим точным текущим ником. После склейки дублей их не больше
+    /// одного; список оставлен для страховки и старых файлов.
+    /// </summary>
+    public IReadOnlyList<Account> FindAccountsByNick(string? nick)
+    {
+        var normalized = ServerConfig.NormalizeNick(nick);
+        if (normalized.Length == 0)
+            return Array.Empty<Account>();
+
+        lock (_gate)
+        {
+            return _accounts
+                .Where(a => string.Equals(a.Nick, normalized, StringComparison.Ordinal))
+                .OrderBy(a => a.Id)
+                .ToList();
+        }
     }
 
     /// <summary>
-    /// Все аккаунты, которым принадлежит ник (текущий или прежний). Нужно проверкам
-    /// админа: тёзка под тем же ником не должен отобрать права у настоящего владельца.
+    /// Все аккаунты, у которых ник (текущий или прежний) совпадает без учёта
+    /// регистра. Только для поиска в админке, не для личности и не для прав.
     /// </summary>
-    public IReadOnlyList<Account> FindAccountsByNick(string? nick)
+    public IReadOnlyList<Account> FindAccountsByAnyNick(string? nick)
     {
         var normalized = ServerConfig.NormalizeNick(nick);
         if (normalized.Length == 0)
@@ -411,30 +442,9 @@ public sealed class AccountStore
         return accounts.Count > 0 ? accounts[0] : null;
     }
 
-    /// <summary>Есть ли у устройства уже доказанный аккаунт с таким ником.</summary>
-    private static Account? DeviceAccountWithNickLocked(
-        List<Account> accounts, string normalizedNick)
-    {
-        // Действующий ник важнее алиаса — как и в FindByNickLocked.
-        foreach (var account in accounts)
-        {
-            if (string.Equals(account.Nick, normalizedNick, StringComparison.OrdinalIgnoreCase))
-                return account;
-        }
-
-        foreach (var account in accounts)
-        {
-            if (account.Aliases.Any(a => string.Equals(
-                    a, normalizedNick, StringComparison.OrdinalIgnoreCase)))
-                return account;
-        }
-
-        return null;
-    }
-
     /// <summary>
-    /// Аккаунт для успешного входа в лобби: ник уже доказан, устройство ещё нет.
-    /// Создаёт новый номер только если такого ника сервер раньше не видел.
+    /// Аккаунт для успешного входа в лобби. Ключ — точный ник; устройство в лобби
+    /// ещё неизвестно. Создаёт новый номер только если такого точного ника нет.
     /// </summary>
     public Account? GetOrCreate(string? nick, DateTime nowUtc)
     {
@@ -457,27 +467,10 @@ public sealed class AccountStore
     }
 
     /// <summary>
-    /// Аккаунт для входа в катку. Личность доказывается ником и устройством:
-    /// <list type="number">
-    /// <item>у устройства уже есть аккаунт с этим ником (сейчас или в алиасах) — он;</item>
-    /// <item>ник свободен (аккаунт без устройств, например только что из лобби) — занять его;</item>
-    /// <item>ник уже занят чужим устройством — новый аккаунт, чтобы тёзка не наследовал бан;</item>
-    /// <item>ник новый — новый аккаунт.</item>
-    /// </list>
+    /// Аккаунт для входа в катку. Ключ — тот же точный ник, что и в лобби.
+    /// Устройство только записывается в аккаунт как улика для бана; оно больше
+    /// не создаёт новый номер и не отделяет «тёзку».
     /// </summary>
-    /// <remarks>
-    /// <para>
-    /// Одно устройство может доказать несколько аккаунтов: смена ника на той же установке
-    /// больше не переименовывает старый аккаунт, а заводит рядом новый. Старый остаётся
-    /// со своим номером и находится по старому нику — номер не переиспользуется и не
-    /// «исчезает» при создании второго аккаунта.
-    /// </para>
-    /// <para>
-    /// Пустой <paramref name="device"/> (legacy-handshake) не создаёт новый аккаунт на
-    /// каждый реконнект: без устройства личность доказывается только ником, поэтому
-    /// переиспользуем существующую запись.
-    /// </para>
-    /// </remarks>
     public Account? EnsureForJoin(string? nick, string? device, DateTime nowUtc)
     {
         var normalized = ServerConfig.NormalizeNick(nick);
@@ -488,30 +481,12 @@ public sealed class AccountStore
 
         lock (_gate)
         {
-            // 1. Это устройство уже владеет аккаунтом с таким ником (текущим или прежним).
-            //    Сильнее любого другого совпадения: возврат на старый ник находит старый
-            //    аккаунт, даже если кто-то другой успел взять ту же строку.
-            if (normalizedDevice.Length > 0
-                && _byDevice.TryGetValue(normalizedDevice, out var deviceAccounts)
-                && DeviceAccountWithNickLocked(deviceAccounts, normalized) is { } byDeviceNick)
+            if (FindByNickLocked(normalized) is { } existing)
             {
-                TouchLocked(byDeviceNick, normalized, normalizedDevice, nowUtc);
-                return byDeviceNick;
+                TouchLocked(existing, normalized, normalizedDevice, nowUtc);
+                return existing;
             }
 
-            // 2. Ник уже известен. Аккаунт без устройств можно занять (это тот же человек,
-            //    который только что вошёл в лобби); с этим же устройством — тот же человек;
-            //    с чужим устройством — новый номер, иначе тёзка наследует чужой бан.
-            if (FindByNickLocked(normalized) is { } byNick
-                && (normalizedDevice.Length == 0
-                    || byNick.Devices.Count == 0
-                    || byNick.HasDevice(normalizedDevice)))
-            {
-                TouchLocked(byNick, normalized, normalizedDevice, nowUtc);
-                return byNick;
-            }
-
-            // 3. Новый ник или занятый чужим устройством — отдельный постоянный номер.
             var account = NewLocked(normalized, normalizedDevice, nowUtc);
             NotifyChanged();
             return account;
@@ -539,6 +514,137 @@ public sealed class AccountStore
     public int ProbeId(string? device)
     {
         return FindByDevice(device)?.Id ?? 0;
+    }
+
+    /// <summary>
+    /// Разовая склейка старых дублей: один точный ник — один аккаунт.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Канонический номер — админский, если в группе есть админ; иначе самый старый
+    /// (по <see cref="Account.CreatedUtcMs"/>, затем по номеру). Устройства и прежние
+    /// ники объединяются, статистика и остальные хранилища переводятся на канонический
+    /// номер через <see cref="MapLegacyId"/>.
+    /// </para>
+    /// <para>
+    /// Карта старый→канонический хранится в <c>accounts.json</c> постоянно: она нужна
+    /// аватарам и старым ссылкам, у которых нет ника. Повторный вызов идемпотентен.
+    /// </para>
+    /// </remarks>
+    /// <param name="isAdmin">Права по номеру: админский аккаунт не должен потерять номер.</param>
+    /// <returns>Сколько аккаунтов склеено.</returns>
+    public int MergeDuplicateNicks(Func<int, bool>? isAdmin = null)
+    {
+        lock (_gate)
+        {
+            var groups = _accounts
+                .Where(a => a.Nick.Length > 0)
+                .GroupBy(a => a.Nick, StringComparer.Ordinal)
+                .Where(g => g.Count() > 1)
+                .ToList();
+            if (groups.Count == 0)
+                return 0;
+
+            var merged = 0;
+            foreach (var group in groups)
+            {
+                var ordered = group
+                    .OrderBy(a => isAdmin?.Invoke(a.Id) == true ? 0 : 1)
+                    .ThenBy(a => a.CreatedUtcMs)
+                    .ThenBy(a => a.Id)
+                    .ToList();
+                var canonical = ordered[0];
+
+                foreach (var duplicate in ordered.Skip(1))
+                {
+                    if (duplicate.CreatedUtcMs > 0
+                        && (canonical.CreatedUtcMs == 0
+                            || duplicate.CreatedUtcMs < canonical.CreatedUtcMs))
+                        canonical.CreatedUtcMs = duplicate.CreatedUtcMs;
+
+                    if (duplicate.LastSeenUtcMs > canonical.LastSeenUtcMs)
+                        canonical.LastSeenUtcMs = duplicate.LastSeenUtcMs;
+
+                    foreach (var device in duplicate.Devices)
+                    {
+                        if (!canonical.HasDevice(device))
+                            canonical.Devices.Add(device);
+                    }
+
+                    foreach (var alias in duplicate.Aliases)
+                    {
+                        if (alias.Length == 0
+                            || string.Equals(alias, canonical.Nick, StringComparison.Ordinal)
+                            || canonical.Aliases.Any(a => string.Equals(
+                                a, alias, StringComparison.OrdinalIgnoreCase)))
+                            continue;
+                        canonical.Aliases.Add(alias);
+                    }
+
+                    _mergedIds[duplicate.Id] = canonical.Id;
+                    _accounts.Remove(duplicate);
+                    _byId.Remove(duplicate.Id);
+                    merged++;
+
+                    Console.WriteLine(
+                        $"[account] merge {duplicate.Id} → {canonical.Id} " +
+                        $"('{canonical.Nick}'): devices={canonical.Devices.Count}, " +
+                        $"aliases={canonical.Aliases.Count}");
+                }
+
+                canonical.Normalize();
+            }
+
+            RebuildIndexesLocked();
+            BackupLocked("merge");
+            SaveLocked();
+            Console.WriteLine(
+                $"[account] склейка дублей: {merged} аккаунтов, групп {groups.Count}, " +
+                $"осталось {_accounts.Count}");
+            return merged;
+        }
+    }
+
+    /// <summary>Полностью пересобрать индексы после удаления/склейки записей.</summary>
+    private void RebuildIndexesLocked()
+    {
+        _byId.Clear();
+        _byNick.Clear();
+        _byAlias.Clear();
+        _byDevice.Clear();
+
+        foreach (var account in _accounts)
+        {
+            _byId[account.Id] = account;
+            if (account.Nick.Length > 0)
+                _byNick[account.Nick] = account;
+            foreach (var alias in account.Aliases)
+            {
+                if (alias.Length > 0)
+                    _byAlias[alias] = account;
+            }
+            foreach (var device in account.Devices)
+                BindDeviceLocked(device, account);
+        }
+    }
+
+    /// <summary>Копия файла перед разрушительной миграцией. Ошибка не блокирует старт.</summary>
+    private void BackupLocked(string reason)
+    {
+        try
+        {
+            if (!File.Exists(_path))
+                return;
+
+            var stamp = DateTime.Now.ToString("yyyyMMdd-HHmmss");
+            var backup = $"{_path}.bak-{reason}-{stamp}";
+            if (!File.Exists(backup))
+                File.Copy(_path, backup);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[account] WARN бэкап не сделан: {ex.Message}");
+        }
     }
 
     /// <summary>
@@ -700,6 +806,14 @@ public sealed class AccountStore
     /// </summary>
     public int MapLegacyId(int oldId, string? nick)
     {
+        // Склейка дублей: старый номер однозначно переводится на канонический,
+        // даже если ник в записи пустой или уже сменился.
+        lock (_gate)
+        {
+            if (_mergedIds.TryGetValue(oldId, out var merged))
+                return merged;
+        }
+
         if (FindByNick(nick) is { } byNick)
             return byNick.Id;
 
@@ -708,6 +822,19 @@ public sealed class AccountStore
 
         var byHash = FindAccountIdsByLegacyId(oldId);
         return byHash.Count > 0 ? byHash[0] : 0;
+    }
+
+    /// <summary>Перевести склеенный номер на канонический. <c>0</c> — пары нет.</summary>
+    public int MapMergedId(int oldId)
+    {
+        lock (_gate)
+            return _mergedIds.TryGetValue(oldId, out var mapped) ? mapped : 0;
+    }
+
+    /// <summary>Сколько пар склейки помнит реестр.</summary>
+    public int MergedCount
+    {
+        get { lock (_gate) return _mergedIds.Count; }
     }
 
     public IReadOnlyList<Account> Export()
@@ -747,6 +874,12 @@ public sealed class AccountStore
                 Version = _renumberBlocked ? 1 : CurrentVersion,
                 NextId = _nextId,
                 Accounts = _accounts.OrderBy(a => a.Id).ToList(),
+                Merged = _mergedIds.Count > 0
+                    ? _mergedIds
+                        .OrderBy(kv => kv.Key)
+                        .Select(kv => new RenumberEntry { Old = kv.Key, New = kv.Value })
+                        .ToList()
+                    : null,
                 Renumber = _renumberMap.Count > 0
                     ? _renumberMap
                         .OrderBy(kv => kv.Key)
@@ -796,43 +929,20 @@ public sealed class AccountStore
     {
         var changed = false;
         var normalizedNick = ServerConfig.NormalizeNick(nick);
-        if (normalizedNick.Length > 0)
+
+        // Ник — это личность, а не подпись: вход не переименовывает аккаунт.
+        // Если сюда пришёл другой ник, это уже другой аккаунт (его создаёт
+        // GetOrCreate/EnsureForJoin), а не повод менять текущий.
+        if (normalizedNick.Length > 0
+            && !string.Equals(account.Nick, normalizedNick, StringComparison.Ordinal))
         {
-            if (!string.Equals(account.Nick, normalizedNick, StringComparison.Ordinal))
-            {
-                var oldNick = account.Nick;
-                if (oldNick.Length > 0)
-                {
-                    // Старый действующий ник становится прежним: он должен продолжать
-                    // находиться, но не перекрывать чужой действующий ник.
-                    if (!account.Aliases.Any(a => string.Equals(
-                            a, oldNick, StringComparison.OrdinalIgnoreCase)))
-                    {
-                        account.Aliases.Add(oldNick);
-                    }
-
-                    if (_byNick.TryGetValue(oldNick, out var owner)
-                        && ReferenceEquals(owner, account))
-                    {
-                        _byNick.Remove(oldNick);
-                    }
-                    _byAlias[oldNick] = account;
-                }
-
-                account.Nick = normalizedNick;
-                account.Aliases.RemoveAll(a => string.Equals(
-                    a, normalizedNick, StringComparison.OrdinalIgnoreCase));
-                changed = true;
-            }
-
-            _byNick[normalizedNick] = account;
-            _byAlias.Remove(normalizedNick);
-            foreach (var alias in account.Aliases)
-            {
-                if (alias.Length > 0)
-                    _byAlias[alias] = account;
-            }
+            Console.WriteLine(
+                $"[account] WARN вход под '{normalizedNick}' пришёл в аккаунт " +
+                $"{account.Id} с ником '{account.Nick}' — ник не меняю");
         }
+
+        if (account.Nick.Length > 0)
+            _byNick[account.Nick] = account;
 
         var normalizedDevice = BanRecord.NormalizeDevice(device);
         if (normalizedDevice.Length > 0 && !account.HasDevice(normalizedDevice))
@@ -926,6 +1036,15 @@ public sealed class AccountStore
                     $"{CurrentVersion} — читаю, но сохранять не буду");
             }
 
+            // Карта склейки дублей: старый номер → канонический. Живёт постоянно.
+            foreach (var pair in dto.Merged ?? new List<RenumberEntry>())
+            {
+                if (pair.Old <= 0 || pair.New < FirstId || pair.New > MaxId
+                    || pair.Old == pair.New)
+                    continue;
+                _mergedIds[pair.Old] = pair.New;
+            }
+
             // Карта разовой перенумерации: нужна, пока не переписаны все хранилища.
             foreach (var pair in dto.Renumber ?? new List<RenumberEntry>())
             {
@@ -972,6 +1091,7 @@ public sealed class AccountStore
                 _byNick.Clear();
                 _byAlias.Clear();
                 _byDevice.Clear();
+                _mergedIds.Clear();
                 _renumberMap.Clear();
                 _renumberDone.Clear();
                 _nextId = FirstId;
@@ -1013,6 +1133,10 @@ public sealed class AccountStore
 
         [JsonPropertyName("accounts")]
         public List<Account>? Accounts { get; set; } = new();
+
+        /// <summary>Склеенные дубли: старый номер → канонический. Живёт постоянно.</summary>
+        [JsonPropertyName("merged")]
+        public List<RenumberEntry>? Merged { get; set; }
 
         /// <summary>Карта старый→новый, пока перенумерация не завершена.</summary>
         [JsonPropertyName("renumber")]

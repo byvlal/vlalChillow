@@ -143,7 +143,7 @@ public sealed class BanStoreTests : IDisposable
     }
 
     [Fact]
-    public void MigrationMergesCaseVariantsAndKeepsTheNewestId()
+    public void MigrationKeepsNickCaseVariantsAsSeparatePeople()
     {
         const string v2 = """
         {
@@ -161,11 +161,14 @@ public sealed class BanStoreTests : IDisposable
         var store = new BanStore(_path);
         var (_, players) = store.Load();
 
-        // «Влал» и «влал» — один ник: иначе /ban по id отказывал бы «id делят два игрока».
-        Assert.Equal(2, players.Count);
-        var merged = Assert.Single(players, p => string.Equals(p.Nick, "Влал", StringComparison.OrdinalIgnoreCase));
-        Assert.Equal(222, merged.Id);
-        Assert.Equal(200, merged.LastSeenUtcMs);
+        // Точный ник — личность: «Влал» и «влал» — разные аккаунты, а не один.
+        Assert.Equal(3, players.Count);
+        var upper = Assert.Single(players, p => p.Nick == "Влал");
+        var lower = Assert.Single(players, p => p.Nick == "влал");
+        Assert.Equal(111, upper.Id);
+        Assert.Equal(222, lower.Id);
+        Assert.Equal(100, upper.LastSeenUtcMs);
+        Assert.Equal(200, lower.LastSeenUtcMs);
     }
 
     [Fact]

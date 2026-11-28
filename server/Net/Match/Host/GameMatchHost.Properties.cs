@@ -122,10 +122,34 @@ public sealed partial class GameMatchHost
 
             LobbyVariant prevValue = default;
             bool hadPrev;
+            bool staleCarriedCounter;
             lock (_roomGate)
             {
                 hadPrev = room.ActorProps.TryGetValue((actorNr, key), out prevValue);
-                room.ActorProps[(actorNr, key)] = value;
+                staleCarriedCounter = MatchReconnectMemory.RejectsStaleCounter(
+                    st.MatchStatsCarried,
+                    st.ActorNr,
+                    actorNr,
+                    key,
+                    hadPrev,
+                    hadPrev ? VariantAsInt(prevValue) : 0,
+                    VariantAsInt(value));
+                if (!staleCarriedCounter)
+                    room.ActorProps[(actorNr, key)] = value;
+            }
+
+            if (staleCarriedCounter)
+            {
+                Console.WriteLine(
+                    $"[match-host] SetProperty actor={actorNr} {key} " +
+                    $"{VariantAsInt(prevValue)}→{VariantAsInt(value)} REJECTED " +
+                    "(stale reconnect counter; carried value kept)");
+                // Re-assert the carried value to the fresh client, otherwise its local
+                // counter stays at the stale zero and the next kill would look like a
+                // decrease again.
+                SendAndDump(peer, MatchCodec.BuildSetProperty(
+                    NextServerTime(), actorNr, key, prevValue));
+                return;
             }
 
             // Rebroadcast promptly (observe = ActorProps write above; no Task.Delay).
@@ -234,6 +258,8 @@ public sealed partial class GameMatchHost
             var killsIncreased = false;
             var diag = new List<(string Key, LobbyVariant Old, bool Had, LobbyVariant New)>(props.Count);
             var accepted = new List<(string Key, LobbyVariant Value)>(props.Count);
+            // Rejected stale counters are echoed back with their carried value after the loop.
+            List<(string Key, LobbyVariant Value)>? staleReassert = null;
             lock (_roomGate)
             {
                 foreach (var (k, originalValue) in props)
@@ -294,6 +320,22 @@ public sealed partial class GameMatchHost
                     }
 
                     var had = room.ActorProps.TryGetValue((actorNr, k), out var prevK);
+                    if (MatchReconnectMemory.RejectsStaleCounter(
+                            st.MatchStatsCarried,
+                            st.ActorNr,
+                            actorNr,
+                            k,
+                            had,
+                            had ? VariantAsInt(prevK) : 0,
+                            VariantAsInt(v)))
+                    {
+                        Console.WriteLine(
+                            $"[match-host] SetProperties actor={actorNr} {k} " +
+                            $"{VariantAsInt(prevK)}→{VariantAsInt(v)} REJECTED " +
+                            "(stale reconnect counter; carried value kept)");
+                        (staleReassert ??= new()).Add((k, prevK));
+                        continue;
+                    }
                     diag.Add((k, had ? prevK : default, had, v));
                     if (k == MatchRoomPropKeys.Kills)
                     {
@@ -309,6 +351,14 @@ public sealed partial class GameMatchHost
                         room.RoomC2 = v.Byte;
                     accepted.Add((k, v));
                 }
+            }
+
+            if (staleReassert is { Count: > 0 })
+            {
+                // Same guard as the single-key path: the fresh client must learn the carried
+                // value now, otherwise its local zero would keep looking stale.
+                SendAndDump(peer, MatchCodec.BuildSetProperties(
+                    NextServerTime(), actorNr, staleReassert));
             }
 
             if (accepted.Count == 0)
@@ -458,7 +508,10 @@ public sealed partial class GameMatchHost
 
         bool newlyDead;
         lock (_roomGate)
+        {
+            room.Flow.SpawnDeadlines.Remove(actorNr);
             newlyDead = room.Flow.DeadActors.Add(actorNr);
+        }
 
         Console.WriteLine(
             $"[match-host] team switch actor={actorNr} {switchedFrom}→{newTeam} mid-round — " +

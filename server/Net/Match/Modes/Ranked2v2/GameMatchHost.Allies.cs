@@ -200,6 +200,9 @@ public sealed partial class GameMatchHost
                 break;
             case MatchFlowPhase.WarmupWillFinish:
                 // C2=22 buy wall (~10s) → C2=31 combat (stay on 31).
+                // Empty opposing team: hold C2=22 — never open combat for a side with nobody.
+                if (TryHoldAlliesBuyForMissingTeam(room))
+                    break;
                 if (TryExtendAlliesBuyForAwaitingSpawn(room))
                     break;
                 EnterAlliesCombat(room);
@@ -270,6 +273,7 @@ public sealed partial class GameMatchHost
             room.Flow.AlliesBuyClientZeroSec = 0;
             room.Flow.PendingEndReason = null;
             room.Flow.PrepSpawnExtensionUsed = false;
+            room.Flow.AlliesBuyHeldForMissingTeam = false;
             // Round-local death resets so everyone may respawn; players who do not come back
             // stay dead per-player (CarriedDeadActors) until their own CWO proves the spawn.
             MatchFlowRules.BeginRound(room.Flow);
@@ -337,7 +341,9 @@ public sealed partial class GameMatchHost
                 return;
         }
 
-        SyncDeadActorsFromDeathProps(room);
+        // DeadActors is event-driven (NoteActorDeath on the death prop, cleared by the player's
+        // own CWO). Never rebuild it from the cumulative `death` prop: after issue #56 that prop
+        // keeps its value across rounds, and a respawned player would be counted dead again.
         if (TryResolveWipeImmediate(room, bombPlanted: false))
             return;
 
@@ -367,6 +373,7 @@ public sealed partial class GameMatchHost
             room.Flow.PendingEndReason = null;
             room.Flow.DeadActors.Clear();
             room.Flow.PendingCombatDestroy.Clear();
+            room.Flow.AlliesBuyHeldForMissingTeam = false;
             // #33: the wipe must be judged against who actually entered this round —
             // a pawn on the field is the proof of entry (see MatchFlowRules.FreezeRoundRoster).
             // Issue #39: a ghost actor (no owning socket) is not a fighter this round.
@@ -375,30 +382,40 @@ public sealed partial class GameMatchHost
             // Per-player state, not the phase: only a fighter who was already dead and has not
             // sent his own CWO since is marked dead here. A live player whose spawn is delayed by
             // ping is not in CarriedDeadActors at all, so he can never be seeded by the tick.
-            MatchFlowRules.SeedCarriedDeathsWithoutPawn(
-                room.Flow, room.LivingPawns.Values.Select(p => p.OwnerActorNr));
+            var pawnOwners = room.LivingPawns.Values
+                .Select(p => p.OwnerActorNr)
+                .ToHashSet();
+            MatchFlowRules.SeedCarriedDeathsWithoutPawn(room.Flow, pawnOwners);
+            // A live fighter still has 5 s to prove the spawn before he is counted dead for
+            // the wipe. A CWO clears the clock; a real death clears it too.
+            MatchLifeRules.ArmSpawnDeadlines(room.Flow, pawnOwners, DateTime.UtcNow);
             (trCount, ctCount) = CountFightingTeamRoster(room, ghosts);
         }
+
+        // The carried-dead side can already be empty at the combat edge. Resolve it before
+        // C2=31 is published instead of letting the round run with nobody on that side.
+        if (TryResolveWipeImmediate(room, bombPlanted: false))
+            return;
 
         // [repro] Who the round is judged by and whether each of them actually spawned.
         // Diagnostic only — no behaviour here.
         lock (_roomGate)
         {
+            var pawnOwnerSet = room.LivingPawns.Values
+                .Select(p => p.OwnerActorNr)
+                .ToHashSet();
             var roster = room.Flow.RoundRoster
                 .OrderBy(kv => kv.Key)
                 .Select(kv =>
-                {
-                    var pawned = room.LivingPawns.Values.Any(p => p.OwnerActorNr == kv.Key);
-                    var dead = room.Flow.DeadActors.Contains(kv.Key);
-                    return $"{kv.Key}:{kv.Value}(pawn={(pawned ? "yes" : "no")},dead={(dead ? "yes" : "no")})";
-                });
-            var pawnOwners = room.LivingPawns.Values
-                .Select(p => p.OwnerActorNr).Distinct().OrderBy(nr => nr);
+                    $"{kv.Key}:{kv.Value}(life={MatchLifeRules.GetActorLife(room.Flow, pawnOwnerSet, kv.Key)})");
             var deaths = room.Flow.DeadActors.OrderBy(nr => nr);
+            var carried = room.Flow.CarriedDeadActors.OrderBy(nr => nr);
             Console.WriteLine(
                 $"[roster] freeze C2=31 round={room.Flow.RoundIndex} " +
-                $"roster=[{string.Join(" ", roster)}] pawnOwners=[{string.Join(",", pawnOwners)}] " +
-                $"DeadActors=[{string.Join(",", deaths)}]");
+                $"roster=[{string.Join(" ", roster)}] " +
+                $"pawnOwners=[{string.Join(",", pawnOwnerSet.OrderBy(nr => nr))}] " +
+                $"DeadActors=[{string.Join(",", deaths)}] " +
+                $"CarriedDeadActors=[{string.Join(",", carried)}]");
         }
 
         var nowSec = ServerTimeSeconds();
@@ -798,5 +815,63 @@ public sealed partial class GameMatchHost
         Console.WriteLine(
             "[match-host] allies: buy C2=22 extended 5s — spawn wait (Time=RST=now anchor)");
         return true;
+    }
+
+    /// <summary>
+    /// Hold the C2=22 buy while one fighting team is empty (disconnect, spectator, late join).
+    /// Never open C2=31 with nobody on the other side: the team that stayed would get a free
+    /// round. The hold keeps C2=22 with a 5s keepalive; once both teams are back the buy gets
+    /// its full wall again and only then combat starts.
+    /// </summary>
+    private bool TryHoldAlliesBuyForMissingTeam(MatchRoom room)
+    {
+        AlliesBuyHoldAction action;
+        lock (_roomGate)
+        {
+            if (room.Flow.Phase != MatchFlowPhase.WarmupWillFinish)
+                return false;
+
+            action = MatchFlowRules.DecideAlliesBuyHold(
+                BothFightingTeamsPresent(room), room.Flow.AlliesBuyHeldForMissingTeam);
+            if (action == AlliesBuyHoldAction.None)
+                return false;
+
+            room.Flow.AlliesBuyHeldForMissingTeam = action == AlliesBuyHoldAction.Hold;
+            room.Flow.PhaseEndsUtc = action == AlliesBuyHoldAction.Resume
+                ? DateTime.UtcNow + AlliesFlowParams.BuyPhase
+                : DateTime.UtcNow + TimeSpan.FromSeconds(5);
+        }
+
+        // Issue #29: no bomberId in a keepalive/resume bag — the round keeps the one carrier
+        // it got in the first C2=22. Time stays an anchor (Time == RoundStartTime == now).
+        BroadcastRoomProps(
+            room,
+            BuildAlliesBuyHoldRoomProps(ServerTimeSeconds()),
+            reason: action == AlliesBuyHoldAction.Resume
+                ? "Allies buy resumed — both teams present"
+                : "Allies buy hold — missing fighting team");
+
+        Console.WriteLine(action == AlliesBuyHoldAction.Resume
+            ? $"[match-host] allies: buy C2={MatchC2States.WarmupWillFinish} resumed — both teams " +
+              $"back, full {AlliesFlowParams.BuyPhase.TotalSeconds:0}s wall before C2=31"
+            : $"[match-host] allies: buy C2={MatchC2States.WarmupWillFinish} held — one fighting " +
+              "team is empty (5s keepalive, C2=31 blocked)");
+        return true;
+    }
+
+    /// <summary>
+    /// C2=22 keepalive / resume bag: <c>Time</c> and <c>RoundStartTime</c> are the same anchor,
+    /// <c>Duration</c> is the buy wall, <c>C2=22</c>. No <c>bomberId</c> — gold carries it only
+    /// in the round-start bag (#29), and a second one would hand every client a second C4.
+    /// </summary>
+    internal static List<(string Key, LobbyVariant Value)> BuildAlliesBuyHoldRoomProps(double nowSec)
+    {
+        return
+        [
+            (MatchRoomPropKeys.Time, LobbyVariant.FromDouble(nowSec)),
+            (MatchRoomPropKeys.Duration, LobbyVariant.FromDouble(AlliesFlowParams.BuyPhase.TotalSeconds)),
+            (MatchRoomPropKeys.RoundStartTime, LobbyVariant.FromDouble(nowSec)),
+            (MatchRoomPropKeys.C2, LobbyVariant.FromByte(MatchC2States.WarmupWillFinish)),
+        ];
     }
 }

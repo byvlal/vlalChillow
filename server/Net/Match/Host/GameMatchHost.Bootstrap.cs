@@ -270,11 +270,12 @@ public sealed partial class GameMatchHost
         // fighter on the first C2=22. Issue #40: a reconnect keeps the balance the room
         // already published; bootstrapping it back to either default rewound the round economy.
         var joinerMoney = MatchFlowTestParams.RoundStartMoney;
-        var reconnectTrusted = false;
+        var keepMatchState = false;
         lock (_roomGate)
         {
-            reconnectTrusted = _peers.TryGetValue(peer, out var jst) && jst.ReconnectIdentityTrusted;
-            if (reconnectTrusted
+            keepMatchState = _peers.TryGetValue(peer, out var jst)
+                             && (jst.ReconnectIdentityTrusted || jst.MatchStatsCarried);
+            if (keepMatchState
                 && room.ActorProps.TryGetValue((joinerActorNr, MatchRoomPropKeys.Money), out var money)
                 && money.Kind == LobbyVariantKind.Int)
             {
@@ -307,7 +308,7 @@ public sealed partial class GameMatchHost
         // scene that was still loading. A reconnect includes its own actor props (team/death/
         // money) because the client will not re-author the identity batch.
         SendMatchStateSnapshotToPeer(
-            peer, room, excludeActorNr: reconnectTrusted ? (byte?)null : joinerActorNr);
+            peer, room, excludeActorNr: keepMatchState ? (byte?)null : joinerActorNr);
 
         // 6) Авто-галочка: сервер сам решает verified по admin.ids (админ — true,
         //    остальные — false), даже если клиент этот prop никогда не присылал.
@@ -458,13 +459,13 @@ public sealed partial class GameMatchHost
         });
     }
 
-    /// <summary>Drop the «remembered team» for <paramref name="identityKey"/>.</summary>
+    /// <summary>Drop the remembered team and match counters for <paramref name="identityKey"/>.</summary>
     private void ForgetReconnectMemory(string? identityKey)
     {
         if (identityKey is not { Length: > 0 } key)
             return;
         lock (_roomGate)
-            _reconnectTeams.Remove(key);
+            _reconnectMemory.Remove(key);
     }
 
     /// <summary>

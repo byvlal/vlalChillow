@@ -99,10 +99,12 @@ public sealed partial class GameMatchHost : IDisposable
     private DateTime _lastDropRpcSummaryUtc = DateTime.MinValue;
 
     /// <summary>
-    /// userId → last fighting team before disconnect. Used to restore mid-match reconnects
-    /// (new actorNr after ActorLeft). Cleared on HardReset / successful restore / spectator fallback.
+    /// identity → match state (team + combat/economy counters) before disconnect. Used to
+    /// restore mid-match reconnects that get a fresh actorNr after ActorLeft. Cleared on
+    /// HardReset / successful restore / spectator fallback.
     /// </summary>
-    private readonly Dictionary<string, MatchTeam> _reconnectTeams = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, MatchReconnectMemory> _reconnectMemory =
+        new(StringComparer.Ordinal);
 
     private static readonly TimeSpan ReconnectRestoreSettle = TimeSpan.FromSeconds(1);
     private static readonly TimeSpan ReconnectRestoreTimeout = TimeSpan.FromSeconds(15);
@@ -1497,7 +1499,7 @@ public sealed partial class GameMatchHost : IDisposable
         if (oldRoom is not { IsPanelRoom: true })
             MatchHostSettings.MatchStartArmed = false;
         lock (_roomGate)
-            _reconnectTeams.Clear();
+            _reconnectMemory.Clear();
         Console.WriteLine("[match-flow] previous match cleared");
     }
 
@@ -1524,6 +1526,7 @@ public sealed partial class GameMatchHost : IDisposable
         st.JoinerPingSeen = false;
         st.PendingReconnectTeam = null;
         st.ReconnectIdentityTrusted = false;
+        st.MatchStatsCarried = false;
         st.TeamAuthoredThisSession = false;
         // Fresh session: the next bootstrap closes the world gate again.
         st.WorldReady = true;
