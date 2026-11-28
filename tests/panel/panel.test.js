@@ -56,6 +56,11 @@ let roomsState = [
 let statusState = {
   onlineLobby: 2, onlineMatch: 5, onlineTotal: 7,
   roomsCount: 2, roomsMax: 64, nextNumber: 3, gameListening: true,
+  /* кто в сети: комната важнее лобби, id — тот же, что в профиле */
+  players: [
+    { id: 222, nick: 'botx', displayId: '222', admin: false, room: 2, team: 'CT' },
+    { id: 111, nick: 'vlal', displayId: '1000001', admin: true, room: 0, team: '' },
+  ],
 };
 let statsState = { kills: 120, deaths: 80, kd: 1.5, seconds: 5400, matches: 9 };
 
@@ -67,6 +72,16 @@ let authResponse = null;     /* подмена ответа POST /api/auth */
 let ended = null;            /* куда ушёл POST /api/rooms/{n}/end */
 let endResponse = null;      /* подмена ответа завершения */
 let adminState = null;       /* подмена ответа GET /api/admin */
+let topState = {             /* ответ GET /api/top */
+  ok: true, sort: 'kills', limit: 50, count: 2,
+  players: [
+    { place: 1, id: 111, nick: 'vlal', displayId: '1000001', admin: true,
+      kills: 120, deaths: 80, kd: 1.5, seconds: 5400, matches: 9 },
+    { place: 2, id: 222, nick: 'botx', displayId: '222', admin: false,
+      kills: 40, deaths: 20, kd: 2, seconds: 600, matches: 4 },
+  ],
+};
+let topUrl = null;           /* последний запрос к /api/top */
 
 function fakeFetch(url, opts) {
   const method = (opts && opts.method) || 'GET';
@@ -109,7 +124,8 @@ function fakeFetch(url, opts) {
                perTeam: 2, maxPlayers: 4, teamLabel: '2 на 2' };
       status = 201;
     }
-  } else if (u.indexOf('api/status') >= 0) body = statusState;
+  } else if (u.indexOf('api/top') >= 0) { topUrl = u; body = topState; status = 200; }
+  else if (u.indexOf('api/status') >= 0) body = statusState;
   else { body = null; status = 404; }
 
   return Promise.resolve({
@@ -532,6 +548,79 @@ function toPage(list) {
     !!$('adm-nav').querySelector('[data-adm-pane-btn="admins"]'));
   check('мега: раздел профиля виден',
     !!$('adm-nav').querySelector('[data-adm-pane-btn="profile"]'));
+
+  /* ── P4: топ игроков, живой онлайн, переходы ── */
+  const headers = Array.prototype.slice.call(window.document.querySelectorAll('.so-top'));
+  const withTop = headers.filter(h => h.querySelector('a[href="#/top"]'));
+  check('ТОП есть в каждой шапке', headers.length >= 10 && withTop.length === headers.length,
+    'шапок ' + headers.length + ', с ТОП ' + withTop.length);
+  check('экран #/top существует и по умолчанию скрыт',
+    !!$('view-top') && $('view-top').hidden === true);
+  check('у #/top свой фон страницы 0.39.0',
+    (window.getComputedStyle($('view-top')).getPropertyValue('--so-pagebg') || '')
+      .indexOf('0.39.0') >= 0);
+
+  window.location.hash = '#/top';
+  await tick(30);
+  P.applyRoute();
+  check('роут #/top показывает только топ', $('view-top').hidden === false &&
+    $('view-home').hidden === true && $('view-play').hidden === true &&
+    $('view-docs').hidden === true);
+
+  await P.loadTop();
+  const lbRows = $('lb-rows').querySelectorAll('.so-lb__row');
+  check('рейтинг: строки из сервера', lbRows.length === 2, 'строк ' + lbRows.length);
+  check('рейтинг: место, ник и ссылка на профиль',
+    lbRows[0].querySelector('.so-lb__place').textContent === '01' &&
+    lbRows[0].getAttribute('href') === '#/profile/111' &&
+    lbRows[0].querySelector('.so-lb__nick').textContent === 'vlal');
+  check('рейтинг: бейдж админа только у админа',
+    !!lbRows[0].querySelector('.so-lb__adm') && !lbRows[1].querySelector('.so-lb__adm'));
+  check('рейтинг: K/D с двумя знаками',
+    lbRows[1].querySelectorAll('.so-lb__num b')[1].textContent === '2.00');
+  check('рейтинг: время «1 ч 30 м»', P.topTime(5400) === '1 ч 30 м', P.topTime(5400));
+  check('рейтинг: короткое время «10 м»', P.topTime(600) === '10 м', P.topTime(600));
+
+  topState = { ok: true, sort: 'kd', players: [
+    { place: 1, id: 222, nick: 'botx', displayId: '222', admin: false,
+      kills: 40, deaths: 20, kd: 2, seconds: 600, matches: 4 },
+    { place: 2, id: 111, nick: 'vlal', displayId: '1000001', admin: true,
+      kills: 120, deaths: 80, kd: 1.5, seconds: 5400, matches: 9 },
+  ] };
+  const tabs = window.document.querySelectorAll('.so-lb__tab');
+  tabs[1].click();
+  await tick(40);
+  check('вкладка K/D уходит на сервер с sort=kd',
+    !!topUrl && topUrl.indexOf('sort=kd') >= 0, topUrl);
+  check('вкладка K/D помечена выбранной',
+    tabs[1].classList.contains('is-on') &&
+    tabs[1].getAttribute('aria-selected') === 'true' &&
+    !tabs[0].classList.contains('is-on'));
+  check('рейтинг пересобрался по K/D',
+    $('lb-rows').querySelector('.so-lb__nick').textContent === 'botx');
+
+  topState = { ok: true, players: [] };
+  await P.loadTop();
+  check('пустой рейтинг: пустое состояние',
+    $('lb-empty').hidden === false && $('lb-rows').hidden === true);
+
+  P.renderOnlineList(statusState.players);
+  const ol = $('so-olist-grid').querySelectorAll('.so-ol');
+  check('онлайн списком: строки из статуса', ol.length === 2, 'строк ' + ol.length);
+  check('онлайн списком: ссылка, комната и лобби',
+    ol[0].getAttribute('href') === '#/profile/222' &&
+    ol[0].querySelector('.so-ol__where').textContent === 'комната #2' &&
+    ol[1].querySelector('.so-ol__where').textContent === 'лобби');
+  P.renderOnlineList([]);
+  check('онлайн пуст: блок скрыт', $('so-olist').hidden === true);
+
+  P.enterView($('view-docs'));
+  check('переход: класс появляется на новом экране',
+    $('view-docs').classList.contains('is-enter'));
+
+  window.location.hash = '#/';
+  await tick(30);
+  P.applyRoute();
 
   report();
 

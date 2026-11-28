@@ -110,6 +110,10 @@ public sealed partial class WebPanelRouter
         if (request.Method == "GET" && path == "/api/matches")
             return MatchesList(request);
 
+        // Таблица лидеров: публичная, без сессии. Считает по тем же цифрам, что и профиль.
+        if (request.Method == "GET" && path == "/api/top")
+            return TopPlayers(request);
+
         if (request.Method == "GET" && TryParseMatchPath(path, out _))
             return MatchById(request, path);
 
@@ -272,7 +276,7 @@ public sealed partial class WebPanelRouter
             or "/api/admin/admins"
             or "/api/admin/dashboard" or "/api/admin/journal" or "/api/admin/players"
             or "/api/admin/rooms" or "/api/admin/config" or "/api/admin/security"
-            or "/api/player" or "/api/player/avatar" or "/api/matches"
+            or "/api/player" or "/api/player/avatar" or "/api/matches" or "/api/top"
             or "/api/administration" or "/api/reports/mine"
             or "/api/admin/reports" or "/healthz")
             return WithAllow("GET", WebResponse.Text("405", 405));

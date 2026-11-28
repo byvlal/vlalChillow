@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Reflection;
 using System.Text;
 using System.Text.Json;
@@ -609,11 +610,55 @@ public sealed class WebPanelHost : IDisposable
             writer.WriteNumber("localLobbyPort", config.Server.LobbyPort);
             writer.WriteNumber("localMatchPort", GameMatchHost.DefaultMatchPort);
 
+            // Кто сейчас в сети — списком, а не только счётчиком: главная показывает
+            // ники. Комната важнее лобби: игрок в катке остаётся joined в лобби, и без
+            // дедупликации по id он висел бы в списке дважды.
+            var seen = new HashSet<int>();
+            writer.WriteStartArray("players");
+            foreach (var room in rooms)
+            {
+                if (room.LivePlayers is null)
+                    continue;
+                foreach (var player in room.LivePlayers)
+                {
+                    if (player.Id <= 0 || player.Left || !seen.Add(player.Id))
+                        continue;
+                    WriteOnlinePlayer(writer, player.Id, player.Nick, room.Number, player.Team);
+                }
+            }
+            foreach (var (id, nick) in ListOnlinePlayers())
+            {
+                if (id <= 0 || !seen.Add(id))
+                    continue;
+                WriteOnlinePlayer(writer, id, nick, 0, "");
+            }
+            writer.WriteEndArray();
+
             writer.WriteString("serverUtc", DateTime.UtcNow.ToString("O"));
             writer.WriteEndObject();
         }
 
         return Encoding.UTF8.GetString(stream.ToArray());
+    }
+
+    /// <summary>
+    /// Одна строка живого онлайна для главной: id, ник, где сидит (0 — лобби, N — комната).
+    /// </summary>
+    /// <remarks>
+    /// Отображаемый ID и админ-бейдж берутся из живых источников панели, как и на
+    /// странице комнаты: кастомные ID и <c>admin.ids</c> не должны дублироваться в статусе.
+    /// </remarks>
+    private void WriteOnlinePlayer(Utf8JsonWriter writer, int id, string nick, int room, string team)
+    {
+        writer.WriteStartObject();
+        writer.WriteNumber("id", id);
+        writer.WriteString("nick", nick);
+        writer.WriteString("displayId",
+            _host?.CustomIdOf(id) ?? id.ToString(CultureInfo.InvariantCulture));
+        writer.WriteBoolean("admin", _host?.IsAdminLive(id) ?? _server.IsAdmin(id));
+        writer.WriteNumber("room", room);
+        writer.WriteString("team", team);
+        writer.WriteEndObject();
     }
 
     // ── создание игровой комнаты ─────────────────────────────────────────────
