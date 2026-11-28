@@ -403,6 +403,11 @@ public sealed partial class WebPanelRouter
                 // остальные и не даёт их выбрать (см. GameModeCatalog.IsImplemented).
                 writer.WriteBoolean("implemented", GameModeCatalog.IsImplemented(mode.GameModeId));
 
+                // Обложка режима: прямая ссылка на CDN Fandom (hotlink), не файл в репо.
+                var modeImage = ModeArtCatalog.ForMode(mode.GameModeId);
+                if (modeImage is not null)
+                    writer.WriteString("image", modeImage);
+
                 // Размер команды: страница показывает выбор только там, где он есть.
                 var shape = RoomCapacity.ForMode(mode.GameModeId);
                 writer.WriteNumber("perTeam", shape.PerTeam);
@@ -416,6 +421,18 @@ public sealed partial class WebPanelRouter
                 foreach (var level in mode.Levels)
                     writer.WriteStringValue(level);
                 writer.WriteEndArray();
+
+                // Карта → обложка. Ключ — ровно то имя уровня, что в levels:
+                // странице не нужно самостоятельно срезать « 2x2» и « 2x2 Alt».
+                writer.WriteStartObject("levelImages");
+                foreach (var level in mode.Levels)
+                {
+                    var levelImage = ModeArtCatalog.ForLevel(level);
+                    if (levelImage is not null)
+                        writer.WriteString(level, levelImage);
+                }
+                writer.WriteEndObject();
+
                 writer.WriteStartArray("aliases");
                 foreach (var alias in mode.Aliases)
                     writer.WriteStringValue(alias);
