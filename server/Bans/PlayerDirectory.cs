@@ -40,9 +40,10 @@ public sealed class PlayerDirectory
     private readonly List<SeenPlayer> _players = new();
     // Ключ — номер аккаунта: один человек — одна запись, даже если ник менялся.
     private readonly Dictionary<int, SeenPlayer> _byId = new();
-    // Регистр не должен плодить «две личности с одним ником»: «Влал» и «влал» — один ник.
-    // Указывает на самую свежую запись; старые записи с тем же ником остаются доступны по id.
-    private readonly Dictionary<string, SeenPlayer> _byNick = new(StringComparer.OrdinalIgnoreCase);
+    // Ник — точная подпись аккаунта, с учётом регистра: «Влал» и «влал» — разные люди.
+    // После склейки дублей на один точный ник приходится один аккаунт; индекс оставлен
+    // для ссылок вида #/profile/<ник> и указывает на самую свежую запись.
+    private readonly Dictionary<string, SeenPlayer> _byNick = new(StringComparer.Ordinal);
 
     /// <summary>Вызывается после изменения — сюда навешивается запись на диск.</summary>
     public Action? Changed { get; set; }
@@ -152,11 +153,12 @@ public sealed class PlayerDirectory
     }
 
     /// <summary>
-    /// Найти личность по нику: регистр не важен, побеждает самая свежая запись.
+    /// Найти личность по точному нику (регистр важен). Побеждает самая свежая запись.
     /// </summary>
     /// <remarks>
     /// Нужно для ссылок вида <c>#/profile/vlal</c>: в URL можно писать ник, а не только
-    /// цифровой ID. Тёзки — редкость; берём ту запись, которая заходила позже.
+    /// цифровой ID. После склейки дублей точный ник ведёт на один аккаунт; если в старом
+    /// файле остались две записи, берём ту, которая заходила позже.
     /// </remarks>
     public SeenPlayer? FindByNick(string? nick)
     {
@@ -295,13 +297,12 @@ public sealed class PlayerDirectory
 
     private static void MergeLocked(SeenPlayer target, SeenPlayer incoming)
     {
-        // «Свежесть» записи определяет, чей id остаётся у склеенной личности.
+        // Номер аккаунта — личность и ключ словаря: его не перебивает более свежая
+        // запись. Свежесть меняет только подпись (ник) и время последнего входа.
         if (incoming.LastSeenUtcMs > target.LastSeenUtcMs)
         {
             target.LastSeenUtcMs = incoming.LastSeenUtcMs;
             target.Nick = incoming.Nick;
-            if (incoming.Id >= AccountStore.FirstId)
-                target.Id = incoming.Id;
         }
 
         foreach (var ip in incoming.Ips)
@@ -323,7 +324,7 @@ public sealed class PlayerDirectory
         _byId.Clear();
         _byNick.Clear();
 
-        // Сначала старые: последняя (самая свежая) запись с этим ником побеждает в индексе.
+        // Сначала старые: последняя (самая свежая) запись с этим точным ником побеждает.
         foreach (var player in _players.OrderBy(p => p.LastSeenUtcMs).ThenBy(p => p.Id))
         {
             _byId[player.Id] = player;

@@ -301,6 +301,9 @@ public sealed partial class GameMatchHost
         // Issue #39: the same install returned with a fresh session token and took over its
         // old actor. Peers never saw it leave, so no ActorJoined/ActorLeft may be sent.
         var adoptedReconnect = false;
+        // Counters restored from the reconnect memory, to be announced to the other peers
+        // once this actor is known to them (ActorJoinedEvent below).
+        IReadOnlyList<(string Key, LobbyVariant Value)>? restoredStats = null;
 
         if (room is null)
         {
@@ -386,16 +389,29 @@ public sealed partial class GameMatchHost
                 result = JoinRoomResult.Found;
                 if (MatchIdentity.RejoinKey(st.IdentityKey, st.RosterName) is { Length: > 0 } reconnectKey)
                 {
-                    var remembered = false;
-                    var prevTeam = MatchTeam.None;
+                    MatchReconnectMemory? memory = null;
                     lock (_roomGate)
-                        remembered = _reconnectTeams.TryGetValue(reconnectKey, out prevTeam);
-                    if (remembered && prevTeam is MatchTeam.Tr or MatchTeam.Ct)
                     {
-                        st.PendingReconnectTeam = prevTeam;
+                        if (_reconnectMemory.TryGetValue(reconnectKey, out memory)
+                            && ReferenceEquals(memory.Room, room)
+                            && memory.HasFightingTeam)
+                        {
+                            st.PendingReconnectTeam = memory.Team;
+                            st.MatchStatsCarried = true;
+                            restoredStats = memory.RestoreInto(room, nr);
+                        }
+                        else
+                        {
+                            memory = null;
+                        }
+                    }
+                    if (memory is not null)
+                    {
                         Console.WriteLine(
                             $"[match-host] reconnect-pending: identity='{reconnectKey}' " +
-                            $"restore team={prevTeam} after INIT (new actor={nr})");
+                            $"restore team={memory.Team} dead={(memory.WasDead ? "yes" : "no")} " +
+                            $"stats k={memory.Kills} d={memory.Death} " +
+                            $"score={memory.Score2} money={memory.Money} after INIT (new actor={nr})");
                     }
                 }
                 Console.WriteLine(
@@ -528,6 +544,20 @@ public sealed partial class GameMatchHost
                 catch (Exception ex)
                 {
                     Console.WriteLine($"[match-host] OnMatchPlayerJoined: {ex.Message}");
+                }
+
+                // Issue #39/#56: the returning player's counters were carried from before
+                // the disconnect. ActorJoinedEvent only announces the actor, so publish the
+                // restored scoreboard values to the peers that stayed in the match.
+                if (restoredStats is { Count: > 0 })
+                {
+                    var statsPkt = MatchCodec.BuildSetProperties(
+                        NextServerTime(), joinerNr, restoredStats);
+                    var nStats = BroadcastRoomExcept(
+                        room, peer, statsPkt, tag: "match_tx_SetProperties");
+                    Console.WriteLine(
+                        $"[match-host] TX restored match stats actor={joinerNr} " +
+                        $"keys=[{string.Join(",", restoredStats.Select(p => p.Key))}] → peers={nStats}");
                 }
             }
             BeginAwaitJoinerThenBootstrap(peer, room, joinerNr);

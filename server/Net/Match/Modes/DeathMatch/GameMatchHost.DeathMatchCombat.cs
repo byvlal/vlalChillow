@@ -130,29 +130,25 @@ public sealed partial class GameMatchHost
             // sequence still runs (otherwise the kill is silently dropped: this game's victim does
             // not self-Destroy, so the Destroy-grace fallback never fires and the death HUD /
             // respawn / score never happen — the "silent kill" symptom).
+            // A killer without a living pawn (or already dead) is excluded: a suicide also sends
+            // kills++ and must never author the only enemy's death.
             if (victim == 0)
             {
                 var killerTeam = GetActorTeam(room, killerActorNr);
-                var enemies = room.LivingPawns.Values
+                var pawnOwners = room.LivingPawns.Values
                     .Select(p => p.OwnerActorNr)
-                    .Where(o => o != 0 && o != MatchHostActor.ActorNr && o != killerActorNr)
-                    .Distinct()
-                    .Where(o =>
-                    {
-                        var t = GetActorTeam(room, o);
-                        return t is (MatchTeam.Tr or MatchTeam.Ct) && t != killerTeam;
-                    })
-                    .ToList();
-                if (enemies.Count == 1)
+                    .ToHashSet();
+                victim = MatchFlowRules.ResolveSingleEnemyFallback(
+                    room.Flow, pawnOwners, killerActorNr,
+                    actor => GetActorTeam(room, actor), out var why);
+                if (victim != 0)
                 {
-                    victim = enemies[0];
                     how = "single-enemy-fallback";
                 }
                 else
                 {
                     Console.WriteLine(
-                        $"[tdm-death] kills++ killer={killerActorNr}/{killerTeam}: no attribution and " +
-                        $"{enemies.Count} living enemy fighters — cannot resolve victim unambiguously");
+                        $"[tdm-death] kills++ killer={killerActorNr}/{killerTeam}: no attribution — {why}");
                 }
             }
 

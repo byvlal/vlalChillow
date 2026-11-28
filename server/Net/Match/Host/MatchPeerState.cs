@@ -81,6 +81,13 @@ internal sealed class MatchPeerState
     public bool ReconnectIdentityTrusted { get; set; }
 
     /// <summary>
+    /// This join inherited the player's match counters (kills/death/score/money) from the
+    /// reconnect memory or from a taken-over actor. The fresh client starts at zero, so the
+    /// host keeps the carried value when the client authors a lower cumulative counter.
+    /// </summary>
+    public bool MatchStatsCarried { get; set; }
+
+    /// <summary>
     /// The client authored its own <c>team</c> prop after this join. A remembered reconnect
     /// team must not overwrite that fresh choice.
     /// </summary>

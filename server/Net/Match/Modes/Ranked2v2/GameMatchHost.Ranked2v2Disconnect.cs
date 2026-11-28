@@ -19,8 +19,10 @@ public sealed partial class GameMatchHost
 
         string? leftName = null;
         string? storedOwnerKey = null;
-        // Remember fighting team for mid-match reconnect restore (new actorNr after rejoin).
+        // Remember fighting team and match counters for mid-match reconnect restore
+        // (new actorNr after rejoin). The actor and all its props are deleted below.
         MatchTeam remembered = MatchTeam.None;
+        MatchReconnectMemory? memory = null;
         List<short> pawnIds;
         lock (_roomGate)
         {
@@ -35,6 +37,9 @@ public sealed partial class GameMatchHost
 
             room.ActorIdentities.TryGetValue(actorNr, out storedOwnerKey);
 
+            // Capture before the props below are deleted with the actor.
+            memory = MatchReconnectMemory.Capture(room, actorNr, remembered);
+
             if (userId is { } uid)
                 room.UserIds.Remove(uid);
             room.Actors.RemoveAll(a => a.Nr == actorNr);
@@ -43,6 +48,7 @@ public sealed partial class GameMatchHost
             room.SpawnedPawns.Remove(actorNr);
             room.Flow.DeadActors.Remove(actorNr);
             room.Flow.CarriedDeadActors.Remove(actorNr);
+            room.Flow.SpawnDeadlines.Remove(actorNr);
             // #33: a departed fighter must also leave the frozen round roster, otherwise the
             // remaining side is never «wiped» and the round falls through to the 109s timeout
             // instead of ending on the kill that decided it (log: round 3, timeout after a leave).
@@ -79,13 +85,16 @@ public sealed partial class GameMatchHost
         if (memoryKey is not { Length: > 0 })
             memoryKey = userId;
         if (memoryKey is { } reconnectKey
-            && remembered is MatchTeam.Tr or MatchTeam.Ct)
+            && remembered is MatchTeam.Tr or MatchTeam.Ct
+            && memory is not null)
         {
             lock (_roomGate)
-                _reconnectTeams[reconnectKey] = remembered;
+                _reconnectMemory[reconnectKey] = memory;
             Console.WriteLine(
                 $"[match-host] reconnect-remember: identity='{reconnectKey}' team={remembered} " +
-                $"(actor={actorNr} left reason={reason}, wire uid='{userId}')");
+                $"dead={(memory.WasDead ? "yes" : "no")} " +
+                $"stats k={memory.Kills} d={memory.Death} score={memory.Score2} " +
+                $"money={memory.Money} (actor={actorNr} left reason={reason}, wire uid='{userId}')");
         }
 
         foreach (var id in pawnIds)

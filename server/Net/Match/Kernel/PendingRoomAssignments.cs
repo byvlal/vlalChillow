@@ -13,9 +13,9 @@ namespace StandChillow.LanServer.Net.Match.Kernel;
 /// «этот ник → эта комната», и разбор <c>JoinRoom</c> спрашивает реестр.
 /// </para>
 /// <para>
-/// <b>Один ник — одно назначение.</b> Игрок не может держать две комнаты: пока бронь
-/// жива, повторный <see cref="Reserve"/> её заменяет. Поэтому поиск — точный по нику,
-/// без «угадывания» между кандидатами: двух кандидатов с одним ником не существует.
+/// <b>Один точный ник — одно назначение.</b> Игрок не может держать две комнаты: пока
+/// бронь жива, повторный <see cref="Reserve"/> её заменяет. Поэтому поиск — точный по
+/// нику, без «угадывания» между кандидатами: двух кандидатов с одним точным ником нет.
 /// </para>
 /// <para>
 /// <see cref="PendingRoomAssignment.IdentityKey"/> и <see cref="PendingRoomAssignment.Address"/>
@@ -30,10 +30,10 @@ namespace StandChillow.LanServer.Net.Match.Kernel;
 public sealed class PendingRoomAssignments
 {
     /// <summary>
-    /// Ник сравниваем без учёта регистра: <c>NormalizeNick</c> выравнивает пробелы и
-    /// width-формы, но не регистр, а «Vlal» и «vlal» — один игрок.
+    /// Ник сравниваем точно, с учётом регистра: это тот же ключ, что и у аккаунта.
+    /// «Vlal» и «vlal» — разные аккаунты, поэтому и брони у них разные.
     /// </summary>
-    private const StringComparison NickComparison = StringComparison.OrdinalIgnoreCase;
+    private const StringComparison NickComparison = StringComparison.Ordinal;
 
     private readonly object _gate = new();
     private readonly List<PendingRoomAssignment> _items = new();

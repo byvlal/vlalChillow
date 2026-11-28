@@ -117,11 +117,11 @@ public sealed partial class GameMatchHost
                 return;
             }
 
-            if (room.Flow.DeadActors.Contains(victim))
+            if (MatchLifeRules.IsDead(room.Flow, victim))
             {
                 Console.WriteLine(
                     $"[duel-combat] damage field=5 attacker={attackerActorNr} victimPawn={victimPawnId} " +
-                    $"IGNORED — victim={victim} in DeadActors (await respawn CWO)");
+                    $"IGNORED — victim={victim} dead (await respawn CWO)");
                 return;
             }
 
@@ -185,26 +185,20 @@ public sealed partial class GameMatchHost
             if (victim == 0)
             {
                 var killerTeam = GetActorTeam(room, killerActorNr);
-                var enemies = room.LivingPawns.Values
+                var pawnOwners = room.LivingPawns.Values
                     .Select(p => p.OwnerActorNr)
-                    .Where(o => o != 0 && o != MatchHostActor.ActorNr && o != killerActorNr)
-                    .Distinct()
-                    .Where(o =>
-                    {
-                        var t = GetActorTeam(room, o);
-                        return t is (MatchTeam.Tr or MatchTeam.Ct) && t != killerTeam;
-                    })
-                    .ToList();
-                if (enemies.Count == 1)
+                    .ToHashSet();
+                victim = MatchFlowRules.ResolveSingleEnemyFallback(
+                    room.Flow, pawnOwners, killerActorNr,
+                    actor => GetActorTeam(room, actor), out var why);
+                if (victim != 0)
                 {
-                    victim = enemies[0];
                     how = "single-enemy-fallback";
                 }
                 else
                 {
                     Console.WriteLine(
-                        $"[duel-ffa] kills++ killer={killerActorNr}/{killerTeam}: no attribution and " +
-                        $"{enemies.Count} living enemies — cannot resolve victim");
+                        $"[duel-ffa] kills++ killer={killerActorNr}/{killerTeam}: no attribution — {why}");
                 }
             }
 

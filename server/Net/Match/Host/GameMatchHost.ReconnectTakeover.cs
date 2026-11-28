@@ -87,20 +87,9 @@ public sealed partial class GameMatchHost
             catch { /* ignore */ }
         }
 
-        // Issue #40: buy/waiting reconnect clears the round-local death flag. Publish the same
-        // death=0 the next C2=22 would have published, so peers and the returning client agree
-        // before combat freezes the roster. This is the existing respawn flag, not a new phase.
-        if (adoption.ClearedRoundDeath)
-        {
-            var deathReset = MatchCodec.BuildSetProperty(
-                NextServerTime(), actorNr, MatchRoomPropKeys.Death, LobbyVariant.FromInt(0));
-            // Remaining INIT-ready peers see the reset now. The returning socket gets death=0
-            // through its post-bootstrap actor-props snapshot, not before JoinRoom Found.
-            var peers = BroadcastInitReady(room, deathReset, tag: "match_tx_SetProperty");
-            Console.WriteLine(
-                $"[match-host] reconnect-round-reset: actor={actorNr} death=0 → peers={peers} " +
-                "(roster not frozen — respawn allowed before combat)");
-        }
+        // Issue #40: buy/waiting reconnect clears the round-local DeadActors mark (MatchReconnect
+        // already did it). `death` itself is a cumulative match counter (issue #56) — never reset
+        // it here: the wire value must keep growing across the match.
 
         // Issue #39: the old body belongs to a session that no longer exists. Leaving it in
         // the world made the host count a dead (or absent) player as alive and then force him

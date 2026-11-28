@@ -210,7 +210,9 @@ public sealed partial class GameNetHost
 
             if (_accounts is not null)
             {
-                foreach (var account in _accounts.FindAccountsByNick(text))
+                // Поиск в админке: текущий или прежний ник, без учёта регистра.
+                // Это не вход и не права — просто найти человека по тому, как его звали.
+                foreach (var account in _accounts.FindAccountsByAnyNick(text))
                     Add(account.Id);
                 foreach (var account in _accounts.FindAccountsByDevice(text))
                     Add(account.Id);

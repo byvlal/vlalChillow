@@ -74,6 +74,14 @@ public sealed partial class GameNetHost
 
         var preferred = ResolvePreferredAdminAccountIds();
         _accounts.RenumberIfNeeded(preferred);
+
+        // Точный ник — личность. Старые файлы могли накопить несколько аккаунтов
+        // с одной и той же строкой: склеиваем их в один, иначе лобби, катка и сайт
+        // снова разойдутся по разным номерам. Админский номер не теряем.
+        var mergedNicks = _accounts.MergeDuplicateNicks(_config.IsAdmin);
+        if (mergedNicks > 0)
+            Console.WriteLine($"[account] после склейки дублей: {_accounts.Count} аккаунтов");
+
         _accounts.Save();
         _accounts.Changed = OnAccountsChanged;
 
@@ -158,7 +166,7 @@ public sealed partial class GameNetHost
         var seen = stored.Players
             .Select(p => ServerConfig.NormalizeNick(p.Nick))
             .Where(n => n.Length > 0)
-            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            .ToHashSet(StringComparer.Ordinal);
 
         void AddSeed(string? nick, long lastSeenUtcMs)
         {
@@ -322,7 +330,7 @@ public sealed partial class GameNetHost
         // принадлежит этому аккаунту, и запись всё-таки legacy.
         if (oldId is >= AccountStore.FirstId and <= AccountStore.MaxId
             && accounts.FindById(oldId) is { } byId
-            && (string.IsNullOrWhiteSpace(nick) || byId.HasNick(nick)))
+            && (string.IsNullOrWhiteSpace(nick) || byId.HasCurrentNick(nick)))
             return oldId;
 
         lock (_legacyMapGate)
@@ -374,13 +382,32 @@ public sealed partial class GameNetHost
             if (ids.Count == 0 && megaIds.Count == 0)
                 return;
 
-            // Новые аккаунты с тем же ником не должны отбирать права: сначала самые
-            // свежие (настоящий владелец заходил позже всех), затем остальные.
+            // Склеенный номер мог быть в admin.ids: права переезжают на канонический.
+            foreach (var id in ids.ToList())
+            {
+                var mapped = accounts.MapMergedId(id);
+                if (mapped == 0 || mapped == id)
+                    continue;
+                ReplaceAdminId(ids, id, mapped);
+                Console.WriteLine($"[admin] admin.ids: склеенный {id} → аккаунт {mapped}");
+            }
+
+            foreach (var id in megaIds.ToList())
+            {
+                var mapped = accounts.MapMergedId(id);
+                if (mapped == 0 || mapped == id)
+                    continue;
+                ReplaceAdminId(megaIds, id, mapped);
+                Console.WriteLine($"[admin] admin.megaIds: склеенный {id} → аккаунт {mapped}");
+            }
+
+            // Права даёт только точный текущий ник. Прежний ник — уже другой аккаунт,
+            // он не должен наследовать админку по старому хешу.
             foreach (var account in accounts.Export()
                          .OrderByDescending(a => a.LastSeenUtcMs)
                          .ThenByDescending(a => a.Id))
             {
-                var legacy = account.AllNicks
+                var legacy = new[] { account.Nick }
                     .Select(LegacyNickHash.ForNick)
                     .Where(id => id is >= LegacyNickHash.Min and <= LegacyNickHash.Max)
                     .Distinct()
@@ -499,33 +526,16 @@ public sealed partial class GameNetHost
     /// каждом входе, поэтому перечитывание конфига не оставляет старый список админов.
     /// </summary>
     /// <remarks>
-    /// Проверяем и account ID, и старый хеш ника: <c>admin.ids</c> мигрируется на аккаунты
-    /// в памяти, но до первого входа человека там ещё может стоять хеш. Все аккаунты с
-    /// этим ником (включая алиасы) проверяются намеренно: тёзка не должен отобрать
-    /// права у настоящего админа, а сам админ не должен потерять их из-за тёзки.
+    /// Права даёт только точный текущий ник: <see cref="IdOf"/> ищет аккаунт по нему,
+    /// а старый хеш — лишь пока аккаунт ещё не создан. Тёзка с другим регистром или
+    /// прежний ник админа освобождением от бана не пользуются.
     /// </remarks>
     private bool IsBanExemptNick(string? nick)
     {
         if (ServerIdentity.IsServerNick(nick))
             return true;
 
-        if (IsAdminId(LegacyNickHash.ForNick(nick)))
-            return true;
-
-        var accounts = _accounts;
-        if (accounts is null)
-            return false;
-
-        if (accounts.FindByNick(nick) is { } owner && IsAdminId(owner.Id))
-            return true;
-
-        foreach (var account in accounts.FindAccountsByNick(nick))
-        {
-            if (IsAdminId(account.Id))
-                return true;
-        }
-
-        return false;
+        return IsAdminId(IdOf(nick));
     }
 
     /// <summary>

@@ -116,7 +116,11 @@ public sealed partial class GameMatchHost
                 .Where(nr => nr != MatchHostActor.ActorNr)
                 .ToList();
             foreach (var nr in actors)
+            {
                 room.Flow.DeadActors.Remove(nr);
+                room.Flow.CarriedDeadActors.Remove(nr);
+                room.Flow.SpawnDeadlines.Remove(nr);
+            }
         }
     }
 

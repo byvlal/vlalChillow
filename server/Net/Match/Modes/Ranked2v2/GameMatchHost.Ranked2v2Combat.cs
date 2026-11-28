@@ -88,7 +88,7 @@ public sealed partial class GameMatchHost
             foreach (var owner in room.Flow.PendingCombatDestroy.Keys.ToList())
             {
                 var respawned = room.LivingPawns.Values.Any(p => p.OwnerActorNr == owner);
-                if (respawned || room.Flow.DeadActors.Contains(owner))
+                if (respawned || MatchLifeRules.IsDead(room.Flow, owner))
                 {
                     room.Flow.PendingCombatDestroy.Remove(owner);
                     continue;
@@ -177,6 +177,7 @@ public sealed partial class GameMatchHost
 
         lock (_roomGate)
         {
+            room.Flow.SpawnDeadlines.Remove(actorNr);
             if (!room.Flow.DeadActors.Add(actorNr))
                 return; // already counted
         }
@@ -357,26 +358,21 @@ public sealed partial class GameMatchHost
             if (victim == 0 && MatchFlowRules.AllowsWipeCheck(phase))
             {
                 var killerTeam = GetActorTeam(room, killerActorNr);
-                var enemies = room.LivingPawns.Values
+                var pawnOwners = room.LivingPawns.Values
                     .Select(p => p.OwnerActorNr)
-                    .Where(o => o != 0 && o != MatchHostActor.ActorNr && o != killerActorNr)
-                    .Distinct()
-                    .Where(o =>
-                    {
-                        var t = GetActorTeam(room, o);
-                        return t is (MatchTeam.Tr or MatchTeam.Ct) && t != killerTeam;
-                    })
-                    .ToList();
-                if (enemies.Count == 1)
+                    .ToHashSet();
+                victim = MatchFlowRules.ResolveSingleEnemyFallback(
+                    room.Flow, pawnOwners, killerActorNr,
+                    actor => GetActorTeam(room, actor), out var why);
+                if (victim != 0)
                 {
-                    victim = enemies[0];
                     how = "single-enemy-fallback";
                 }
-                else if (victim == 0)
+                else
                 {
                     Console.WriteLine(
-                        $"[combat-death] kills++ killer={killerActorNr}/{killerTeam}: no attribution and " +
-                        $"{enemies.Count} living enemy fighters — cannot resolve victim unambiguously");
+                        $"[combat-death] kills++ killer={killerActorNr}/{killerTeam}: no attribution — " +
+                        $"{why}; no master death authored");
                 }
             }
 
@@ -479,8 +475,7 @@ public sealed partial class GameMatchHost
                 return;
             }
 
-            if (room.Flow.DeadActors.Contains(victimActorNr)
-                || MatchFlowRules.IsActorDead(room.Flow, room.ActorProps, victimActorNr))
+            if (MatchFlowRules.IsActorDead(room.Flow, room.ActorProps, victimActorNr))
             {
                 Console.WriteLine(
                     $"[combat-death] AuthorBombModeDeath SKIP — victim={victimActorNr} already dead " +

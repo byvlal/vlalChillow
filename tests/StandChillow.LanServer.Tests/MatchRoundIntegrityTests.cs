@@ -126,6 +126,72 @@ public sealed class MatchRoundIntegrityTests
     }
 
     /// <summary>
+    /// Round 2, C2=31: the player died in round 1 (his cumulative <c>death</c> is still 1),
+    /// respawned at C2=22 and sent his own CWO. The stale wire counter must not mark him dead
+    /// again — otherwise the server wipes his team at combat start and awards a free round.
+    /// </summary>
+    [Fact]
+    public void CumulativeDeathProp_DoesNotKillARespawnedPlayerAtNextCombat()
+    {
+        var props = Props((2, MatchTeam.Tr, 1), (3, MatchTeam.Ct, 0));
+        var flow = new MatchFlowState { Phase = MatchFlowPhase.WarmupWillFinish };
+        flow.DeadActors.Add(2); // round 1 death
+
+        MatchFlowRules.BeginRound(flow); // C2=22: round-local deaths reset, carried keeps the fact
+        Assert.Empty(flow.DeadActors);
+        Assert.Contains((byte)2, flow.CarriedDeadActors);
+
+        // C2=22 respawn: his own CWO is the proof of life.
+        MatchFlowRules.NoteSpawn(flow, 2);
+        Assert.Empty(flow.CarriedDeadActors);
+
+        // C2=31: freeze + carried seed must not revive the cumulative death counter.
+        flow.Phase = MatchFlowPhase.PurchasePhase;
+        MatchFlowRules.FreezeRoundRoster(flow, props);
+        MatchFlowRules.SeedCarriedDeathsWithoutPawn(flow, livingPawnOwners: new byte[] { 2, 3 });
+
+        Assert.False(MatchFlowRules.IsActorDead(flow, props, 2));
+        var (aliveTr, aliveCt, totalTr, totalCt) = MatchFlowRules.CountAliveFighters(flow, props);
+        Assert.Equal(1, aliveTr);
+        Assert.Equal(1, aliveCt);
+        Assert.Equal(1, totalTr);
+        Assert.Equal(1, totalCt);
+        Assert.False(MatchFlowRules.TryResolveWipe(
+            flow, props, bombPlanted: false, out _, out _));
+    }
+
+    /// <summary>
+    /// Issue #56 made <c>death</c> cumulative. A host that rebuilds <c>DeadActors</c> from a
+    /// non-zero death prop marks everyone who ever died as dead at the next C2=31. Pin the
+    /// removal of that path so it cannot quietly come back.
+    /// </summary>
+    [Fact]
+    public void NoSourceFile_RebuildsDeadActorsFromCumulativeDeathProps()
+    {
+        var offenders = new List<string>();
+        foreach (var file in Directory.EnumerateFiles(
+                     ServerSourceRoot(), "*.cs", SearchOption.AllDirectories))
+        {
+            if (File.ReadAllText(file).Contains("SyncDeadActorsFromDeathProps", StringComparison.Ordinal))
+                offenders.Add(Path.GetFileName(file));
+        }
+
+        Assert.True(
+            offenders.Count == 0,
+            "DeadActors is event-driven; a cumulative `death` prop must never rebuild it. Offenders: " +
+            string.Join(", ", offenders));
+    }
+
+    private static string ServerSourceRoot()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null && !Directory.Exists(Path.Combine(dir.FullName, "server")))
+            dir = dir.Parent;
+        Assert.NotNull(dir);
+        return Path.Combine(dir!.FullName, "server");
+    }
+
+    /// <summary>
     /// Exact phantom from the live probe: T died in round 1, never sent a new
     /// <c>CreateWorldObject</c>, and the blanket <c>DeadActors.Clear()</c> at C2=22 made him
     /// «alive» for round 2 — the round then ran to the 109s timeout instead of a wipe.

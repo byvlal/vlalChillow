@@ -11,7 +11,9 @@ public sealed class NickPolicyTests
 {
     [Theory]
     [InlineData("miro")]
-    [InlineData("Влал")]
+    [InlineData("Владимир")]
+    [InlineData("Vladimir")]
+    [InlineData("Vladislav")]
     [InlineData("Miro_2")]
     [InlineData("miro-2")]
     [InlineData("Иван Петров")]
@@ -23,6 +25,64 @@ public sealed class NickPolicyTests
 
         Assert.True(check.Ok, check.Reason);
         Assert.Equal(raw, check.Name);
+    }
+
+    /// <summary>
+    /// Анти-Влал: раскладка, leet, цифры, разделители и повторы не спасают.
+    /// </summary>
+    [Theory]
+    [InlineData("Влал")]
+    [InlineData("влал")]
+    [InlineData("VLAL")]
+    [InlineData("vLaL")]
+    [InlineData("v1a1")]
+    [InlineData("v|l|a|l")]
+    [InlineData("v l a l")]
+    [InlineData("VVLLLAALL")]
+    [InlineData("Влалсуперкрутой")]
+    [InlineData("vlal228")]
+    [InlineData("vlad")]
+    [InlineData("Vlad")]
+    [InlineData("влад")]
+    [InlineData("v1ad")]
+    [InlineData("v l a d")]
+    [InlineData("Vlad_228")]
+    [InlineData("VVLLAADD")]
+    public void VlalImpersonation_IsRejected(string raw)
+    {
+        var check = NickPolicy.CheckForJoin(raw);
+
+        Assert.False(check.Ok);
+        Assert.True(check.Impersonation, check.Reason);
+    }
+
+    /// <summary>Длинные имена с «vlad» в начале — не маскировка: после него буква.</summary>
+    [Theory]
+    [InlineData("Владимир")]
+    [InlineData("Vladimir")]
+    [InlineData("Vladislav")]
+    [InlineData("Владлена")]
+    [InlineData("vladxxx")]
+    public void VladLongerNames_AreAllowed(string raw)
+    {
+        Assert.True(NickPolicy.CheckForJoin(raw).Ok);
+    }
+
+    /// <summary>Админам и мега-админам анти-Влал не мешает: права важнее ника.</summary>
+    [Theory]
+    [InlineData("Влал")]
+    [InlineData("v1a1")]
+    [InlineData("vlad")]
+    public void VlalImpersonation_IsAllowedForAdmin(string raw)
+    {
+        Assert.True(NickPolicy.CheckForJoin(raw, allowVlal: true).Ok);
+    }
+
+    [Fact]
+    public void Suggest_DoesNotOfferVlalLookalike()
+    {
+        Assert.Equal("", NickPolicy.Suggest("Влал"));
+        Assert.Equal("", NickPolicy.Suggest("v1a1"));
     }
 
     /// <summary>Пробелы и невидимки — не повод для отказа: их снимает нормализация.</summary>
@@ -71,7 +131,7 @@ public sealed class NickPolicyTests
     /// <summary>Подсказка снимает разметку, а не выкидывает буквы вместе с ней.</summary>
     [Theory]
     [InlineData("<color=red>miro", "miro")]
-    [InlineData("<size=200>Влал</size>", "Влал")]
+    [InlineData("<size=200>Miro</size>", "Miro")]
     [InlineData("miro😀", "miro")]
     [InlineData("Miro,2", "Miro2")]
     public void Suggest_KeepsTheReadablePart(string raw, string expected)

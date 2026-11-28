@@ -91,7 +91,7 @@ public sealed partial class GameNetHost : IDisposable
         // Проверка ника одна на лобби и катку. Делегат читает текущий конфиг на каждом
         // входе, поэтому config reload меняет политику без пересоздания матч-хоста.
         _match.IsNickAllowed = nick =>
-            !_config.Names.Enforce || NickPolicy.Check(nick, _config.Names.MaxLength).Ok;
+            !_config.Names.Enforce || IsNickAllowedForJoin(nick);
         // Mid-match phones chat via ChatManager WorldObjectRpc — wire slash cmds (/set start).
         _match.OnMatchChatSlashCommand = HandleMatchChatSlashCommand;
         // Ordinary match chat → console + dashboard (the катка used to be a blind spot).
@@ -479,7 +479,7 @@ public sealed partial class GameNetHost : IDisposable
         // этого хватало, чтобы у каждого, кто сидел в лобби, телефон прыгал в катку.
         // Клиент не знает, бронировал ли он что-то: увидел hasHosting=1 — идёт на 7777.
         // Приглашение всегда адресное: его ставит собственный /join игрока.
-        var invitedByNick = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var invitedByNick = new HashSet<string>(StringComparer.Ordinal);
         foreach (var p in _session.JoinedPlayers())
         {
             if (!_match.PendingRooms.HasReservation(p.Name))
@@ -709,7 +709,10 @@ public sealed partial class GameNetHost : IDisposable
 
         // Бан — до любых side-effects: ни слота в росписи, ни приветствия, ни op9 про
         // идущий матч забаненный не получает. Проверка только здесь, на входе.
-        var banDecision = InspectBan(req.Profile.Name, peer.Address);
+        // Номер аккаунта передаём, если человек уже входил: иначе бан по account ID
+        // не сработает в лобби (device в лобби ещё неизвестен, а ник можно сменить).
+        var lobbyAccountId = _accounts?.FindByNick(req.Profile.Name)?.Id ?? 0;
+        var banDecision = InspectBan(req.Profile.Name, peer.Address, lobbyAccountId);
         if (banDecision.Banned)
         {
             HandleShadowJoin(peer, req, banDecision);
@@ -722,7 +725,7 @@ public sealed partial class GameNetHost : IDisposable
         // Клиент рисует его как rich text, поэтому «<color=red>miro» — не ник, а разметка.
         // Проверяем до любых side-effects и пускаем только в скрытое лобби с подсказкой:
         // отказ «молча» выглядел бы как сломанный сервер.
-        if (_config.Names.Enforce && !NickPolicy.Check(req.Profile.Name, _config.Names.MaxLength).Ok)
+        if (_config.Names.Enforce && !IsNickAllowedForJoin(req.Profile.Name))
         {
             HandleNickReject(peer, req);
             return;

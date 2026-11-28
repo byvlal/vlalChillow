@@ -220,6 +220,7 @@ public sealed partial class GameMatchHost
 
         foreach (var room in rooms)
         {
+            TickSpawnDeadlines(room);
             ProcessPendingCombatDestroys(room);
             // Issue #53: grenade fuses are round-relevant like combat destroys — same tick,
             // every mode (grenades exist in every mode, and the phone host authored these
@@ -227,6 +228,36 @@ public sealed partial class GameMatchHost
             TickGrenadeFusesRoom(room);
             TickMatchFlowRoom(room);
         }
+    }
+
+    /// <summary>
+    /// C2=31 spawn grace: a roster fighter who was alive but never produced a body within
+    /// <see cref="MatchLifeRules.SpawnGrace"/> is counted dead for the wipe. The body may still
+    /// arrive later (CWO clears the flag via <see cref="MatchFlowRules.NoteSpawn"/>), but the
+    /// round must not run on with nobody on his side.
+    /// </summary>
+    private void TickSpawnDeadlines(MatchRoom room)
+    {
+        List<byte> expired;
+        bool bombPlanted;
+        lock (_roomGate)
+        {
+            if (room.Flow.SpawnDeadlines.Count == 0)
+                return;
+            var pawnOwners = room.LivingPawns.Values
+                .Select(p => p.OwnerActorNr)
+                .ToHashSet();
+            expired = MatchLifeRules.ProcessSpawnDeadlines(
+                room.Flow, pawnOwners, DateTime.UtcNow);
+            bombPlanted = room.Flow.BombPlanted;
+        }
+        if (expired.Count == 0)
+            return;
+        Console.WriteLine(
+            "[match-host] spawn-deadline: actor(s) " +
+            $"{string.Join(",", expired)} still without a pawn after " +
+            $"{MatchLifeRules.SpawnGrace.TotalSeconds:0}s — dead for the wipe");
+        TryResolveWipeImmediate(room, bombPlanted);
     }
 
     private void TickMatchFlowRoom(MatchRoom room)
@@ -658,9 +689,9 @@ public sealed partial class GameMatchHost
         }
         ClearBombAuthority(room, "RoundLive entry");
 
-        // Sync DeadActors from actor death props so Prep combat kills are not forgotten
-        // when the prep clock expires — wipe must preempt the host round-timeout fantasy.
-        SyncDeadActorsFromDeathProps(room);
+        // DeadActors is event-driven: NoteActorDeath adds the victim when the death prop arrives,
+        // and the player's own CWO clears it. Never rebuild it from the cumulative `death` prop —
+        // after issue #56 that value survives the round, so a respawned player would look dead.
         if (TryResolveWipeImmediate(room, bombPlanted: false))
             return;
 
@@ -691,26 +722,37 @@ public sealed partial class GameMatchHost
             // Per-player state, not the phase: only a fighter who was already dead and has not
             // sent his own CWO since is marked dead. A live player's ping-delayed spawn is not
             // in CarriedDeadActors, so the freeze tick cannot kill him.
-            MatchFlowRules.SeedCarriedDeathsWithoutPawn(
-                room.Flow, room.LivingPawns.Values.Select(p => p.OwnerActorNr));
+            var pawnOwners = room.LivingPawns.Values
+                .Select(p => p.OwnerActorNr)
+                .ToHashSet();
+            MatchFlowRules.SeedCarriedDeathsWithoutPawn(room.Flow, pawnOwners);
+            // A live fighter still has 5 s to prove the spawn before he is counted dead for
+            // the wipe. A CWO clears the clock; a real death clears it too.
+            MatchLifeRules.ArmSpawnDeadlines(room.Flow, pawnOwners, DateTime.UtcNow);
             room.Flow.PendingCombatDestroy.Clear();
         }
+
+        // The carried-dead side can already be empty at the combat edge. Resolve it before
+        // the round is published instead of letting it run with nobody on that side.
+        if (TryResolveWipeImmediate(room, bombPlanted: false))
+            return;
 
         // [repro] Frozen round identity + real pawn presence (diagnostic only).
         lock (_roomGate)
         {
+            var pawnOwnerSet = room.LivingPawns.Values
+                .Select(p => p.OwnerActorNr)
+                .ToHashSet();
             var roster = room.Flow.RoundRoster
                 .OrderBy(kv => kv.Key)
                 .Select(kv =>
-                {
-                    var pawned = room.LivingPawns.Values.Any(p => p.OwnerActorNr == kv.Key);
-                    var dead = room.Flow.DeadActors.Contains(kv.Key);
-                    return $"{kv.Key}:{kv.Value}(pawn={(pawned ? "yes" : "no")},dead={(dead ? "yes" : "no")})";
-                });
+                    $"{kv.Key}:{kv.Value}(life={MatchLifeRules.GetActorLife(room.Flow, pawnOwnerSet, kv.Key)})");
             Console.WriteLine(
                 $"[roster] freeze RoundLive round={room.Flow.RoundIndex} " +
                 $"roster=[{string.Join(" ", roster)}] " +
-                $"pawnOwners=[{string.Join(",", room.LivingPawns.Values.Select(p => p.OwnerActorNr).Distinct().OrderBy(nr => nr))}]");
+                $"pawnOwners=[{string.Join(",", pawnOwnerSet.OrderBy(nr => nr))}] " +
+                $"DeadActors=[{string.Join(",", room.Flow.DeadActors.OrderBy(nr => nr))}] " +
+                $"CarriedDeadActors=[{string.Join(",", room.Flow.CarriedDeadActors.OrderBy(nr => nr))}]");
         }
 
         if (txBomberFix && bomberId > 0)
@@ -833,31 +875,6 @@ public sealed partial class GameMatchHost
         else
             PostServerDebugChat($"взрыв rpc ({fuseElapsed:F1}s)");
         EnterRoundEndPause(room, winner, reason);
-    }
-
-    /// <summary>
-    /// Rebuild <see cref="MatchFlowState.DeadActors"/> from observed actor <c>death</c> props
-    /// so Prep combat kills are not dropped when the prep clock expires.
-    /// </summary>
-    private void SyncDeadActorsFromDeathProps(MatchRoom room)
-    {
-        lock (_roomGate)
-        {
-            foreach (var ((actor, key), value) in room.ActorProps)
-            {
-                if (key != MatchRoomPropKeys.Death || actor == MatchHostActor.ActorNr)
-                    continue;
-                var dead = value.Kind switch
-                {
-                    LobbyVariantKind.Int => value.Int != 0,
-                    LobbyVariantKind.Byte => value.Byte != 0,
-                    LobbyVariantKind.Bool => value.Bool,
-                    _ => false,
-                };
-                if (dead)
-                    room.Flow.DeadActors.Add(actor);
-            }
-        }
     }
 
     /// <summary>
